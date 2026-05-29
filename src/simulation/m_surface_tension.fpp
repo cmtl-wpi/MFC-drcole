@@ -36,7 +36,8 @@ module m_surface_tension
     $:GPU_DECLARE(create='[gL_x, gR_x, gL_y, gR_y, gL_z, gR_z]')
 
     !> @name cell-centered surface tension for the linear thermal closure sigma(T)
-    !> (only allocated when sigma_model == 1)
+    !> (always allocated when surface tension is active; only written/read for sigma_model == 1,
+    !> so the constant-sigma path never dereferences it but the device mapping is always valid)
     !> @{
     real(wp), allocatable, dimension(:,:,:) :: c_sigma
     !> @}
@@ -72,9 +73,9 @@ contains
                        & num_dims + 1))
         end if
 
-        if (sigma_model == 1) then
-            @:ALLOCATE(c_sigma(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end))
-        end if
+        ! Allocated unconditionally so the device descriptor is always valid in the capillary
+        ! source-flux kernel; it is only written (s_get_capillary) and read when sigma_model == 1.
+        @:ALLOCATE(c_sigma(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end))
 
     end subroutine s_initialize_surface_tension_module
 
@@ -439,9 +440,7 @@ contains
             @:DEALLOCATE(gL_z, gR_z)
         end if
 
-        if (sigma_model == 1) then
-            @:DEALLOCATE(c_sigma)
-        end if
+        @:DEALLOCATE(c_sigma)
 
     end subroutine s_finalize_surface_tension_module
 
