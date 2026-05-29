@@ -260,6 +260,9 @@ module m_global_parameters
     !> @{
     real(wp) :: sigma
     logical  :: surface_tension
+    integer  :: sigma_model  !< 0: constant sigma; 1: linear thermal closure sigma(T)
+    real(wp) :: sigma_T_ref  !< Reference temperature for the linear sigma(T) closure
+    real(wp) :: sigma_dTdT   !< dsigma/dT slope (with sign) for the linear sigma(T) closure
     !> @}
 
     !> @name Lagrangian bubbles
@@ -453,6 +456,9 @@ contains
         sigR = dflt_real
         sigma = dflt_real
         surface_tension = .false.
+        sigma_model = 0
+        sigma_T_ref = dflt_real
+        sigma_dTdT = 0._wp
         adv_n = .false.
 
         ! Lagrangian bubbles modeling

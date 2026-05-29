@@ -248,6 +248,9 @@ _SIMPLE_DESCS = {
     "nb": "Number of bubble bins",
     "R0ref": "Reference bubble radius",
     "sigma": "Surface tension coefficient",
+    "sigma_model": "Surface tension model: 0 constant, 1 linear in temperature",
+    "sigma_T_ref": "Reference temperature for the linear sigma(T) closure",
+    "sigma_dTdT": "dsigma/dT slope for the linear sigma(T) closure",
     "Bx0": "Background magnetic field (x)",
     "old_grid": "Load grid from previous simulation",
     "old_ic": "Load initial conditions from previous",
@@ -908,6 +911,9 @@ def _load():
     # Surface tension
     _r("sigma", REAL, {"surface_tension"}, math=r"\f$\sigma\f$")
     _r("surface_tension", LOG, {"surface_tension"})
+    _r("sigma_model", INT, {"surface_tension"})
+    _r("sigma_T_ref", REAL, {"surface_tension"})
+    _r("sigma_dTdT", REAL, {"surface_tension"})
 
     # Chemistry
     _r("cantera_file", STR, {"chemistry"})

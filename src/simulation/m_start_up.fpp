@@ -108,10 +108,11 @@ contains
         Ca, Web, Re_inv, acoustic_source, acoustic, num_source, polytropic, thermal, integral, integral_wrt, num_integrals, &
             & polydisperse, poly_sigma, qbmm, relax, relax_model, palpha_eps, ptgalpha_eps, file_per_process, sigma, pi_fac, &
             & adv_n, adap_dt, adap_dt_tol, adap_dt_max_iters, bf_x, bf_y, bf_z, k_x, k_y, k_z, w_x, w_y, w_z, p_x, p_y, p_z, g_x, &
-            & g_y, g_z, n_start, t_save, t_stop, cfl_adap_dt, cfl_const_dt, cfl_target, surface_tension, bubbles_lagrange, &
-            & lag_params, hyperelasticity, R0ref, num_bc_patches, Bx0, cont_damage, tau_star, cont_damage_s, alpha_bar, &
-            & hyper_cleaning, hyper_cleaning_speed, hyper_cleaning_tau, alf_factor, num_igr_iters, num_igr_warm_start_iters, &
-            & int_comp, ic_eps, ic_beta, nv_uvm_out_of_core, nv_uvm_igr_temps_on_gpu, nv_uvm_pref_gpu, down_sample, fft_wrt
+            & g_y, g_z, n_start, t_save, t_stop, cfl_adap_dt, cfl_const_dt, cfl_target, surface_tension, sigma_model, &
+            & sigma_T_ref, sigma_dTdT, bubbles_lagrange, lag_params, hyperelasticity, R0ref, num_bc_patches, Bx0, cont_damage, &
+            & tau_star, cont_damage_s, alpha_bar, hyper_cleaning, hyper_cleaning_speed, hyper_cleaning_tau, alf_factor, &
+            & num_igr_iters, num_igr_warm_start_iters, int_comp, ic_eps, ic_beta, nv_uvm_out_of_core, nv_uvm_igr_temps_on_gpu, &
+            & nv_uvm_pref_gpu, down_sample, fft_wrt
 
         inquire (FILE=trim(file_path), EXIST=file_exist)
 
@@ -1066,7 +1067,7 @@ contains
         $:GPU_UPDATE(device='[adv_n, adap_dt, adap_dt_tol, adap_dt_max_iters, pi_fac, low_Mach]')
 
         $:GPU_UPDATE(device='[acoustic_source, num_source]')
-        $:GPU_UPDATE(device='[sigma, surface_tension]')
+        $:GPU_UPDATE(device='[sigma, surface_tension, sigma_model, sigma_T_ref, sigma_dTdT]')
 
         $:GPU_UPDATE(device='[dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc]')
         $:GPU_UPDATE(device='[bc_x%beg, bc_x%end, bc_y%beg, bc_y%end, bc_z%beg, bc_z%end]')

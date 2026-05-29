@@ -125,6 +125,7 @@ contains
         end if
 
         #:for VAR in [ 'dt','weno_eps','teno_CT','pref','rhoref','R0ref','Web','Ca', 'sigma', &
+            & 'sigma_T_ref', 'sigma_dTdT', &
             & 'Re_inv', 'poly_sigma', 'palpha_eps', 'ptgalpha_eps', 'pi_fac',    &
             & 'bc_x%vb1','bc_x%vb2','bc_x%vb3','bc_x%ve1','bc_x%ve2','bc_x%ve3', &
             & 'bc_y%vb1','bc_y%vb2','bc_y%vb3','bc_y%ve1','bc_y%ve2','bc_y%ve3', &
@@ -141,6 +142,8 @@ contains
             & 'ib_coefficient_of_friction' ]
             call MPI_BCAST(${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
         #:endfor
+
+        call MPI_BCAST(sigma_model, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
         do i = 1, 3
             #:for VAR in [ 'bc_x%vel_in', 'bc_x%vel_out', 'bc_y%vel_in', 'bc_y%vel_out',  &

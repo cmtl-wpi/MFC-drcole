@@ -438,7 +438,10 @@ module m_global_parameters
     !> @{
     real(wp) :: sigma
     logical  :: surface_tension
-    $:GPU_DECLARE(create='[sigma, surface_tension]')
+    integer  :: sigma_model  !< 0: constant sigma; 1: linear thermal closure sigma(T)
+    real(wp) :: sigma_T_ref  !< Reference temperature for the linear sigma(T) closure
+    real(wp) :: sigma_dTdT   !< dsigma/dT slope (with sign) for the linear sigma(T) closure
+    $:GPU_DECLARE(create='[sigma, surface_tension, sigma_model, sigma_T_ref, sigma_dTdT]')
     !> @}
 
     real(wp), allocatable, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps
@@ -683,6 +686,9 @@ contains
         ! Surface tension
         sigma = dflt_real
         surface_tension = .false.
+        sigma_model = 0
+        sigma_T_ref = dflt_real
+        sigma_dTdT = 0._wp
 
         bodyForces = .false.
         bf_x = .false.; bf_y = .false.; bf_z = .false.

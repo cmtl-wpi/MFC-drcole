@@ -178,6 +178,9 @@ module m_global_parameters
     !> @{
     real(wp) :: sigma
     logical  :: surface_tension
+    integer  :: sigma_model  !< 0: constant sigma; 1: linear thermal closure sigma(T)
+    real(wp) :: sigma_T_ref  !< Reference temperature for the linear sigma(T) closure
+    real(wp) :: sigma_dTdT   !< dsigma/dT slope (with sign) for the linear sigma(T) closure
     !> @}
 
     integer, allocatable, dimension(:,:,:) :: logic_grid
@@ -436,6 +439,9 @@ contains
 
         ! surface tension modeling
         sigma = dflt_real
+        sigma_model = 0
+        sigma_T_ref = dflt_real
+        sigma_dTdT = 0._wp
         pi_fac = 1._wp
 
         ! Immersed Boundaries

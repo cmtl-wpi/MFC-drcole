@@ -58,12 +58,14 @@ contains
             & 'bc_x%end', 'bc_y%beg', 'bc_y%end', 'bc_z%beg', 'bc_z%end',      &
             & 'perturb_flow_mag', 'pref', 'rhoref', 'poly_sigma', 'R0ref',     &
             & 'Web', 'Ca', 'Re_inv', 'sigR', 'sigV', 'rhoRV', 'palpha_eps',    &
-            & 'ptgalpha_eps', 'sigma', 'pi_fac', 'mixlayer_vel_coef', 'Bx0',   &
+            & 'ptgalpha_eps', 'sigma', 'sigma_T_ref', 'sigma_dTdT', 'pi_fac', 'mixlayer_vel_coef', 'Bx0',   &
             & 'mixlayer_perturb_k0', 'bc_x%Twall_in', 'bc_x%Twall_out',        &
             & 'bc_y%Twall_in', 'bc_y%Twall_out', 'bc_z%Twall_in',              &
             & 'bc_z%Twall_out']
             call MPI_BCAST(${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
         #:endfor
+
+        call MPI_BCAST(sigma_model, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
         do i = 1, num_bc_patches_max
             #:for VAR in ['geometry', 'type', 'dir', 'loc']
