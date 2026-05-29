@@ -253,6 +253,20 @@ def list_cases() -> typing.List[TestCaseBuilder]:
     def alter_capillary():
         stack.push("", {"patch_icpp(1)%cf_val": 1, "patch_icpp(2)%cf_val": 0, "patch_icpp(3)%cf_val": 1, "sigma": 1, "model_eqns": 3, "surface_tension": "T"})
         cases.append(define_case_d(stack, ["capillary=T", "model_eqns=3"], {}))
+        # Thermal Marangoni: temperature-dependent surface tension sigma(T) (sigma_model=1)
+        cases.append(
+            define_case_d(
+                stack,
+                ["capillary=T", "sigma_model=1"],
+                {
+                    "sigma_model": 1,
+                    "sigma_dTdT": -1e-6,
+                    "sigma_T_ref": 0,
+                    "fluid_pp(1)%cv": 1816,
+                    "fluid_pp(2)%cv": 717.5,
+                },
+            )
+        )
         stack.pop()
 
     def alter_weno(dimInfo):
