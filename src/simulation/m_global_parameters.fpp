@@ -14,6 +14,7 @@ module m_global_parameters
 
     use m_derived_types
     use m_helper_basic
+    use m_constants, only: model_eqns_gamma_law, model_eqns_5eq, model_eqns_6eq, model_eqns_4eq
     ! $:USE_GPU_MODULE()
 
     implicit none
@@ -27,6 +28,7 @@ module m_global_parameters
     integer :: num_procs  !< Number of processors
     ! Computational Domain Parameters
     integer :: proc_rank  !< Rank of the local processor
+    $:GPU_DECLARE(create='[num_procs, proc_rank]')
 
     !> @name Max and min number of cells in a direction of each combination of x-,y-, and z-
     type(cell_num_bounds) :: cells_bounds
@@ -164,7 +166,9 @@ module m_global_parameters
     $:GPU_DECLARE(create='[ib_bc_x, ib_bc_y, ib_bc_z]')
 #endif
     type(bounds_info) :: x_domain, y_domain, z_domain
-    $:GPU_DECLARE(create='[x_domain, y_domain, z_domain]')
+    type(bounds_info) :: neighbor_domain_x, neighbor_domain_y, neighbor_domain_z
+    integer           :: num_gbl_ibs, num_local_ibs
+    $:GPU_DECLARE(create='[x_domain, y_domain, z_domain, neighbor_domain_x, neighbor_domain_y, neighbor_domain_z, num_gbl_ibs]')
     $:GPU_DECLARE(create='[down_sample]')
 
     integer, allocatable, dimension(:)            :: proc_coords  !< Processor coordinates in MPI_CART_COMM
@@ -258,11 +262,15 @@ module m_global_parameters
 
     !> @name Immersed Boundaries
     !> @{
-    type(ib_patch_parameters), dimension(num_ib_patches_max) :: patch_ib  !< Immersed boundary patch parameters
-    type(vec3_dt), allocatable, dimension(:)                 :: airfoil_grid_u, airfoil_grid_l
-    integer                                                  :: Np
+    type(ib_patch_parameters), dimension(num_ib_patches_max_namelist) :: patch_ib  !< Immersed boundary patch parameters
+    integer, dimension(num_local_ibs_max) :: local_ib_patch_ids  !< lookup table of IBs in the local compute domain
+    type(particle_cloud_parameters), dimension(num_particle_clouds_max) :: particle_cloud  !< Particle bed specifications
+    integer, allocatable, dimension(:,:,:) :: ib_neighbor_ranks  !< MPI ranks of neighborhood domains, indexed (-N:N,-N:N,-N:N)
+    type(ib_airfoil_parameters), dimension(num_ib_airfoils_max) :: ib_airfoil  !< Per-airfoil NACA user inputs (namelist)
+    type(ib_airfoil_grid), dimension(num_ib_airfoils_max) :: ib_airfoil_grids  !< Per-airfoil computed surface grids
+    type(ib_stl_parameters), dimension(num_stl_models_max) :: stl_models  !< Per-STL model parameters (namelist)
 
-    $:GPU_DECLARE(create='[ib, num_ibs, patch_ib, Np, airfoil_grid_u, airfoil_grid_l]')
+    $:GPU_DECLARE(create='[ib, num_ibs, patch_ib, ib_airfoil, ib_airfoil_grids]')
     $:GPU_DECLARE(create='[ib_coefficient_of_friction]')
     !> @}
 
@@ -521,6 +529,7 @@ contains
         ! Immersed Boundaries
         ib = .false.
         num_ibs = dflt_int
+        ib_neighborhood_radius = 1
         collision_model = 0
         coefficient_of_restitution = dflt_real
         collision_time = dflt_real
@@ -673,7 +682,33 @@ contains
             relativity = .false.
         #:endif
 
-        do i = 1, num_ib_patches_max
+        do i = 1, num_ib_airfoils_max
+            ib_airfoil(i)%c = dflt_real
+            ib_airfoil(i)%p = dflt_real
+            ib_airfoil(i)%t = dflt_real
+            ib_airfoil(i)%m = dflt_real
+            ib_airfoil_grids(i)%Np = 0
+        end do
+
+        num_particle_clouds = 0
+        do i = 1, num_particle_clouds_max
+            particle_cloud(i)%x_centroid = 0._wp
+            particle_cloud(i)%y_centroid = 0._wp
+            particle_cloud(i)%z_centroid = 0._wp
+            particle_cloud(i)%length_x = dflt_real
+            particle_cloud(i)%length_y = dflt_real
+            particle_cloud(i)%length_z = dflt_real
+            particle_cloud(i)%num_particles = 0
+            particle_cloud(i)%radius = dflt_real
+            particle_cloud(i)%mass = dflt_real
+            particle_cloud(i)%min_spacing = 0._wp
+            particle_cloud(i)%moving_ibm = 0
+            particle_cloud(i)%seed = 0
+            particle_cloud(i)%packing_method = dflt_int
+        end do
+
+        do i = 1, num_ib_patches_max_namelist
+            patch_ib(i)%gbl_patch_id = i
             patch_ib(i)%geometry = dflt_int
             patch_ib(i)%x_centroid = 0._wp
             patch_ib(i)%y_centroid = 0._wp
@@ -682,20 +717,9 @@ contains
             patch_ib(i)%length_y = dflt_real
             patch_ib(i)%length_z = dflt_real
             patch_ib(i)%radius = dflt_real
-            patch_ib(i)%theta = dflt_real
-            patch_ib(i)%c = dflt_real
-            patch_ib(i)%t = dflt_real
-            patch_ib(i)%m = dflt_real
-            patch_ib(i)%p = dflt_real
+            patch_ib(i)%airfoil_id = 0
+            patch_ib(i)%model_id = 0
             patch_ib(i)%slip = .false.
-
-            ! Proper default values for translating STL models
-            patch_ib(i)%model_scale(:) = 1._wp
-            patch_ib(i)%model_translate(:) = 0._wp
-            patch_ib(i)%model_rotate(:) = 0._wp
-            patch_ib(i)%model_filepath(:) = dflt_char
-            patch_ib(i)%model_spc = num_ray
-            patch_ib(i)%model_threshold = ray_tracing_threshold
 
             ! Variables to handle moving immersed boundaries, defaulting to no movement
             patch_ib(i)%moving_ibm = 0
@@ -712,6 +736,15 @@ contains
             patch_ib(i)%rotation_matrix(2, 2) = 1._wp
             patch_ib(i)%rotation_matrix(3, 3) = 1._wp
             patch_ib(i)%rotation_matrix_inverse = patch_ib(i)%rotation_matrix
+        end do
+
+        num_stl_models = 0
+
+        do i = 1, num_stl_models_max
+            stl_models(i)%model_filepath(:) = dflt_char
+            stl_models(i)%model_translate(:) = 0._wp
+            stl_models(i)%model_scale(:) = 1._wp
+            stl_models(i)%model_threshold = ray_tracing_threshold
         end do
 
     end subroutine s_assign_default_values_to_user_inputs
@@ -755,7 +788,7 @@ contains
         Re_size_max = 0
 
         ! Gamma/Pi_inf Model
-        if (model_eqns == 1) then
+        if (model_eqns == model_eqns_gamma_law) then
             ! Annotating structure of the state and flux vectors belonging to the system of equations defined by the selected number
             ! of spatial dimensions and the gamma/pi_inf model
             eqn_idx%cont%beg = 1
@@ -773,7 +806,7 @@ contains
         else
             ! Annotating structure of the state and flux vectors belonging to the system of equations defined by the selected number
             ! of spatial dimensions and the volume fraction model
-            if (model_eqns == 2) then
+            if (model_eqns == model_eqns_5eq) then
                 eqn_idx%cont%beg = 1
                 eqn_idx%cont%end = num_fluids
                 eqn_idx%mom%beg = eqn_idx%cont%end + 1
@@ -864,7 +897,7 @@ contains
                     end if
                     sys_size = eqn_idx%B%end
                 end if
-            else if (model_eqns == 3) then
+            else if (model_eqns == model_eqns_6eq) then
                 eqn_idx%cont%beg = 1
                 eqn_idx%cont%end = num_fluids
                 eqn_idx%mom%beg = eqn_idx%cont%end + 1
@@ -876,7 +909,7 @@ contains
                 eqn_idx%int_en%beg = eqn_idx%adv%end + 1
                 eqn_idx%int_en%end = eqn_idx%adv%end + num_fluids
                 sys_size = eqn_idx%int_en%end
-            else if (model_eqns == 4) then
+            else if (model_eqns == model_eqns_4eq) then
                 eqn_idx%cont%beg = 1  ! one continuity equation
                 eqn_idx%cont%end = 1  ! num_fluids
                 eqn_idx%mom%beg = eqn_idx%cont%end + 1  ! one momentum equation in each direction
@@ -950,7 +983,7 @@ contains
             end if
         end if
 
-        if (model_eqns == 2 .or. model_eqns == 3) then
+        if (model_eqns == model_eqns_5eq .or. model_eqns == model_eqns_6eq) then
             if (hypoelasticity .or. hyperelasticity) then
                 elasticity = .true.
                 eqn_idx%stress%beg = sys_size + 1
@@ -1054,7 +1087,6 @@ contains
         #:endif
 
         if (ib) allocate (MPI_IO_IB_DATA%var%sf(0:m,0:n,0:p))
-        Np = 0
 
         if (elasticity) then
             fd_number = max(1, fd_order/2)

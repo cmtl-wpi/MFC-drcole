@@ -14,6 +14,7 @@ module m_global_parameters
     use m_derived_types  ! Definitions of the derived types
     use m_helper_basic  ! Functions to compare floating point numbers
     use m_thermochem, only: num_species
+    use m_constants, only: model_eqns_gamma_law, model_eqns_5eq, model_eqns_6eq, model_eqns_4eq
 
     implicit none
 
@@ -93,9 +94,9 @@ module m_global_parameters
 
     !> @name Immersed Boundaries
     !> @{
-    integer                                                  :: Np
-    type(ib_patch_parameters), dimension(num_ib_patches_max) :: patch_ib  !< Immersed boundary patch parameters
-    type(vec3_dt), allocatable, dimension(:)                 :: airfoil_grid_u, airfoil_grid_l
+    type(ib_patch_parameters), dimension(num_ib_patches_max_namelist) :: patch_ib    !< Immersed boundary patch parameters
+    type(ib_airfoil_parameters), dimension(num_ib_airfoils_max)       :: ib_airfoil  !< Per-airfoil NACA parameters
+    type(ib_stl_parameters), dimension(num_stl_models_max)            :: stl_models  !< Per-STL model parameters (namelist)
     !> @}
 
     !> @name Non-polytropic bubble gas compression
@@ -243,11 +244,7 @@ contains
 
         do i = 1, num_patches_max
             patch_icpp(i)%geometry = dflt_int
-            patch_icpp(i)%model_scale(:) = 1._wp
-            patch_icpp(i)%model_translate(:) = 0._wp
-            patch_icpp(i)%model_filepath(:) = dflt_char
-            patch_icpp(i)%model_spc = num_ray
-            patch_icpp(i)%model_threshold = ray_tracing_threshold
+            patch_icpp(i)%model_id = 0
             patch_icpp(i)%x_centroid = dflt_real
             patch_icpp(i)%y_centroid = dflt_real
             patch_icpp(i)%z_centroid = dflt_real
@@ -365,7 +362,7 @@ contains
         ib = .false.
         num_ibs = dflt_int
 
-        do i = 1, num_ib_patches_max
+        do i = 1, num_ib_patches_max_namelist
             patch_ib(i)%geometry = dflt_int
             patch_ib(i)%x_centroid = dflt_real
             patch_ib(i)%y_centroid = dflt_real
@@ -374,20 +371,9 @@ contains
             patch_ib(i)%length_y = dflt_real
             patch_ib(i)%length_z = dflt_real
             patch_ib(i)%radius = dflt_real
-            patch_ib(i)%theta = dflt_real
-            patch_ib(i)%c = dflt_real
-            patch_ib(i)%t = dflt_real
-            patch_ib(i)%m = dflt_real
-            patch_ib(i)%p = dflt_real
+            patch_ib(i)%airfoil_id = 0
+            patch_ib(i)%model_id = 0
             patch_ib(i)%slip = .false.
-
-            ! Proper default values for translating STL models
-            patch_ib(i)%model_scale(:) = 1._wp
-            patch_ib(i)%model_translate(:) = 0._wp
-            patch_ib(i)%model_rotate(:) = 0._wp
-            patch_ib(i)%model_filepath(:) = dflt_char
-            patch_ib(i)%model_spc = num_ray
-            patch_ib(i)%model_threshold = ray_tracing_threshold
 
             ! Variables to handle moving immersed boundaries, defaulting to no movement
             patch_ib(i)%moving_ibm = 0
@@ -404,6 +390,22 @@ contains
             patch_ib(i)%rotation_matrix(2, 2) = 1._wp
             patch_ib(i)%rotation_matrix(3, 3) = 1._wp
             patch_ib(i)%rotation_matrix_inverse = patch_ib(i)%rotation_matrix
+        end do
+
+        do i = 1, num_ib_airfoils_max
+            ib_airfoil(i)%c = dflt_real
+            ib_airfoil(i)%p = dflt_real
+            ib_airfoil(i)%t = dflt_real
+            ib_airfoil(i)%m = dflt_real
+        end do
+
+        num_stl_models = 0
+
+        do i = 1, num_stl_models_max
+            stl_models(i)%model_filepath(:) = dflt_char
+            stl_models(i)%model_translate(:) = 0._wp
+            stl_models(i)%model_scale(:) = 1._wp
+            stl_models(i)%model_threshold = ray_tracing_threshold
         end do
 
         chem_params%gamma_method = 1
@@ -460,7 +462,7 @@ contains
         ! choice of the equations of motion
 
         ! Gamma/Pi_inf Model
-        if (model_eqns == 1) then
+        if (model_eqns == model_eqns_gamma_law) then
             ! Setting number of fluids
             num_fluids = 1
 
@@ -478,7 +480,7 @@ contains
             sys_size = eqn_idx%adv%end
 
             ! Volume Fraction Model (5-equation model)
-        else if (model_eqns == 2) then
+        else if (model_eqns == model_eqns_5eq) then
             ! Annotating structure of the state and flux vectors belonging to the system of equations defined by the selected number
             ! of spatial dimensions and the volume fraction model
             eqn_idx%cont%beg = 1
@@ -578,7 +580,7 @@ contains
             end if
 
             ! Volume Fraction Model (6-equation model)
-        else if (model_eqns == 3) then
+        else if (model_eqns == model_eqns_6eq) then
             ! Annotating structure of the state and flux vectors belonging to the system of equations defined by the selected number
             ! of spatial dimensions and the volume fraction model
             eqn_idx%cont%beg = 1
@@ -591,7 +593,7 @@ contains
             eqn_idx%int_en%beg = eqn_idx%adv%end + 1
             eqn_idx%int_en%end = eqn_idx%adv%end + num_fluids
             sys_size = eqn_idx%int_en%end
-        else if (model_eqns == 4) then
+        else if (model_eqns == model_eqns_4eq) then
             ! 4 equation model with subgrid bubbles_euler
             eqn_idx%cont%beg = 1  ! one continuity equation
             eqn_idx%cont%end = 1  ! num_fluids
@@ -645,7 +647,7 @@ contains
             end if
         end if
 
-        if (model_eqns == 2 .or. model_eqns == 3) then
+        if (model_eqns == model_eqns_5eq .or. model_eqns == model_eqns_6eq) then
             if (hypoelasticity .or. hyperelasticity) then
                 elasticity = .true.
                 eqn_idx%stress%beg = sys_size + 1
