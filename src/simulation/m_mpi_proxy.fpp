@@ -93,6 +93,7 @@ contains
             & 'bc_x%isothermal_in', 'bc_y%isothermal_in', 'bc_z%isothermal_in',        &
             & 'bc_x%isothermal_out', 'bc_y%isothermal_out', 'bc_z%isothermal_out', &
             & 'cfl_adap_dt', 'cfl_const_dt', 'cfl_dt', 'surface_tension',       &
+            & 'thermal_conduction',                                             &
             & 'shear_stress', 'bulk_stress', 'bubbles_lagrange',                &
             & 'hyperelasticity', 'down_sample', 'int_comp','fft_wrt', &
             & 'hyper_cleaning', 'ib_state_wrt']
@@ -173,7 +174,7 @@ contains
         #:endif
 
         do i = 1, num_fluids_max
-            #:for VAR in [ 'gamma','pi_inf','G','cv','qv','qvp' ]
+            #:for VAR in [ 'gamma','pi_inf','G','cv','qv','qvp','k_therm' ]
                 call MPI_BCAST(fluid_pp(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
             call MPI_BCAST(fluid_pp(i)%Re(1), 2, mpi_p, 0, MPI_COMM_WORLD, ierr)

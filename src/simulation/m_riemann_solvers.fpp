@@ -86,9 +86,8 @@ contains
     !> Dispatch to the subroutines that are utilized to compute the Riemann problem solution. For additional information please
     !! reference: 1) s_hll_riemann_solver 2) s_hllc_riemann_solver 3) s_lf_riemann_solver 4) s_hlld_riemann_solver
     subroutine s_riemann_solver(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_vf, dqL_prim_dy_vf, dqL_prim_dz_vf, &
-
-        & qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, dqR_prim_dy_vf, dqR_prim_dz_vf, qR_prim_vf, &
-            & q_prim_vf, flux_vf, flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
+                                & qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, dqR_prim_dy_vf, &
+                                & dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: qL_prim_rsx_vf, qL_prim_rsy_vf, &
              & qL_prim_rsz_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf
@@ -116,7 +115,6 @@ contains
     !! geometries. For more information please refer to: 1) s_compute_cartesian_viscous_source_flux 2)
     !! s_compute_cylindrical_viscous_source_flux
     subroutine s_compute_viscous_source_flux(velL_vf, dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, velR_vf, dvelR_dx_vf, dvelR_dy_vf, &
-
         & dvelR_dz_vf, flux_src_vf, norm_dir, ix, iy, iz)
 
         type(scalar_field), dimension(num_vels), intent(in) :: velL_vf, velR_vf, dvelL_dx_vf, dvelR_dx_vf, dvelL_dy_vf, &
@@ -138,9 +136,9 @@ contains
 
     !> HLL approximate Riemann solver, Harten et al. SIAM Review (1983)
     subroutine s_hll_riemann_solver(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_vf, dqL_prim_dy_vf, &
-
-        & dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, dqR_prim_dy_vf, &
-            & dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
+                                    & dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, &
+                                    & dqR_prim_dy_vf, dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, flux_src_vf, flux_gsrc_vf, &
+                                    & norm_dir, ix, iy, iz)
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: qL_prim_rsx_vf, qL_prim_rsy_vf, &
              & qL_prim_rsz_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf
@@ -423,11 +421,11 @@ contains
                                     pres_mag%R = 0.5_wp*(B%R(1)**2._wp + B%R(2)**2._wp + B%R(3)**2._wp)
                                 #:endif
                                 E_L = gamma_L*pres_L + pi_inf_L + 0.5_wp*rho_L*vel_L_rms + qv_L + pres_mag%L
-                                E_R = gamma_R*pres_R + pi_inf_R + 0.5_wp*rho_R*vel_R_rms + qv_R &
-                                    & + pres_mag%R  ! includes magnetic energy
+                                ! includes magnetic energy
+                                E_R = gamma_R*pres_R + pi_inf_R + 0.5_wp*rho_R*vel_R_rms + qv_R + pres_mag%R
                                 H_L = (E_L + pres_L - pres_mag%L)/rho_L
-                                H_R = (E_R + pres_R - pres_mag%R) &
-                                       & /rho_R  ! stagnation enthalpy here excludes magnetic energy (only used to find speed of sound)
+                                ! stagnation enthalpy here excludes magnetic energy (only used to find speed of sound)
+                                H_R = (E_R + pres_R - pres_mag%R)/rho_R
                             else
                                 E_L = gamma_L*pres_L + pi_inf_L + 5.e-1*rho_L*vel_L_rms + qv_L
                                 E_R = gamma_R*pres_R + pi_inf_R + 5.e-1*rho_R*vel_R_rms + qv_R
@@ -754,9 +752,8 @@ contains
                                                           & eqn_idx%psi) - qR_prim_rs${XYZ}$_vf(j + 1, k, l, &
                                                           & eqn_idx%psi)))/(s_M - s_P)
                                     else
-                                        flux_rs${XYZ}$_vf(j, k, l, &
-                                                          & eqn_idx%B%beg + norm_dir - 1) &
-                                                          & = 0._wp  ! Without hyperbolic cleaning, make sure flux of B_normal is identically zero
+                                        ! Without hyperbolic cleaning, make sure flux of B_normal is identically zero
+                                        flux_rs${XYZ}$_vf(j, k, l, eqn_idx%B%beg + norm_dir - 1) = 0._wp
                                     end if
                                 end if
                                 flux_src_rs${XYZ}$_vf(j, k, l, eqn_idx%adv%beg) = 0._wp
@@ -827,9 +824,9 @@ contains
 
     !> Lax-Friedrichs (Rusanov) approximate Riemann solver
     subroutine s_lf_riemann_solver(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_vf, dqL_prim_dy_vf, &
-
-        & dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, dqR_prim_dy_vf, &
-            & dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
+                                   & dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, &
+                                   & dqR_prim_dy_vf, dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, flux_src_vf, flux_gsrc_vf, &
+                                   & norm_dir, ix, iy, iz)
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: qL_prim_rsx_vf, qL_prim_rsy_vf, &
              & qL_prim_rsz_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf
@@ -1113,11 +1110,11 @@ contains
                                 pres_mag%L = 0.5_wp*(B%L(1)**2._wp + B%L(2)**2._wp + B%L(3)**2._wp)
                                 pres_mag%R = 0.5_wp*(B%R(1)**2._wp + B%R(2)**2._wp + B%R(3)**2._wp)
                                 E_L = gamma_L*pres_L + pi_inf_L + 0.5_wp*rho_L*vel_L_rms + qv_L + pres_mag%L
-                                E_R = gamma_R*pres_R + pi_inf_R + 0.5_wp*rho_R*vel_R_rms + qv_R &
-                                    & + pres_mag%R  ! includes magnetic energy
+                                ! includes magnetic energy
+                                E_R = gamma_R*pres_R + pi_inf_R + 0.5_wp*rho_R*vel_R_rms + qv_R + pres_mag%R
                                 H_L = (E_L + pres_L - pres_mag%L)/rho_L
-                                H_R = (E_R + pres_R - pres_mag%R) &
-                                       & /rho_R  ! stagnation enthalpy here excludes magnetic energy (only used to find speed of sound)
+                                ! stagnation enthalpy here excludes magnetic energy (only used to find speed of sound)
+                                H_R = (E_R + pres_R - pres_mag%R)/rho_R
                             else
                                 E_L = gamma_L*pres_L + pi_inf_L + 5.e-1*rho_L*vel_L_rms + qv_L
                                 E_R = gamma_R*pres_R + pi_inf_R + 5.e-1*rho_R*vel_R_rms + qv_R
@@ -1700,9 +1697,9 @@ contains
 
     !> HLLC Riemann solver with contact restoration, Toro et al. Shock Waves (1994)
     subroutine s_hllc_riemann_solver(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_vf, dqL_prim_dy_vf, &
-
-        & dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, dqR_prim_dy_vf, &
-            & dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
+                                     & dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, &
+                                     & dqR_prim_dx_vf, dqR_prim_dy_vf, dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, &
+                                     & flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: qL_prim_rsx_vf, qL_prim_rsy_vf, &
              & qL_prim_rsz_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf
@@ -3339,9 +3336,9 @@ contains
 
     !> HLLD Riemann solver for MHD, Miyoshi & Kusano JCP (2005)
     subroutine s_hlld_riemann_solver(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_vf, dqL_prim_dy_vf, &
-
-        & dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, dqR_prim_dy_vf, &
-            & dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
+                                     & dqL_prim_dz_vf, qL_prim_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, &
+                                     & dqR_prim_dx_vf, dqR_prim_dy_vf, dqR_prim_dz_vf, qR_prim_vf, q_prim_vf, flux_vf, &
+                                     & flux_src_vf, flux_gsrc_vf, norm_dir, ix, iy, iz)
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: qL_prim_rsx_vf, qL_prim_rsy_vf, &
              & qL_prim_rsz_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf
@@ -3463,8 +3460,8 @@ contains
                             E%L = gamma%L*pres%L + pi_inf%L + 0.5_wp*rho%L*vel_rms%L + qv%L + pres_mag%L
                             E%R = gamma%R*pres%R + pi_inf%R + 0.5_wp*rho%R*vel_rms%R + qv%R + pres_mag%R  ! includes magnetic energy
                             H_no_mag%L = (E%L + pres%L - pres_mag%L)/rho%L
-                            H_no_mag%R = (E%R + pres%R - pres_mag%R) &
-                                          & /rho%R  ! stagnation enthalpy here excludes magnetic energy (only used to find speed of sound)
+                            ! stagnation enthalpy here excludes magnetic energy (only used to find speed of sound)
+                            H_no_mag%R = (E%R + pres%R - pres_mag%R)/rho%R
 
                             ! (2) Compute fast wave speeds
                             call s_compute_speed_of_sound(pres%L, rho%L, gamma%L, pi_inf%L, H_no_mag%L, alpha_L, vel_rms%L, &
@@ -3674,9 +3671,8 @@ contains
 
     !> Populate the left and right Riemann state variable buffers based on boundary conditions
     subroutine s_populate_riemann_states_variables_buffers(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_vf, &
-
         & dqL_prim_dy_vf, dqL_prim_dz_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_vf, dqR_prim_dy_vf, &
-            & dqR_prim_dz_vf, norm_dir, ix, iy, iz)
+        & dqR_prim_dz_vf, norm_dir, ix, iy, iz)
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: qL_prim_rsx_vf, qL_prim_rsy_vf, &
              & qL_prim_rsz_vf, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf
@@ -3768,7 +3764,6 @@ contains
             end if
 
             if (bc_x%end == BC_RIEMANN_EXTRAP) then  ! Riemann state extrap. BC at end
-
                 $:GPU_PARALLEL_LOOP(collapse=3)
                 do i = 1, sys_size
                     do l = is3%beg, is3%end
@@ -3866,7 +3861,6 @@ contains
             end if
 
             if (bc_y%end == BC_RIEMANN_EXTRAP) then  ! Riemann state extrap. BC at end
-
                 $:GPU_PARALLEL_LOOP(collapse=3)
                 do i = 1, sys_size
                     do l = is3%beg, is3%end
@@ -3958,7 +3952,6 @@ contains
             end if
 
             if (bc_z%end == BC_RIEMANN_EXTRAP) then  ! Riemann state extrap. BC at end
-
                 $:GPU_PARALLEL_LOOP(collapse=3)
                 do i = 1, sys_size
                     do l = is3%beg, is3%end
@@ -4046,6 +4039,20 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             end if
 
+            ! Conduction-only runs allocate just the energy slot, so zero only it; when
+            ! viscous or surface tension is active their zero-fill above already covers E
+            if ((thermal_conduction .and. .not. (viscous .or. surface_tension)) .or. dummy) then
+                $:GPU_PARALLEL_LOOP(collapse=3)
+                do l = is3%beg, is3%end
+                    do k = is2%beg, is2%end
+                        do j = is1%beg, is1%end
+                            flux_src_vf(eqn_idx%E)%sf(j, k, l) = 0._wp
+                        end do
+                    end do
+                end do
+                $:END_GPU_PARALLEL_LOOP()
+            end if
+
             if (qbmm) then
                 $:GPU_PARALLEL_LOOP(collapse=4)
                 do i = 1, 4
@@ -4086,6 +4093,20 @@ contains
                                     flux_src_vf(i)%sf(k, j, l) = 0._wp
                                 end if
                             end do
+                        end do
+                    end do
+                end do
+                $:END_GPU_PARALLEL_LOOP()
+            end if
+
+            ! Conduction-only runs allocate just the energy slot, so zero only it; when
+            ! viscous or surface tension is active their zero-fill above already covers E
+            if ((thermal_conduction .and. .not. (viscous .or. surface_tension)) .or. dummy) then
+                $:GPU_PARALLEL_LOOP(collapse=3)
+                do l = is3%beg, is3%end
+                    do j = is1%beg, is1%end
+                        do k = is2%beg, is2%end
+                            flux_src_vf(eqn_idx%E)%sf(k, j, l) = 0._wp
                         end do
                     end do
                 end do
@@ -4138,6 +4159,20 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             end if
 
+            ! Conduction-only runs allocate just the energy slot, so zero only it; when
+            ! viscous or surface tension is active their zero-fill above already covers E
+            if ((thermal_conduction .and. .not. (viscous .or. surface_tension)) .or. dummy) then
+                $:GPU_PARALLEL_LOOP(collapse=3)
+                do j = is1%beg, is1%end
+                    do k = is2%beg, is2%end
+                        do l = is3%beg, is3%end
+                            flux_src_vf(eqn_idx%E)%sf(l, k, j) = 0._wp
+                        end do
+                    end do
+                end do
+                $:END_GPU_PARALLEL_LOOP()
+            end if
+
             if (qbmm) then
                 $:GPU_PARALLEL_LOOP(collapse=4)
                 do i = 1, 4
@@ -4157,7 +4192,6 @@ contains
 
     !> Compute cylindrical viscous source flux contributions for momentum and energy
     subroutine s_compute_cylindrical_viscous_source_flux(velL_vf, dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, velR_vf, dvelR_dx_vf, &
-
         & dvelR_dy_vf, dvelR_dz_vf, flux_src_vf, norm_dir, ix, iy, iz)
 
         type(scalar_field), dimension(num_dims), intent(in)    :: velL_vf, velR_vf
@@ -4329,7 +4363,6 @@ contains
 
     !> Compute Cartesian viscous source flux contributions for momentum and energy
     subroutine s_compute_cartesian_viscous_source_flux(dvelL_dx_vf, dvelL_dy_vf, dvelL_dz_vf, dvelR_dx_vf, dvelR_dy_vf, &
-
         & dvelR_dz_vf, flux_src_vf, norm_dir)
 
         ! Arguments

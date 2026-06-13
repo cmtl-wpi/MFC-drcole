@@ -500,6 +500,7 @@ contains
             fluid_pp(i)%qv = 0._wp
             fluid_pp(i)%qvp = 0._wp
             fluid_pp(i)%G = 0._wp
+            fluid_pp(i)%k_therm = 0._wp
         end do
 
         Bx0 = dflt_real

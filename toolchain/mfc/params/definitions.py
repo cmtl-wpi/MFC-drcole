@@ -79,6 +79,7 @@ _ATTR_DESCS = {
     "qvp": "Heat of formation prime",
     "G": "Shear modulus",
     "Re": "Reynolds number",
+    "k_therm": "Thermal conductivity",
     "mul0": "Reference viscosity",
     "ss": "Surface tension",
     "pv": "Vapor pressure",
@@ -222,6 +223,7 @@ _SIMPLE_DESCS = {
     "qbmm": "Enable QBMM",
     "chemistry": "Enable chemistry",
     "surface_tension": "Enable surface tension",
+    "thermal_conduction": "Enable bulk thermal conduction",
     "hypoelasticity": "Enable hypoelastic model",
     "hyperelasticity": "Enable hyperelastic model",
     "relativity": "Enable special relativity",
@@ -450,6 +452,7 @@ TAG_DISPLAY_NAMES = {
     "viscosity": "Viscosity",
     "elasticity": "Elasticity",
     "surface_tension": "Surface tension",
+    "thermal_conduction": "Thermal conduction",
     "acoustic": "Acoustic",
     "ib": "Immersed boundary",
     "probes": "Probe/integral",
@@ -703,6 +706,11 @@ DEPENDENCIES = {
             "recommends": ["fluid_pp(1)%Re(1)"],
         }
     },
+    "thermal_conduction": {
+        "when_true": {
+            "recommends": ["fluid_pp(1)%k_therm"],
+        }
+    },
     "polydisperse": {
         "when_true": {
             "requires": ["nb", "poly_sigma"],
@@ -914,6 +922,9 @@ def _load():
     _r("sigma_model", INT, {"surface_tension"})
     _r("sigma_T_ref", REAL, {"surface_tension"})
     _r("sigma_dTdT", REAL, {"surface_tension"})
+
+    # Thermal conduction
+    _r("thermal_conduction", LOG, {"thermal_conduction"})
 
     # Chemistry
     _r("cantera_file", STR, {"chemistry"})
@@ -1151,6 +1162,7 @@ def _load():
         _r(f"{px}G", REAL, {"elasticity"}, math=r"\f$G_k\f$")
         _r(f"{px}Re(1)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (shear)")
         _r(f"{px}Re(2)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (bulk)")
+        _r(f"{px}k_therm", REAL, {"thermal_conduction"}, math=r"\f$k_k\f$")
 
     # bub_pp (bubble properties)
     for a, sym in [

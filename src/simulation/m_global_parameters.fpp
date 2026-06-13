@@ -444,8 +444,14 @@ module m_global_parameters
     $:GPU_DECLARE(create='[sigma, surface_tension, sigma_model, sigma_T_ref, sigma_dTdT]')
     !> @}
 
+    logical :: thermal_conduction  !< Bulk Fourier heat conduction -k*grad(T) in the energy equation
+    $:GPU_DECLARE(create='[thermal_conduction]')
+
     real(wp), allocatable, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps
     $:GPU_DECLARE(create='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps]')
+
+    real(wp), allocatable, dimension(:) :: kappas  !< Per-fluid thermal conductivities on the device
+    $:GPU_DECLARE(create='[kappas]')
 
     real(wp)                                    :: mytime     !< Current simulation time
     real(wp)                                    :: finaltime  !< Final simulation time
@@ -609,6 +615,7 @@ contains
             fluid_pp(i)%qvp = 0._wp
             fluid_pp(i)%Re(:) = dflt_real
             fluid_pp(i)%G = 0._wp
+            fluid_pp(i)%k_therm = 0._wp
         end do
 
         ! Subgrid bubble parameters
@@ -688,6 +695,7 @@ contains
         surface_tension = .false.
         sigma_model = 0
         sigma_T_ref = dflt_real
+        thermal_conduction = .false.
         sigma_dTdT = 0._wp
 
         bodyForces = .false.

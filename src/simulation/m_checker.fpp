@@ -36,9 +36,38 @@ contains
 
         call s_check_inputs_time_stepping
 
+        call s_check_inputs_thermal_conduction
+
         @:PROHIBIT(ib_state_wrt .and. .not. ib, "ib_state_wrt requires ib to be enabled")
 
     end subroutine s_check_inputs
+
+    !> Checks constraints on bulk thermal conduction parameters
+    impure subroutine s_check_inputs_thermal_conduction
+
+        integer :: i
+
+        if (thermal_conduction) then
+            @:PROHIBIT(chemistry, "thermal_conduction is not supported with chemistry; use chem_params%diffusion instead")
+            @:PROHIBIT(igr, "thermal_conduction is not supported with igr")
+            @:PROHIBIT(cyl_coord, "thermal_conduction is not supported with cyl_coord")
+            @:PROHIBIT(bubbles_euler .or. bubbles_lagrange, "thermal_conduction is not supported with bubble models")
+            @:PROHIBIT(hypoelasticity .or. hyperelasticity, "thermal_conduction is not supported with elasticity")
+            @:PROHIBIT(mhd, "thermal_conduction is not supported with mhd")
+            @:PROHIBIT(relax, "thermal_conduction is not supported with relax (phase change)")
+            @:PROHIBIT(ib, "thermal_conduction is not supported with immersed boundaries")
+            @:PROHIBIT(model_eqns == 1 .or. model_eqns == 4, &
+                       & "thermal_conduction requires model_eqns = 2 or 3 (mixture stiffened-gas temperature)")
+
+            do i = 1, num_fluids
+                @:PROHIBIT(fluid_pp(i)%cv <= 0._wp, &
+                           & "thermal_conduction requires fluid_pp(i)%cv > 0 for every fluid to evaluate temperature")
+                @:PROHIBIT(fluid_pp(i)%k_therm <= 0._wp, &
+                           & "thermal_conduction requires fluid_pp(i)%k_therm > 0 for every fluid (harmonic mixture closure)")
+            end do
+        end if
+
+    end subroutine s_check_inputs_thermal_conduction
 
     !> Checks constraints on compiler options
     impure subroutine s_check_inputs_compilers

@@ -359,6 +359,13 @@ contains
 
             $:GPU_UPDATE(device='[Res_vc, Re_idx, Re_size]')
         end if
+
+        ! Always allocated so the GPU device mapping is valid when thermal_conduction is off
+        @:ALLOCATE(kappas(1:num_fluids))
+        do i = 1, num_fluids
+            kappas(i) = fluid_pp(i)%k_therm
+        end do
+        $:GPU_UPDATE(device='[kappas]')
 #endif
 
         if (bubbles_euler) then
@@ -1232,6 +1239,7 @@ contains
 
 #ifdef MFC_SIMULATION
         @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
+        @:DEALLOCATE(kappas)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
         end if

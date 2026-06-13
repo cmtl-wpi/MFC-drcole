@@ -252,6 +252,7 @@ _FALLBACK_PARAMS = {
         "teno",
         "teno_CT",
         "thermal",
+        "thermal_conduction",
         "time_stepper",
         "viscous",
         "w_x",

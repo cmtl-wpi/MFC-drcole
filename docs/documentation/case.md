@@ -386,6 +386,7 @@ Additional details on this specification can be found in [NACA airfoil](https://
 | `qvp`  ** | Real   | Stiffened-gas parameter $q'$ of fluid.         |
 | `sigma`   | Real   | Surface tension coefficient                    |
 | `G`       | Real   | Shear modulus of solid.                        |
+| `k_therm` | Real   | Thermal conductivity of fluid (used when `thermal_conduction` is on). |
 
 Fluid material's parameters. All parameters except for sigma should be prepended with `fluid_pp(i)` where $i$ is the fluid index.
 
@@ -472,6 +473,7 @@ See @ref equations "Equations" for the mathematical models these parameters cont
 | `sigma_model`              | Integer | Surface tension model: 0 constant, 1 linear in temperature |
 | `sigma_T_ref`              | Real    | Reference temperature for the linear sigma(T) closure |
 | `sigma_dTdT`               | Real    | dsigma/dT slope for the linear sigma(T) closure |
+| `thermal_conduction`       | Logical | Activate bulk Fourier heat conduction in the energy equation |
 | `viscous`                  | Logical | Activate viscosity |
 | `hypoelasticity`           | Logical | Activate hypoelasticity* |
 | `pre_stress`               | Logical | Enable pre-stress initialization for hypoelasticity |
@@ -573,6 +575,8 @@ This option requires `weno_Re_flux` to be true because cell boundary values are 
 - `surface_tension` activates surface tension when set to ``'T'``. Requires `sigma` to be set and `num_fluids`. The color function in each patch should be assigned such that `patch_icpp(i)%%cf_val = 1` in patches where `patch_icpp(i)%%alpha = 1 - eps` and `patch_icpp(i)%%cf_val = 0` in patches where `patch_icpp(i)%%alpha = eps`.
 
 - `sigma_model` selects the surface tension closure. With `sigma_model = 0` (default) the coefficient is the constant `sigma`. With `sigma_model = 1` the thermal Marangoni closure \f$\sigma(T) = \sigma + (\mathrm{d}\sigma/\mathrm{d}T)\,(T - T_\mathrm{ref})\f$ is used, where the slope `sigma_dTdT` (typically negative) and the reference temperature `sigma_T_ref` must be set. Temperature is recovered from the stiffened-gas equation of state, so each fluid's `cv` must be set to a positive value. The tangential Marangoni force emerges directly from the spatial variation of the capillary stress tensor; no additional source term is introduced.
+
+- `thermal_conduction` activates a bulk Fourier heat flux \f$-k \nabla T\f$ in the energy equation for non-reacting flows, independent of the chemistry module's `chem_params%%diffusion` path. The cell conductivity follows the harmonic mixture closure \f$1/k = \sum_i \alpha_i / k_i\f$ over the per-fluid constants `fluid_pp(i)%%k_therm` (all of which must be positive), and temperature is recovered from the mixture stiffened-gas equation of state, so every fluid's `cv` must be positive and `model_eqns` must be 2 or 3. The diffusion term is explicit: with a fixed `dt`, ensure \f$\Delta t < \Delta x^2 \rho c_p / (2 d\, k)\f$ (with \f$d\f$ the number of dimensions); the CFL-based time stepper (`cfl_adap_dt`) accounts for the conductive limit automatically and the run-time information file reports it in the VCFL column. By default every boundary is adiabatic (zero temperature gradient). Setting `bc_x%%isothermal_in`/`bc_x%%isothermal_out` (and the `bc_y`/`bc_z` analogues) with `bc_x%%Twall_in`/`bc_x%%Twall_out` imposes a Dirichlet wall (or far-field) temperature at that boundary, which is required to sustain an imposed temperature gradient across an open domain; unlike the chemistry path, this works for any boundary type, not only slip/no-slip walls.
 
 - `viscous` activates viscosity when set to ``'T'``. Requires `Re(1)` and `Re(2)` to be set.
 
