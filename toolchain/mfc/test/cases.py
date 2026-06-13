@@ -419,6 +419,16 @@ def list_cases() -> typing.List[TestCaseBuilder]:
 
                 stack.pop()
 
+                # Bulk thermal conduction: -k*grad(T) energy flux without chemistry. The
+                # bare leaf exercises the conduction-only E-slot path; the viscous leaf
+                # exercises the shared E slot (viscous zero-fill + conduction accumulation
+                # + generic divergence, i.e. the double-add guard). k_therm/dt keep the
+                # diffusion number below ~0.2 on the tightest (1D, m=299) grid.
+                stack.push("Thermal Conduction", {"thermal_conduction": "T", "fluid_pp(1)%k_therm": 0.5, "fluid_pp(1)%cv": 717.5})
+                cases.append(define_case_d(stack, "", {}))
+                cases.append(define_case_d(stack, "viscous=T", {"viscous": "T", "fluid_pp(1)%Re(1)": 1000.0}))
+                stack.pop()
+
             if num_fluids == 2:
                 stack.push(
                     "Viscous",
@@ -439,6 +449,17 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                     stack.pop()
 
                 stack.pop()
+
+                # Two-fluid bulk thermal conduction with distinct conductivities,
+                # exercising the harmonic mixture closure 1/k = sum(alpha_i/k_i)
+                # across the material interface
+                stack.push(
+                    "Thermal Conduction",
+                    {"thermal_conduction": "T", "fluid_pp(1)%k_therm": 0.5, "fluid_pp(2)%k_therm": 0.1, "fluid_pp(1)%cv": 1816, "fluid_pp(2)%cv": 717.5},
+                )
+                cases.append(define_case_d(stack, "", {}))
+                stack.pop()
+
                 stack.pop()
 
             stack.pop()
@@ -1561,6 +1582,7 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                 "2D_ibm_stl_MFCCharacter",
                 "1D_qbmm",
                 "2D_Thermal_Flatplate",  # formatted I/O field overflow on gfortran 12
+                "2D_thermocapillary_migration",  # validation sweep case (long runtime; driven by its run_validation.py)
             ]
             if path in casesToSkip:
                 continue
@@ -1912,6 +1934,28 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                 "patch_icpp(1)%vel(1)": 1.0,
                 "patch_icpp(2)%vel(1)": 1.0,
                 "patch_icpp(3)%vel(1)": 1.0,
+            },
+        )
+        cases.append(define_case_d(stack, "", {}, ppn=2))
+        stack.pop()
+
+        # Thermal conduction with 2 MPI ranks: the conduction face flux at rank
+        # boundaries is built from ghost-cell temperatures, exactly the cross-rank
+        # stencil this section exists to pin down. The patch2/patch3 boundary is
+        # moved to z = 0.5 so the temperature jump (T3/T2 = 0.8 from the BASE
+        # pres/alpha_rho values) sits exactly on the face the two ranks share and
+        # the cross-rank flux is nonzero from the first step.
+        stack.push(
+            "MPI Consistency -> 3D -> Thermal Conduction",
+            {
+                **base_3d,
+                "thermal_conduction": "T",
+                "fluid_pp(1)%k_therm": 0.5,
+                "fluid_pp(1)%cv": 717.5,
+                "patch_icpp(2)%z_centroid": 0.3,
+                "patch_icpp(2)%length_z": 0.4,
+                "patch_icpp(3)%z_centroid": 0.75,
+                "patch_icpp(3)%length_z": 0.5,
             },
         )
         cases.append(define_case_d(stack, "", {}, ppn=2))
