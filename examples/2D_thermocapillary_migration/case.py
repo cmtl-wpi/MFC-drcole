@@ -1,123 +1,190 @@
 #!/usr/bin/env python3
-# 2D thermocapillary (Marangoni) droplet migration -- validation of the temperature-dependent
-# surface tension closure sigma(T) (sigma_model = 1).
+# Thermocapillary droplet migration -- MFC validation against Samareh, Mostaghimi & Moreau,
+# "Thermocapillary migration of a deformable droplet", Int. J. Heat Mass Transfer 73 (2014) 616-626.
 #
-# PHYSICS
-# A circular "droplet" (a smooth blob of the diffuse-interface color function c) sits in a
-# quiescent, mechanically-equilibrated medium carrying a linear temperature field T(x) = T0 + |gradT|*x.
-# The surface tension decreases with temperature,
+# WHAT THIS REPRODUCES
+# Samareh's first validation case (their Section 4.1.1, "Motion of a drop in the limit of zero
+# Marangoni number"). A neutrally-buoyant drop of diameter D sits in an imposed LINEAR temperature
+# field. The surface tension falls with temperature,
 #       sigma(T) = sigma0 + (dsigma/dT) * (T - T_ref),   dsigma/dT < 0,
-# so sigma is lower on the hot (+x) side of the interface. The resulting tangential (Marangoni)
-# stress drives interfacial fluid from the hot side toward the cold side, and by momentum balance
-# the droplet migrates toward the HOT side (+x). This force emerges automatically from the spatial
-# variation of the capillary stress tensor -- no extra source term is added.
+# so the hot side of the interface has lower sigma. The resulting tangential (Marangoni) stress
+# drags interfacial fluid hot->cold and, by reaction, the drop migrates toward the HOT side.
+# In the zero-gravity, creeping-flow, ZERO-Marangoni-number limit Young, Goldstein & Block (1959)
+# [Samareh Eq. 29] give the terminal speed
+#       v_YGB = |sigma_T * gradT| * D / (6*mu_b + 9*mu_d).
+# For equal viscosities (mu_d = mu_b = mu) this is v_YGB = (2/15) * |sigma_T| * gradT * (D/2) / mu.
 #
-# REFERENCE (Young, Goldstein & Block 1959): in the zero-gravity, low-Reynolds (Stokes),
-# low-Marangoni limit the terminal migration speed is
-#       U_YGB = 2 / ((2 + k*)(2 + 3*mu*)) * ( -dsigma/dT * |gradT| * a / mu_c ),
-# with a = droplet radius, mu_c = continuous-phase viscosity, k* = k_drop/k_cont,
-# mu* = mu_drop/mu_cont. Here both phases are identical (mu* = 1) and the imposed temperature
-# field is undistorted (the k* = 1 / uniform-conductivity limit), so the prefactor is 2/15:
-#       U_YGB = (2/15) * (-dsigma/dT) * |gradT| * a / mu_c.
-# With identical inside/outside properties the two-phase droplet is dynamically equivalent to this
-# color-function blob, which keeps the initial condition clean (single uniform-composition patch).
+# HOW MFC REALIZES THE "Ma = 0" PREMISE (updated: bulk conduction now available)
+# Samareh's Test Case 1 holds the temperature field INVARIANT (their word): both fluids get an
+# effectively INFINITE thermal diffusivity, so the imposed linear T never responds to the flow
+# (Ma = 0). MFC now provides bulk Fourier conduction (the thermal_conduction feature: an explicit
+# -k grad(T) energy flux with the harmonic mixture closure 1/k = sum(alpha_i/k_i), Samareh Eq. 8),
+# selected here through the thermal Marangoni number knob SAMAREH_MA = U_r*r/alpha_T:
+#   SAMAREH_MA = 0    : legacy frozen-T limit (alpha = 0, thermal Peclet -> infinity). The linear
+#                       T is an initial condition that the flow slowly advects/distorts; ratios
+#                       are only meaningful in the early quasi-steady window, and the 3D runs
+#                       drift unboundedly past v_YGB at long times (README Sec. "Long-time
+#                       behaviour", CONDUCTION_SCOPE.md).
+#   SAMAREH_MA > 0    : finite-Ma physics. Conduction restores the imposed gradient on the
+#                       timescale r^2/alpha = Ma*tau*(mu/(rho*U_r*r)); at the default Ma = 0.3
+#                       that is roughly the viscous time, so the migration velocity has a true
+#                       steady state to converge to (the frozen-T runaway disappears). Emulating
+#                       the invariant-T premise outright (Ma -> 0, alpha -> inf) is the EXPENSIVE
+#                       direction (explicit diffusion dt ~ Ma) -- see CONDUCTION_SCOPE.md Part I.
+# The Ma = 0 anchors below remain exact only in the invariant-T limit; at Ma = 0.3 the measured
+# ratio sits slightly below them (the gradient is mildly distorted near the interface).
 #
-# IMPORTANT CAVEAT (no bulk conduction): MFC has no Fourier heat conduction in the bulk energy
-# equation, so the imposed linear T is FROZEN as an initial condition and is slowly advected/
-# distorted by the developing flow. This setup therefore validates the Marangoni STRESS COUPLING
-# (the new physics) in the quasi-steady window: measure the droplet's migration velocity on the
-# plateau it reaches after ~a few viscous times tau = rho*a^2/mu and before T advects appreciably
-# (low Peclet). It is not a full conjugate-conduction thermocapillary validation.
+# SAMAREH PARAMETERS (their Sec. 4.1.1) AND THE ONE DEVIATION
+#   D = 1, box 5D wide x 7.5D long (3D: 5D x 5D x 7.5D), mu_d = mu_b = 0.1, sigma0 = 0.1,
+#   sigma_T = dsigma/dT = -0.1, |gradT| = 0.1333 (= 2/15)  ->  v_YGB = 8.889e-3.
+# These are matched exactly EXCEPT the density: Samareh use rho_d = rho_b = 0.2, while here
+# rho(drop) = 1.0 (set by the EOS realization below). v_YGB and the terminal ratio are
+# rho-independent in creeping flow, but the viscous time tau = rho*r^2/mu is 5x longer, so time
+# axes are NOT comparable to the paper's. The compressible-EOS knobs (pi_inf, cv, p0) are
+# MFC-specific, chosen for a stable low-Mach state. The migration axis is +x (the long, 7.5D
+# axis); with no gravity the orientation is arbitrary, and an x-gradient keeps measure.py simple.
 #
-# MEASUREMENT: track the color-function (c = 0.5) centroid x-position over time (cf_wrt = T),
-# finite-difference it for the migration velocity, and compare the quasi-steady plateau to U_YGB.
+# GEOMETRY MODES (the validation needs both)
+#   default          : drop CENTERED, OPEN (-3) boundaries -> approximates the UNBOUNDED domain;
+#                      the 2D anchor is the unbounded-cylinder analytic 15/16*v_YGB (README).
+#                      measure.py subtracts the small open-box return drift.
+#   SAMAREH_WALL=1   : Samareh's actual Test Case 1 geometry -- SLIP (-2) walls on ALL boundaries,
+#                      drop 1.5D from the cold (x.beg) wall -> compares against THEIR ~0.8 (2D).
+#                      The closed box defines the rest frame (lab-frame velocity, no drift corr.).
 #
-# STARTUP-STABILITY NOTE (read before running):
-# The case validates and pre_process initializes it cleanly, but the explicit-compressible
-# simulation currently trips the ICFL>1 (infinite sound speed) guard at ~step 2. This was traced
-# to the *initial condition*, NOT the sigma(T) implementation: a control run with sigma_model = 0
-# (constant sigma) -- and even with the surface-tension force set to ~0 -- blows up identically,
-# and it is independent of model_eqns (2 vs 3), reconstruction (WENO5 vs MUSCL+int_comp),
-# mpp_lim, and boundary type (-2/-3/-6). The common trigger is the analytic density gradient
-# rho(x) = (p0+p_inf)/((gam-1)*cv*T(x)) used to impose T(x) at uniform pressure: although a density
-# gradient at uniform pressure with u = 0 is a continuum equilibrium, this discrete initialization
-# is not reproducing a consistent (p, rho, E) static state here. To stabilize before production:
-#   - shrink the imposed density variation (raise T0 so rho varies by <~2% across the domain while
-#     keeping dsigma/dT and |gradT|, hence U_YGB, fixed), and/or
-#   - initialize from a relaxed/quiescent restart, or impose T via a balanced body force, and/or
-#   - first run the simpler Test B (flat interface, imposed linear T, measure the tangential force)
-#     to verify the Marangoni coupling before attempting full migration.
-# The sigma(T) closure itself is exercised and verified by tests/DA1AF83D and tests/BD3DF323.
+# PARAMETERIZATION (env vars, so one build serves the whole validation sweep)
+#   SAMAREH_DIM   : 2 or 3        (default 2)   -- 2D circle / 3D sphere
+#   SAMAREH_NX    : cells per box WIDTH (the 5D short axis; Samareh used 64,128,256)  (default 128)
+#   SAMAREH_DSDT  : dsigma/dT slope (default -0.1 = Samareh)  -- the Marangoni-strength sweep knob
+#   SAMAREH_TAU   : run length in viscous times tau = rho*r^2/mu (default 3)
+#   SAMAREH_WALL  : 1 = Samareh slip-wall geometry, 0 = open/centered (default 0)
+# The analytic density IC depends only on (T0, gradT), which are FIXED across the sweep, so its
+# compiled-in Fortran never changes: build once, then run every variant with --no-build.
+#
+# GOTCHA (analytic-IC parser): MFC expands a bare `e` to Euler's number -- even inside a literal
+# like 1e-9. Keep `e`-notation OUT of every analytic patch string (see rho_expr below).
 
 import json
+import os
 
-# -- Geometry --
-a = 0.5  # droplet (color-blob) radius
-L = 4.0  # square domain side; droplet centered at the origin
-Nx = 99
-Ny = 99
-w = 0.08  # diffuse color-interface half-width (~2 cells) for a well-resolved gradient
+# -- Variant selection (env vars; defaults = the 2D headline case at Samareh's medium grid) --
+dim = int(os.environ.get("SAMAREH_DIM", "2"))  # 2 or 3
+width_cells = int(os.environ.get("SAMAREH_NX", "128"))  # cells across the 5D box width
+dsigma_dT = float(os.environ.get("SAMAREH_DSDT", "-0.1"))  # dsigma/dT (Samareh: -0.1)
+n_tau = float(os.environ.get("SAMAREH_TAU", "3"))  # run length in viscous times tau (default 3)
+wall = os.environ.get("SAMAREH_WALL", "0") == "1"  # Samareh slip-wall geometry vs open/centered
+# Thermal Marangoni number Ma = U_r*r/alpha_T selecting the bulk-conduction strength
+# (thermal_conduction feature, k* = 1). Ma = 0 (DEFAULT) disables conduction -> the validated
+# frozen-T sigma(T) mode. Ma > 0 enables bulk conduction with a Dirichlet far-field temperature
+# BC. CAVEAT: the conduction flux + BC are verified correct in isolation (see
+# verify_1d_conduction.py: a static linear-T state stays static to ~3e-8), but on THIS example's
+# density-gradient-imposed temperature the conduction couples with the moving droplet to reverse
+# the apparent migration in 2D (correct toward hot for ~0.5 tau, then back). The density-proxy
+# temperature makes this a poor conduction-validation vehicle; conduction mode is exploratory.
+# The 3D OPEN box without the BC does tame the frozen-T runaway (run with SAMAREH_MA>0, SAMAREH_DIM=3
+# and remove the isothermal block below to reproduce). See CONDUCTION_SCOPE.md.
+Ma_th = float(os.environ.get("SAMAREH_MA", "0"))
+assert dim in (2, 3), "SAMAREH_DIM must be 2 or 3"
+assert Ma_th >= 0, "SAMAREH_MA must be >= 0 (0 disables conduction)"
 
-eps = 1.0e-9  # trace volume fraction of the second (identical) phase
+# -- Geometry (Samareh Sec. 4.1.1: D=1 drop, 5D wide x 7.5D long box) --
+D = 1.0  # droplet diameter
+r = D / 2.0  # droplet radius = 0.5
+W = 5.0 * D  # short-axis extent (box width), 2.5D clearance each side (= Samareh)
+Lx = 7.5 * D  # long-axis extent (the gradient / migration axis, +x)
+x_drop = (-Lx / 2 + 1.5 * D) if wall else 0.0  # Samareh: drop 1.5D from the cold wall; open: centered
+bc = -2 if wall else -3  # slip (reflective) walls for the Samareh geometry, else open (extrapolation)
 
-# -- Equation of state (identical stiffened-gas fluids: gamma = 2) --
-# The background pressure is kept well above the Laplace jump sigma/a so that the (uniform-pressure)
-# initial condition is only mildly out of capillary equilibrium: sigma/a ~ 2 << p0 + p_inf = 125,
-# giving an acoustic density perturbation rho'/rho ~ (sigma/a)/(rho c^2) < 1% (stable, low Mach).
+dx = W / width_cells  # isotropic cell size set by the box-width resolution
+long_cells = round(Lx / dx)  # cells along the 7.5D migration axis (= 1.5*width_cells)
+m = long_cells - 1  # MFC index = cells - 1
+n = width_cells - 1
+p = (width_cells - 1) if dim == 3 else 0
+
+# Diffuse color interface ~2 cells wide at every resolution (sharp-interface limit as dx->0).
+# smooth_coeff = dx/w with w = 2*dx  ->  smooth_coeff = 0.5 (constant), per the smoothing kernel
+# eta = 0.5*(1 - tanh((smooth_coeff/min(dx..))*(|r_vec| - radius))).
+cf_smooth_coeff = 0.5
+
+# -- Equation of state (two IDENTICAL stiffened-gas fluids, gamma = 2; mu* = 1, k* = 1) --
+# Background pressure kept well above the Laplace jump sigma0/r = 0.2 so the uniform-pressure IC is
+# only mildly out of capillary equilibrium (low-Mach, stable). The flow is deeply incompressible
+# (Mach ~ v_YGB/c0 ~ 1e-3), so the sound speed -- set by (p_inf, cv, p0) -- affects only the acoustic
+# CFL, NOT v_YGB or the migration ratio. 3D is acoustically stiff and expensive, so it uses a SOFTER
+# stiffened gas (lower c0 ~ 5 -> ~3x larger dt -> ~3x fewer steps). rho_coeff (=10) and T0 (=10) are
+# held fixed in both, so the analytic density IC is byte-identical (no recompile between 2D and 3D)
+# and the capillary perturbation stays small (rho'/rho = (2*sigma0/r)/(rho*c0^2) ~ 1.6% in 3D).
 gam = 2.0
-p_inf = 100.0
-cv = 12.5  # chosen so rho ~ 1 at the reference temperature (=> rho(x) = 10/(10 + x))
-p0 = 25.0  # uniform background pressure (mechanical equilibrium)
+if dim == 3:
+    p_inf, p0, cv = 10.0, 2.5, 1.25  # c0 ~ 5.0  (softer; same rho_coeff=10)
+else:
+    p_inf, p0, cv = 100.0, 25.0, 12.5  # c0 ~ 15.8 (the proven 2D example values)
+mu = 0.1  # dynamic viscosity of both phases (Samareh: 0.1); MFC takes Re = 1/mu
 
-# -- Imposed linear temperature field T(x) = T0 + gradT * x --
-T0 = 10.0  # temperature at the droplet center (x = 0)
-gradT = 1.0  # temperature gradient magnitude (in +x, toward the hot side)
+# -- Imposed linear temperature field T(x) = T0 + gradT*x (centered on the drop at x=0) --
+# Stiffened-gas EOS at uniform pressure p0:  T = (p0 + p_inf)/((gam-1)*rho*cv)
+#   => rho(x) = (p0 + p_inf)/((gam-1)*cv*T(x)) = rho_coeff / (T0 + gradT*x).
+# T0 = 10 keeps T (hence rho and sigma(T)) comfortably positive across the domain.
+T0 = 10.0  # temperature at the domain center (x = 0)
+gradT = 2.0 / 15.0  # |dT/dx| = 0.13333, Samareh's imposed gradient
+sigma0 = 0.1  # surface tension at T_ref (Samareh)
+T_ref = T0 + gradT * x_drop  # sigma = sigma0 AT THE DROP (drop sits at x_drop; = T0 in open mode)
+rho_coeff = (p0 + p_inf) / ((gam - 1.0) * cv)  # = 10.0 ; rho(center) = rho_coeff/T0 = 1.0
 
-# -- sigma(T) closure --
-sigma0 = 1.0  # reference surface tension at T_ref
-T_ref = T0  # reference temperature for the closure
-dsigma_dT = -0.05  # dsigma/dT (negative: hotter -> lower sigma)
+eps = 1.0e-9  # trace volume fraction of the (identical) second phase
+# Precompute (1-eps)*rho_coeff as a plain decimal: embedding eps=1e-9 in the analytic string would
+# render "1e-09" and MFC would expand the `e` to Euler's number, corrupting rho to a NEGATIVE value.
+rho_num = (1.0 - eps) * rho_coeff  # = 9.999999990
+GRAD = "x"  # gradient / migration axis
+rho_expr = f"{rho_num:.9f}/({T0} + {gradT:.9f}*{GRAD})"  # ~ 10.0/(10.0 + 0.133333333*x)
 
-# -- Viscosity (mu* = 1) --
-mu = 0.1  # dynamic viscosity of both phases; MFC takes Re = 1/mu
+# -- Young-Goldstein-Block terminal speed (mu* = 1, k* = 1) and the diagnostic non-dim numbers --
+v_YGB = (2.0 / 15.0) * (-dsigma_dT) * gradT * r / mu  # = 8.88e-3 at dsigma_dT = -0.1
+c0 = (gam * (p0 + p_inf)) ** 0.5  # reference sound speed: ~15.8 (2D) / ~5.0 (3D, softer EOS)
+tau = (rho_coeff / T0) * r**2 / mu  # viscous time rho*r^2/mu = 2.5
 
-# Density that reproduces T(x) exactly from the stiffened-gas EOS at uniform pressure p0:
-#   T = (p0 + p_inf) / ((gam - 1) * rho * cv)  =>  rho(x) = (p0 + p_inf) / ((gam - 1)*cv*T(x))
-# With the chosen constants this is rho(x) = 10 / (10 + x). A single uniform-composition patch
-# carries this analytic density consistently (no smoothing of partial densities), and the droplet
-# is defined entirely by the smooth color function below.
-rho_coeff = (p0 + p_inf) / ((gam - 1.0) * cv)  # = 10.0
-rho_expr = f"(1.0 - {eps})*{rho_coeff}/({T0} + {gradT}*x)"  # ~ 10.0/(10.0 + x)
-# Smooth color blob: c ~ 1 inside r < a, ~ 0 outside, with a tanh interface of half-width w.
-cf_expr = f"0.5*(1.0 - tanh((sqrt(x**2 + y**2) - {a})/{w}))"
+# -- Bulk thermal conduction (k* = 1): alpha_T from the requested thermal Marangoni number --
+# U_r = |sigma_T|*gradT*r/mu is the Marangoni interfacial velocity scale; alpha_T = U_r*r/Ma_th.
+# k follows from alpha_T = k/(rho*cv*gam) (stiffened-gas cp = gam*cv) at the drop-center density
+# rho_ref = rho_coeff/T0 = 1. Both fluids get the same k (the YGB k* = 1 limit).
+if Ma_th > 0:
+    U_r = (-dsigma_dT) * gradT * r / mu
+    alpha_T = U_r * r / Ma_th
+    k_therm = alpha_T * (rho_coeff / T0) * cv * gam
 
-# Expected YGB terminal migration velocity (mu* = 1, k* = 1):
-U_YGB = (2.0 / 15.0) * (-dsigma_dT) * gradT * a / mu  # ~ 0.0333
-c0 = (gam * (p0 + p_inf)) ** 0.5  # reference sound speed ~ 15.8
-# Re = rho*U*a/mu ~ 0.17, Ca = mu*U/sigma0 ~ 0.0033, Ma = U/c0 ~ 0.0021 (Stokes / low-Ma / low-Ca)
-
-# -- Time stepping (acoustic CFL ~ 0.13; run ~3 viscous times tau = rho*a^2/mu = 2.5 to reach
-#    the quasi-steady migration plateau, after the brief acoustic capillary-relaxation transient) --
-dx = L / (Nx + 1)
-mydt = 3.0e-4
+# -- Time stepping: acoustic-CFL limited (Ma ~ U/c0 ~ 1e-3, so cost is set by step count) --
+# dt = ICFL*dx/c0 with ICFL = 0.40 (RK3+WENO5 stable; matches the proven 2D example's dt ~ 0.025*dx
+# at c0 ~ 15.8). The softer 3D EOS (c0 ~ 5) automatically yields ~3x larger dt here.
+# With conduction on, the explicit diffusion number is additionally capped at 0.35
+# (dt <= 0.35*dx^2/(2*dim*alpha_T)). At the default Ma_th = 0.3 the cap is slack on the
+# coarse 2D grids but binds ~1.6x on 2D_w256 and ~2-3x on the 3D grids (diffusion dt
+# scales with dx^2 while the acoustic dt scales with dx) -- the modest price of finite-Ma
+# physics; emulating Ma -> 0 outright would cost another order of magnitude.
+# Run 3 viscous times tau to reach the quasi-steady migration plateau.
+mydt = 0.40 * dx / c0
+if Ma_th > 0:
+    mydt = min(mydt, 0.35 * dx**2 / (2.0 * dim * alpha_T))
+t_end = n_tau * tau  # default 3*tau = 7.5; raise SAMAREH_TAU to test long-time plateau vs drift
+t_step_stop = int(round(t_end / mydt))
+t_step_save = max(1, t_step_stop // 50)  # ~50 snapshots
 
 data = {
     # Logistics
     "run_time_info": "T",
-    # Computational domain (centered on the droplet)
-    "x_domain%beg": -L / 2,
-    "x_domain%end": L / 2,
-    "y_domain%beg": -L / 2,
-    "y_domain%end": L / 2,
-    "m": Nx,
-    "n": Ny,
-    "p": 0,
+    # Computational domain: long (gradient) axis x in [-Lx/2, Lx/2]; short axes in [-W/2, W/2]
+    "x_domain%beg": -Lx / 2,
+    "x_domain%end": Lx / 2,
+    "y_domain%beg": -W / 2,
+    "y_domain%end": W / 2,
+    "m": m,
+    "n": n,
+    "p": p,
     "cyl_coord": "F",
     "dt": mydt,
     "t_step_start": 0,
-    "t_step_stop": 25000,
-    "t_step_save": 500,
-    # Simulation algorithm
+    "t_step_stop": t_step_stop,
+    "t_step_save": t_step_save,
+    # Simulation algorithm (6-equation model; same proven WENO5/HLLC settings as the 2D example)
     "model_eqns": 3,
     "alt_soundspeed": "F",
     "mixture_err": "T",
@@ -133,14 +200,14 @@ data = {
     "riemann_solver": 2,
     "wave_speeds": 1,
     "avg_state": 2,
-    # Open (ghost-cell extrapolation) boundaries on all sides
-    "bc_x%beg": -3,
-    "bc_x%end": -3,
-    "bc_y%beg": -3,
-    "bc_y%end": -3,
-    "num_patches": 1,
+    # Boundaries: open (-3, approximates the unbounded domain) or slip walls (-2, Samareh's box)
+    "bc_x%beg": bc,
+    "bc_x%end": bc,
+    "bc_y%beg": bc,
+    "bc_y%end": bc,
+    "num_patches": 2,
     "num_fluids": 2,
-    # Physics: viscosity + temperature-dependent surface tension
+    # Physics: viscosity + temperature-dependent surface tension sigma(T) = sigma0 + sigma_dTdT*(T-T_ref)
     "viscous": "T",
     "surface_tension": "T",
     "sigma": sigma0,
@@ -164,13 +231,12 @@ data = {
     "fluid_pp(2)%pi_inf": gam * p_inf / (gam - 1.0),
     "fluid_pp(2)%cv": cv,
     "fluid_pp(2)%Re(1)": 1.0 / mu,
-    # Single uniform-composition patch spanning the domain: analytic linear-T density field and a
-    # smooth color blob marking the droplet (surface tension acts on the color-function gradient).
-    "patch_icpp(1)%geometry": 3,
+    # Patch 1 -- background medium spanning the domain: analytic linear-T density, ambient color c=0.
+    "patch_icpp(1)%geometry": 9 if dim == 3 else 3,
     "patch_icpp(1)%x_centroid": 0.0,
     "patch_icpp(1)%y_centroid": 0.0,
-    "patch_icpp(1)%length_x": L,
-    "patch_icpp(1)%length_y": L,
+    "patch_icpp(1)%length_x": Lx,
+    "patch_icpp(1)%length_y": W,
     "patch_icpp(1)%vel(1)": 0.0,
     "patch_icpp(1)%vel(2)": 0.0,
     "patch_icpp(1)%pres": p0,
@@ -178,7 +244,61 @@ data = {
     "patch_icpp(1)%alpha_rho(2)": eps,
     "patch_icpp(1)%alpha(1)": 1.0 - eps,
     "patch_icpp(1)%alpha(2)": eps,
-    "patch_icpp(1)%cf_val": cf_expr,
+    "patch_icpp(1)%cf_val": 0.0,
+    # Patch 2 -- droplet (circle in 2D / sphere in 3D): marks c=1, smeared over ~2 cells. IDENTICAL
+    # density/composition/pressure to patch 1, so the capillary stress acts purely on the c interface
+    # with no real fluid/density jump (the mu*=1, k*=1 / undistorted-T limit of YGB).
+    "patch_icpp(2)%geometry": 8 if dim == 3 else 2,
+    "patch_icpp(2)%x_centroid": x_drop,
+    "patch_icpp(2)%y_centroid": 0.0,
+    "patch_icpp(2)%radius": r,
+    "patch_icpp(2)%alter_patch(1)": "T",
+    "patch_icpp(2)%smoothen": "T",
+    "patch_icpp(2)%smooth_patch_id": 1,
+    "patch_icpp(2)%smooth_coeff": cf_smooth_coeff,
+    "patch_icpp(2)%vel(1)": 0.0,
+    "patch_icpp(2)%vel(2)": 0.0,
+    "patch_icpp(2)%pres": p0,
+    "patch_icpp(2)%alpha_rho(1)": rho_expr,
+    "patch_icpp(2)%alpha_rho(2)": eps,
+    "patch_icpp(2)%alpha(1)": 1.0 - eps,
+    "patch_icpp(2)%alpha(2)": eps,
+    "patch_icpp(2)%cf_val": 1.0,
 }
+
+if dim == 3:
+    # Third short axis z in [-W/2, W/2]; extend velocity/centroid/length to 3D.
+    data.update(
+        {
+            "z_domain%beg": -W / 2,
+            "z_domain%end": W / 2,
+            "bc_z%beg": bc,
+            "bc_z%end": bc,
+            "patch_icpp(1)%z_centroid": 0.0,
+            "patch_icpp(1)%length_z": W,
+            "patch_icpp(1)%vel(3)": 0.0,
+            "patch_icpp(2)%z_centroid": 0.0,
+            "patch_icpp(2)%vel(3)": 0.0,
+        }
+    )
+
+if Ma_th > 0:
+    # Bulk Fourier conduction (harmonic mixture closure; equal k -> the YGB k* = 1 limit).
+    # Pin the x-end temperatures to the imposed far-field profile T(x) = T0 + gradT*x via the
+    # Dirichlet isothermal BC. Without this, the x boundaries are adiabatic (zero-gradient),
+    # which is incompatible with the imposed gradient: conduction would accumulate heat at the
+    # domain ends and pump a spurious O(k) bulk flow (the artifact the open box exhibited before
+    # this BC existed). The y/z boundaries vary no temperature, so they stay adiabatic (correct).
+    data.update(
+        {
+            "thermal_conduction": "T",
+            "fluid_pp(1)%k_therm": k_therm,
+            "fluid_pp(2)%k_therm": k_therm,
+            "bc_x%isothermal_in": "T",
+            "bc_x%isothermal_out": "T",
+            "bc_x%Twall_in": T0 + gradT * (-Lx / 2.0),  # far-field T at the cold (-x) end
+            "bc_x%Twall_out": T0 + gradT * (Lx / 2.0),  # far-field T at the hot (+x) end
+        }
+    )
 
 print(json.dumps(data))
