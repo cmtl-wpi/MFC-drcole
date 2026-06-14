@@ -444,8 +444,17 @@ module m_global_parameters
     $:GPU_DECLARE(create='[sigma, surface_tension, sigma_model, sigma_T_ref, sigma_dTdT]')
     !> @}
 
+    logical :: thermal_conduction  !< Bulk Fourier heat conduction -k*grad(T) in the energy equation
+    $:GPU_DECLARE(create='[thermal_conduction]')
+
+    logical :: thermal_scalar  !< Carry temperature as an independent advected+diffused scalar, decoupled from the EOS
+    $:GPU_DECLARE(create='[thermal_scalar]')
+
     real(wp), allocatable, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps
     $:GPU_DECLARE(create='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps]')
+
+    real(wp), allocatable, dimension(:) :: kappas  !< Per-fluid thermal conductivities on the device
+    $:GPU_DECLARE(create='[kappas]')
 
     real(wp)                                    :: mytime     !< Current simulation time
     real(wp)                                    :: finaltime  !< Final simulation time
@@ -609,6 +618,7 @@ contains
             fluid_pp(i)%qvp = 0._wp
             fluid_pp(i)%Re(:) = dflt_real
             fluid_pp(i)%G = 0._wp
+            fluid_pp(i)%k_therm = 0._wp
         end do
 
         ! Subgrid bubble parameters
@@ -688,6 +698,8 @@ contains
         surface_tension = .false.
         sigma_model = 0
         sigma_T_ref = dflt_real
+        thermal_conduction = .false.
+        thermal_scalar = .false.
         sigma_dTdT = 0._wp
 
         bodyForces = .false.
@@ -1137,6 +1149,12 @@ contains
             eqn_idx%species%beg = sys_size + 1
             eqn_idx%species%end = sys_size + num_species
             sys_size = eqn_idx%species%end
+        end if
+
+        ! Independent temperature scalar appended last so existing index ordering is preserved
+        if (thermal_scalar) then
+            eqn_idx%T_s = sys_size + 1
+            sys_size = eqn_idx%T_s
         end if
 
         if (bubbles_euler .and. qbmm .and. .not. polytropic) then

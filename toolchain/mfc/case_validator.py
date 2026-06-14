@@ -146,6 +146,36 @@ PHYSICS_DOCS = {
         "math": r"\mathrm{Re}_1 > 0, \quad \mathrm{Re}_2 > 0",
         "explanation": "Reynolds numbers must be positive. Not supported with model_eqns = 1.",
     },
+    "check_thermal_conduction": {
+        "title": "Bulk Thermal Conduction",
+        "category": "Numerical Schemes",
+        "math": r"\frac{1}{k} = \textstyle\sum_i \frac{\alpha_i}{k_i}, \quad T = \frac{(\Gamma+1)p + \Pi_\infty}{\sum_i \alpha_i \rho_i c_{v,i} \gamma_i}",
+        "explanation": (
+            "Bulk Fourier conduction adds an explicit -k grad(T) face flux to the energy equation. "
+            "Temperature comes from the mixture stiffened-gas EOS, so every fluid needs cv > 0 and "
+            "model_eqns must be 2 or 3. The harmonic mixture closure requires k_therm > 0 for every "
+            "fluid. Explicit diffusion imposes dt < dx^2 rho cp/(2 d k); the adaptive time stepper "
+            "accounts for it automatically. Isothermal boundaries (bc_*%isothermal_* with Twall_*) "
+            "impose a Dirichlet far-field/wall temperature; other boundaries are adiabatic. Not yet "
+            "supported with chemistry, IGR, cylindrical coordinates, bubbles, elasticity, MHD, "
+            "relaxation, or immersed boundaries."
+        ),
+    },
+    "check_thermal_scalar": {
+        "title": "Independent Temperature Scalar",
+        "category": "Numerical Schemes",
+        "math": r"\partial_t T_s + \mathbf{u}\cdot\nabla T_s = \nabla\cdot(\alpha\,\nabla T_s), \quad \alpha = \frac{k}{\rho c_p}",
+        "explanation": (
+            "Carries temperature as its own advected scalar (eqn_idx%T_s), decoupled from the "
+            "stiffened-gas EOS, so a prescribed thermal field is not aliased to density. It is "
+            "advected like the color function and, when thermal_conduction is also enabled, diffused "
+            "at the thermal diffusivity alpha = k/(rho cp); the surface-tension closure sigma(T) then "
+            "reads T_s directly. Prescribe the field per patch via patch_icpp(i)%T_temp_val (a constant "
+            "or an analytic expression of x, y, z). Requires model_eqns 2 or 3 and riemann_solver 1 or "
+            "2. Not supported with chemistry, IGR, cylindrical coordinates, bubbles, elasticity, MHD, "
+            "relaxation, or immersed boundaries."
+        ),
+    },
     # Feature Compatibility
     "check_mhd": {
         "title": "Magnetohydrodynamics (MHD)",
@@ -895,6 +925,100 @@ class CaseValidator:
         weno_Re_flux = self.get("weno_Re_flux", "F") == "T"
         self.prohibit(weno_Re_flux and not viscous, "weno_Re_flux requires viscous to be enabled")
 
+    def check_thermal_conduction(self):
+        """Checks constraints on bulk thermal conduction"""
+        thermal_conduction = self.get("thermal_conduction", "F") == "T"
+        num_fluids = self.get("num_fluids")
+        model_eqns = self.get("model_eqns")
+
+        # If num_fluids is not set, check at least fluid 1 (for model_eqns=1)
+        if num_fluids is None:
+            num_fluids = 1
+
+        for i in range(1, num_fluids + 1):
+            k_therm = self.get(f"fluid_pp({i})%k_therm")
+            if k_therm is not None:
+                self.prohibit(not thermal_conduction, f"fluid_pp({i})%k_therm is specified, but thermal_conduction is not set to true")
+
+        if not thermal_conduction:
+            return
+
+        self.prohibit(model_eqns not in [2, 3], "thermal_conduction requires model_eqns = 2 or 3 (mixture stiffened-gas temperature)")
+
+        # Temperature is recovered from the stiffened-gas EOS, which divides by the
+        # mixture heat capacity sum(alpha*rho*cv*gamma); cv must be set for every fluid.
+        # The harmonic mixture closure 1/k = sum(alpha_i/k_i) needs k > 0 for every fluid.
+        for i in range(1, num_fluids + 1):
+            k_therm = self.get(f"fluid_pp({i})%k_therm")
+            cv = self.get(f"fluid_pp({i})%cv")
+            self.prohibit(k_therm is None, f"thermal_conduction is enabled, but fluid_pp({i})%k_therm is not specified")
+            self.prohibit(k_therm is not None and k_therm <= 0, f"thermal_conduction requires fluid_pp({i})%k_therm > 0 (harmonic mixture closure)")
+            self.prohibit(cv is None or cv <= 0, f"thermal_conduction requires fluid_pp({i})%cv > 0 (needed to evaluate temperature)")
+
+        # v1 feature-combination restrictions: the conduction flux only supports the
+        # plain multi-fluid stiffened-gas energy equation on Cartesian grids
+        incompatible = [
+            ("chemistry", "use chem_params%diffusion for heat conduction in reacting mixtures"),
+            ("igr", "IGR bypasses the additional-physics flux divergence"),
+            ("cyl_coord", "the cylindrical flux divergence lacks the conduction geometric terms"),
+            ("bubbles_euler", "the mixture temperature does not account for the bubble void fraction"),
+            ("bubbles_lagrange", "the mixture temperature does not account for the Lagrangian bubble phase"),
+            ("hypoelasticity", "elastic energy in the energy equation is not handled by the conduction closure"),
+            ("hyperelasticity", "elastic energy in the energy equation is not handled by the conduction closure"),
+            ("mhd", "magnetic energy in the energy equation is not handled by the conduction closure"),
+            ("relax", "conduction with pressure-temperature relaxation is untested"),
+            ("ib", "the conduction flux next to an immersed body would read unphysical interior temperatures"),
+        ]
+        for flag, reason in incompatible:
+            self.prohibit(self.get(flag, "F") == "T", f"thermal_conduction is not supported with {flag}: {reason}")
+
+        # Isothermal boundaries are supported with thermal_conduction: they impose a Dirichlet
+        # wall/far-field temperature that drives the conductive flux (see check_chemistry for
+        # the Twall constraints). Boundaries left non-isothermal are adiabatic (zero-gradient).
+
+    def check_thermal_scalar(self):
+        """Checks constraints on the independent temperature scalar (thermal_scalar)"""
+        thermal_scalar = self.get("thermal_scalar", "F") == "T"
+        if not thermal_scalar:
+            return
+
+        model_eqns = self.get("model_eqns")
+        riemann_solver = self.get("riemann_solver")
+        thermal_conduction = self.get("thermal_conduction", "F") == "T"
+        num_fluids = self.get("num_fluids")
+        if num_fluids is None:
+            num_fluids = 1
+
+        self.prohibit(model_eqns not in [2, 3], "thermal_scalar requires model_eqns = 2 or 3")
+        self.prohibit(
+            riemann_solver is not None and riemann_solver not in [1, 2],
+            "thermal_scalar requires riemann_solver = 1 (HLL) or 2 (HLLC) for passive-scalar advection",
+        )
+
+        # When diffused by thermal_conduction the scalar uses alpha = k/(rho cp), so every fluid
+        # needs cv > 0 (the harmonic conductivity closure already enforces k_therm > 0).
+        if thermal_conduction:
+            for i in range(1, num_fluids + 1):
+                cv = self.get(f"fluid_pp({i})%cv")
+                self.prohibit(cv is None or cv <= 0, f"thermal_scalar with thermal_conduction requires fluid_pp({i})%cv > 0")
+
+        # The temperature scalar is appended last in the conserved-variable index; these features
+        # either change that index layout or bypass the scalar advection/diffusion wiring.
+        incompatible = [
+            ("chemistry", "the temperature scalar shares the conserved-variable index space with chemistry species"),
+            ("igr", "IGR bypasses the additional-physics flux divergence and the scalar advection"),
+            ("cyl_coord", "the cylindrical flux divergence lacks the temperature-scalar terms"),
+            ("bubbles_euler", "untested with the bubble void fraction"),
+            ("bubbles_lagrange", "untested with the Lagrangian bubble phase"),
+            ("hypoelasticity", "untested with elasticity"),
+            ("hyperelasticity", "untested with elasticity"),
+            ("mhd", "untested with magnetohydrodynamics"),
+            ("relax", "untested with pressure-temperature relaxation"),
+            ("ib", "the scalar reconstruction next to an immersed body would read unphysical interior values"),
+        ]
+        for flag, reason in incompatible:
+            self.prohibit(self.get(flag, "F") == "T", f"thermal_scalar is not supported with {flag}: {reason}")
+
     def check_mhd_simulation(self):
         """Checks MHD constraints specific to simulation"""
         mhd = self.get("mhd", "F") == "T"
@@ -1351,6 +1475,12 @@ class CaseValidator:
         # Fetch global chemistry and diffusion flags
         chemistry = self.get("chemistry", "F") == "T"
         diffusion = self.get("chem_params%diffusion", "F") == "T"
+        thermal_conduction = self.get("thermal_conduction", "F") == "T"
+
+        # Isothermal boundaries are realized either by the chemistry heat-conduction path
+        # (chemistry + chem_params%diffusion, restricted to walls) or by the bulk
+        # thermal_conduction path (Dirichlet far-field temperature, any boundary).
+        chem_heat = chemistry and diffusion
 
         # Define what constitutes a wall (-15 for slip, -16 for no-slip)
         wall_bcs = [-15, -16]
@@ -1362,11 +1492,15 @@ class CaseValidator:
             bc_end = self.get(f"bc_{dir}%end")
 
             if isothermal_in:
-                # Prohibit isothermal boundaries if chemistry or diffusion are disabled
-                self.prohibit(not chemistry or not diffusion, f"Isothermal In (bc_{dir}%isothermal_in) requires both chemistry='T' and chem_params%diffusion='T' to calculate heat conduction.")
+                # Requires a heat-conduction model to act on the prescribed wall temperature
+                self.prohibit(
+                    not chem_heat and not thermal_conduction,
+                    f"Isothermal In (bc_{dir}%isothermal_in) requires either thermal_conduction='T' or (chemistry='T' and chem_params%diffusion='T') to calculate heat conduction.",
+                )
 
-                # Prohibit if neither beg nor end is set to a valid wall condition
-                self.prohibit(bc_beg not in wall_bcs, f"Isothermal In (bc_{dir}%isothermal_in) requires a wall. Set bc_{dir}%beg to -15 (slip) or -16 (no-slip).")
+                # The chemistry path applies isothermal walls inside the wall BC routines; the
+                # bulk-conduction path imposes the Dirichlet temperature at any boundary type.
+                self.prohibit(not thermal_conduction and bc_beg not in wall_bcs, f"Isothermal In (bc_{dir}%isothermal_in) requires a wall. Set bc_{dir}%beg to -15 (slip) or -16 (no-slip).")
 
                 # Check that the wall temperature is defined and physically valid (> 0 K)
                 tw_in = self.get(f"bc_{dir}%Twall_in")
@@ -1375,17 +1509,21 @@ class CaseValidator:
                     self.prohibit(tw_in <= 0.0, f"Wall temperature bc_{dir}%Twall_in must be strictly positive for thermodynamics (got {tw_in}).")
 
             if isothermal_out:
-                # Prohibit isothermal boundaries if chemistry or diffusion are disabled
-                self.prohibit(not chemistry or not diffusion, f"Isothermal Out (bc_{dir}%isothermal_out) requires both chemistry='T' and chem_params%diffusion='T' to calculate heat conduction.")
+                # Requires a heat-conduction model to act on the prescribed wall temperature
+                self.prohibit(
+                    not chem_heat and not thermal_conduction,
+                    f"Isothermal Out (bc_{dir}%isothermal_out) requires either thermal_conduction='T' or (chemistry='T' and chem_params%diffusion='T') to calculate heat conduction.",
+                )
 
-                # Prohibit if neither beg nor end is set to a valid wall condition
-                self.prohibit(bc_end not in wall_bcs, f"Isothermal Out (bc_{dir}%isothermal_out) requires a wall. Set bc_{dir}%end to -15 (slip) or -16 (no-slip).")
+                # The chemistry path applies isothermal walls inside the wall BC routines; the
+                # bulk-conduction path imposes the Dirichlet temperature at any boundary type.
+                self.prohibit(not thermal_conduction and bc_end not in wall_bcs, f"Isothermal Out (bc_{dir}%isothermal_out) requires a wall. Set bc_{dir}%end to -15 (slip) or -16 (no-slip).")
 
                 # Check that the wall temperature is defined and physically valid (> 0 K)
                 tw_out = self.get(f"bc_{dir}%Twall_out")
                 self.prohibit(tw_out is None, f"Isothermal Out (bc_{dir}%isothermal_out) requires a wall temperature to be set (e.g., bc_{dir}%Twall_out).")
                 if tw_out is not None and self._is_numeric(tw_out):
-                    self.prohibit(tw_out <= 0.0, f"Wall temperature bc_{dir}%Tw_out must be strictly positive for thermodynamics (got {tw_out}).")
+                    self.prohibit(tw_out <= 0.0, f"Wall temperature bc_{dir}%Twall_out must be strictly positive for thermodynamics (got {tw_out}).")
 
     def check_misc_pre_process(self):
         """Checks miscellaneous pre-process constraints"""
@@ -2100,6 +2238,8 @@ class CaseValidator:
         self.check_bubbles_euler_simulation()
         self.check_body_forces()
         self.check_viscosity()
+        self.check_thermal_conduction()
+        self.check_thermal_scalar()
         self.check_mhd_simulation()
         self.check_igr_simulation()
         self.check_acoustic_source()

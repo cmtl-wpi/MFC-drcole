@@ -152,6 +152,7 @@ module m_derived_types
         integer               :: c        !< Color function equation
         integer               :: damage   !< Damage variable equation
         integer               :: psi      !< Psi variable equation
+        integer               :: T_s      !< Independent transported temperature scalar (thermal_scalar)
     end type eqn_idx_info
 
     type bc_patch_parameters
@@ -231,9 +232,10 @@ module m_derived_types
 
         ! Geometry 13 (2D modal Fourier): fourier_cos(n), fourier_sin(n) for mode n
         real(wp), dimension(1:max_2d_fourier_modes) :: fourier_cos, fourier_sin
-        logical :: modal_clip_r_to_min  !< When true, clip boundary radius: R(theta) = max(R(theta), modal_r_min) (Non-exp form only)
-        real(wp) :: modal_r_min  !< Minimum boundary radius when modal_clip_r_to_min is true (Non-exp form only)
-        logical :: modal_use_exp_form  !< When true, boundary = radius*exp(Fourier series)
+        !> When true, clip boundary radius: R(theta) = max(R(theta), modal_r_min) (Non-exp form only)
+        logical  :: modal_clip_r_to_min
+        real(wp) :: modal_r_min         !< Minimum boundary radius when modal_clip_r_to_min is true (Non-exp form only)
+        logical  :: modal_use_exp_form  !< When true, boundary = radius*exp(Fourier series)
         ! Geometry 14 (3D spherical harmonic): sph_har_coeff(l,m) for real Y_lm
         real(wp), dimension(0:max_sph_harm_degree,-max_sph_harm_degree:max_sph_harm_degree) :: sph_har_coeff
         real(wp), dimension(3) :: normal  !< Patch orientation normal vector (x, y, z)
@@ -259,6 +261,7 @@ module m_derived_types
         real(wp) :: m0  !< Bubble velocity
         integer :: hcid  !< Hardcoded initial condition ID
         real(wp) :: cf_val  !< Color function value
+        real(wp) :: T_temp_val  !< Independent temperature scalar value (thermal_scalar)
         real(wp) :: Y(1:num_species)  !< Species mass fractions
 
         ! STL or OBJ model input parameter
@@ -310,13 +313,14 @@ module m_derived_types
     !> Derived type annexing the physical parameters (PP) of the fluids. These include the specific heat ratio function and liquid
     !! stiffness function.
     type physical_parameters
-        real(wp)               :: gamma   !< Sp. heat ratio
-        real(wp)               :: pi_inf  !< Liquid stiffness
-        real(wp), dimension(2) :: Re      !< Reynolds number
-        real(wp)               :: cv      !< heat capacity
-        real(wp)               :: qv      !< reference energy per unit mass for SGEOS, q (see Le Metayer (2004))
-        real(wp)               :: qvp     !< reference entropy per unit mass for SGEOS, q' (see Le Metayer (2004))
+        real(wp)               :: gamma    !< Sp. heat ratio
+        real(wp)               :: pi_inf   !< Liquid stiffness
+        real(wp), dimension(2) :: Re       !< Reynolds number
+        real(wp)               :: cv       !< heat capacity
+        real(wp)               :: qv       !< reference energy per unit mass for SGEOS, q (see Le Metayer (2004))
+        real(wp)               :: qvp      !< reference entropy per unit mass for SGEOS, q' (see Le Metayer (2004))
         real(wp)               :: G
+        real(wp)               :: k_therm  !< thermal conductivity (constant per fluid, used when thermal_conduction is on)
     end type physical_parameters
 
     !> Derived type annexing the physical parameters required for sub-grid bubble models

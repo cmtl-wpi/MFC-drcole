@@ -79,6 +79,7 @@ _ATTR_DESCS = {
     "qvp": "Heat of formation prime",
     "G": "Shear modulus",
     "Re": "Reynolds number",
+    "k_therm": "Thermal conductivity",
     "mul0": "Reference viscosity",
     "ss": "Surface tension",
     "pv": "Vapor pressure",
@@ -149,6 +150,7 @@ _ATTR_DESCS = {
     "tau_e": "Elastic stress component",
     # Misc
     "cf_val": "Color function value",
+    "T_temp_val": "Independent temperature scalar value",
     "hcid": "Hard-coded ID",
     "epsilon": "Interface thickness",
     "beta": "Shape parameter beta",
@@ -222,6 +224,8 @@ _SIMPLE_DESCS = {
     "qbmm": "Enable QBMM",
     "chemistry": "Enable chemistry",
     "surface_tension": "Enable surface tension",
+    "thermal_conduction": "Enable bulk thermal conduction",
+    "thermal_scalar": "Enable independent transported temperature scalar",
     "hypoelasticity": "Enable hypoelastic model",
     "hyperelasticity": "Enable hyperelastic model",
     "relativity": "Enable special relativity",
@@ -290,6 +294,7 @@ _SIMPLE_DESCS = {
     "pres_wrt": "Write pressure field",
     "schlieren_wrt": "Write schlieren images",
     "cf_wrt": "Write color function",
+    "T_s_wrt": "Write temperature scalar",
     "omega_wrt": "Write vorticity",
     "qm_wrt": "Write Q-criterion",
     "liutex_wrt": "Write Liutex vortex field",
@@ -450,6 +455,8 @@ TAG_DISPLAY_NAMES = {
     "viscosity": "Viscosity",
     "elasticity": "Elasticity",
     "surface_tension": "Surface tension",
+    "thermal_conduction": "Thermal conduction",
+    "thermal_scalar": "Thermal scalar",
     "acoustic": "Acoustic",
     "ib": "Immersed boundary",
     "probes": "Probe/integral",
@@ -703,6 +710,16 @@ DEPENDENCIES = {
             "recommends": ["fluid_pp(1)%Re(1)"],
         }
     },
+    "thermal_conduction": {
+        "when_true": {
+            "recommends": ["fluid_pp(1)%k_therm"],
+        }
+    },
+    "thermal_scalar": {
+        "when_true": {
+            "recommends": ["thermal_conduction", "fluid_pp(1)%k_therm"],
+        }
+    },
     "polydisperse": {
         "when_true": {
             "requires": ["nb", "poly_sigma"],
@@ -915,6 +932,12 @@ def _load():
     _r("sigma_T_ref", REAL, {"surface_tension"})
     _r("sigma_dTdT", REAL, {"surface_tension"})
 
+    # Thermal conduction
+    _r("thermal_conduction", LOG, {"thermal_conduction"})
+
+    # Independent temperature scalar
+    _r("thermal_scalar", LOG, {"thermal_scalar"})
+
     # Chemistry
     _r("cantera_file", STR, {"chemistry"})
     _r("chemistry", LOG, {"chemistry"})
@@ -962,6 +985,7 @@ def _load():
         "qm_wrt",
         "liutex_wrt",
         "cf_wrt",
+        "T_s_wrt",
         "sim_data",
         "output_partial_domain",
     ]:
@@ -1101,6 +1125,7 @@ def _load():
             _r(f"{px}a({j})", REAL)
         _r(f"{px}pres", A_REAL, math=r"\f$p\f$")
         _r(f"{px}cf_val", A_REAL)
+        _r(f"{px}T_temp_val", A_REAL)
         # MHD fields
         for a, sym in [("Bx", r"\f$B_x\f$"), ("By", r"\f$B_y\f$"), ("Bz", r"\f$B_z\f$")]:
             _r(f"{px}{a}", A_REAL, {"mhd"}, math=sym)
@@ -1151,6 +1176,7 @@ def _load():
         _r(f"{px}G", REAL, {"elasticity"}, math=r"\f$G_k\f$")
         _r(f"{px}Re(1)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (shear)")
         _r(f"{px}Re(2)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (bulk)")
+        _r(f"{px}k_therm", REAL, {"thermal_conduction"}, math=r"\f$k_k\f$")
 
     # bub_pp (bubble properties)
     for a, sym in [

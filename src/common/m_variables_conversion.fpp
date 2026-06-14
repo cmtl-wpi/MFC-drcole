@@ -359,6 +359,13 @@ contains
 
             $:GPU_UPDATE(device='[Res_vc, Re_idx, Re_size]')
         end if
+
+        ! Always allocated so the GPU device mapping is valid when thermal_conduction is off
+        @:ALLOCATE(kappas(1:num_fluids))
+        do i = 1, num_fluids
+            kappas(i) = fluid_pp(i)%k_therm
+        end do
+        $:GPU_UPDATE(device='[kappas]')
 #endif
 
         if (bubbles_euler) then
@@ -768,6 +775,8 @@ contains
                     if (cont_damage) qK_prim_vf(eqn_idx%damage)%sf(j, k, l) = qK_cons_vf(eqn_idx%damage)%sf(j, k, l)
 
                     if (hyper_cleaning) qK_prim_vf(eqn_idx%psi)%sf(j, k, l) = qK_cons_vf(eqn_idx%psi)%sf(j, k, l)
+
+                    if (thermal_scalar) qK_prim_vf(eqn_idx%T_s)%sf(j, k, l) = qK_cons_vf(eqn_idx%T_s)%sf(j, k, l)
 #ifdef MFC_POST_PROCESS
                     if (bubbles_lagrange) qK_prim_vf(beta_idx)%sf(j, k, l) = qK_cons_vf(beta_idx)%sf(j, k, l)
 #endif
@@ -1014,6 +1023,8 @@ contains
                     if (cont_damage) q_cons_vf(eqn_idx%damage)%sf(j, k, l) = q_prim_vf(eqn_idx%damage)%sf(j, k, l)
 
                     if (hyper_cleaning) q_cons_vf(eqn_idx%psi)%sf(j, k, l) = q_prim_vf(eqn_idx%psi)%sf(j, k, l)
+
+                    if (thermal_scalar) q_cons_vf(eqn_idx%T_s)%sf(j, k, l) = q_prim_vf(eqn_idx%T_s)%sf(j, k, l)
                 end do
             end do
         end do
@@ -1232,6 +1243,7 @@ contains
 
 #ifdef MFC_SIMULATION
         @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
+        @:DEALLOCATE(kappas)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
         end if

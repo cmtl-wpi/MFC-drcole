@@ -14,7 +14,7 @@ module m_sim_helpers
 
     implicit none
 
-    private; public :: s_compute_enthalpy, s_compute_stability_from_dt, s_compute_dt_from_cfl
+    private; public :: s_compute_enthalpy, s_compute_stability_from_dt, s_compute_dt_from_cfl, f_compute_mixture_temperature
 
 contains
 
@@ -40,6 +40,30 @@ contains
         end if
 
     end function f_compute_filtered_dtheta
+
+    !> Computes the cell-centered mixture stiffened-gas temperature from primitive variables: T = ((Gamma_mix + 1)*p +
+    !! pi_inf_mix)/mCP, with Gamma_mix = sum(alpha_i*gammas(i)), pi_inf_mix = sum(alpha_i*pi_infs(i)), and mCP =
+    !! sum(alpha_rho_i*cvs(i)*gs_min(i)). Shared by the sigma(T) capillary closure and the bulk thermal-conduction flux so the two
+    !! closures cannot drift apart.
+    function f_compute_mixture_temperature(q_prim_vf, j, k, l) result(T_cell)
+
+        $:GPU_ROUTINE(parallelism='[seq]')
+        type(scalar_field), intent(in), dimension(sys_size) :: q_prim_vf
+        integer, intent(in)                                 :: j, k, l
+        real(wp)                                            :: T_cell
+        real(wp)                                            :: gamma_mix, pi_inf_mix, mCP
+        integer                                             :: i
+
+        gamma_mix = 0._wp; pi_inf_mix = 0._wp; mCP = 0._wp
+        $:GPU_LOOP(parallelism='[seq]')
+        do i = 1, num_fluids
+            gamma_mix = gamma_mix + q_prim_vf(eqn_idx%adv%beg + i - 1)%sf(j, k, l)*gammas(i)
+            pi_inf_mix = pi_inf_mix + q_prim_vf(eqn_idx%adv%beg + i - 1)%sf(j, k, l)*pi_infs(i)
+            mCP = mCP + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)*gs_min(i)
+        end do
+        T_cell = ((gamma_mix + 1._wp)*q_prim_vf(eqn_idx%E)%sf(j, k, l) + pi_inf_mix)/max(mCP, sgm_eps)
+
+    end function f_compute_mixture_temperature
 
     !> Computes inviscid CFL terms for multi-dimensional cases (2D/3D only)
     function f_compute_multidim_cfl_terms(vel, c, j, k, l) result(cfl_terms)
@@ -138,7 +162,7 @@ contains
     end subroutine s_compute_enthalpy
 
     !> Computes stability criterion for a specified dt
-    subroutine s_compute_stability_from_dt(vel, c, rho, Re_l, j, k, l, icfl_sf, vcfl_sf, Rc_sf)
+    subroutine s_compute_stability_from_dt(vel, c, rho, Re_l, j, k, l, icfl_sf, vcfl_sf, Rc_sf, alpha_T)
 
         $:GPU_ROUTINE(parallelism='[seq]')
         real(wp), intent(in), dimension(num_vels)                 :: vel
@@ -147,7 +171,9 @@ contains
         real(wp), dimension(0:m,0:n,0:p), intent(inout), optional :: vcfl_sf, Rc_sf
         real(wp), dimension(2), intent(in)                        :: Re_l
         integer, intent(in)                                       :: j, k, l
+        real(wp), intent(in), optional                            :: alpha_T  !< Thermal diffusivity k_mix/(rho*cp_mix)
         real(wp)                                                  :: fltr_dtheta
+        real(wp)                                                  :: tcfl
 
         ! Inviscid CFL calculation
         if (p > 0 .or. n > 0) then
@@ -185,10 +211,39 @@ contains
             end if
         end if
 
+        ! Thermal-conduction diffusion number dt*alpha_T/dx^2, folded into the viscous
+        ! CFL field as a max so a single stability report covers both diffusive limits
+        if (thermal_conduction) then
+            tcfl = 0._wp
+            if (p > 0) then
+                #:if not MFC_CASE_OPTIMIZATION or num_dims > 2
+                    ! 3D
+                    if (grid_geometry == 3) then
+                        fltr_dtheta = f_compute_filtered_dtheta(k, l)
+                        tcfl = dt*alpha_T/min(dx(j), dy(k), fltr_dtheta)**2._wp
+                    else
+                        tcfl = dt*alpha_T/min(dx(j), dy(k), dz(l))**2._wp
+                    end if
+                #:endif
+            else if (n > 0) then
+                ! 2D
+                tcfl = dt*alpha_T/min(dx(j), dy(k))**2._wp
+            else
+                ! 1D
+                tcfl = dt*alpha_T/dx(j)**2._wp
+            end if
+
+            if (viscous) then
+                vcfl_sf(j, k, l) = max(vcfl_sf(j, k, l), tcfl)
+            else
+                vcfl_sf(j, k, l) = tcfl
+            end if
+        end if
+
     end subroutine s_compute_stability_from_dt
 
     !> Computes dt for a specified CFL number
-    subroutine s_compute_dt_from_cfl(vel, c, max_dt, rho, Re_l, j, k, l)
+    subroutine s_compute_dt_from_cfl(vel, c, max_dt, rho, Re_l, j, k, l, alpha_T)
 
         $:GPU_ROUTINE(parallelism='[seq]')
         real(wp), dimension(num_vels), intent(in)       :: vel
@@ -196,7 +251,8 @@ contains
         real(wp), dimension(0:m,0:n,0:p), intent(inout) :: max_dt
         real(wp), dimension(2), intent(in)              :: Re_l
         integer, intent(in)                             :: j, k, l
-        real(wp)                                        :: icfl_dt, vcfl_dt
+        real(wp), intent(in), optional                  :: alpha_T  !< Thermal diffusivity k_mix/(rho*cp_mix)
+        real(wp)                                        :: icfl_dt, vcfl_dt, tcfl_dt
         real(wp)                                        :: fltr_dtheta
 
         ! Inviscid CFL calculation
@@ -227,11 +283,32 @@ contains
             end if
         end if
 
+        ! Thermal-conduction dt limit from the diffusion number tcfl = dt*alpha_T/dx^2
+        if (thermal_conduction) then
+            if (p > 0) then
+                ! 3D
+                if (grid_geometry == 3) then
+                    fltr_dtheta = f_compute_filtered_dtheta(k, l)
+                    tcfl_dt = cfl_target*(min(dx(j), dy(k), fltr_dtheta)**2._wp)/max(alpha_T, sgm_eps)
+                else
+                    tcfl_dt = cfl_target*(min(dx(j), dy(k), dz(l))**2._wp)/max(alpha_T, sgm_eps)
+                end if
+            else if (n > 0) then
+                ! 2D
+                tcfl_dt = cfl_target*(min(dx(j), dy(k))**2._wp)/max(alpha_T, sgm_eps)
+            else
+                ! 1D
+                tcfl_dt = cfl_target*(dx(j)**2._wp)/max(alpha_T, sgm_eps)
+            end if
+        end if
+
         if (any(Re_size > 0)) then
             max_dt(j, k, l) = min(icfl_dt, vcfl_dt)
         else
             max_dt(j, k, l) = icfl_dt
         end if
+
+        if (thermal_conduction) max_dt(j, k, l) = min(max_dt(j, k, l), tcfl_dt)
 
     end subroutine s_compute_dt_from_cfl
 

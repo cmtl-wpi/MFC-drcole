@@ -43,6 +43,7 @@ module m_start_up
     use m_checker_common
     use m_checker
     use m_surface_tension
+    use m_thermal_conduction
     use m_body_forces
     use m_sim_helpers
     use m_igr
@@ -109,10 +110,10 @@ contains
             & polydisperse, poly_sigma, qbmm, relax, relax_model, palpha_eps, ptgalpha_eps, file_per_process, sigma, pi_fac, &
             & adv_n, adap_dt, adap_dt_tol, adap_dt_max_iters, bf_x, bf_y, bf_z, k_x, k_y, k_z, w_x, w_y, w_z, p_x, p_y, p_z, g_x, &
             & g_y, g_z, n_start, t_save, t_stop, cfl_adap_dt, cfl_const_dt, cfl_target, surface_tension, sigma_model, &
-            & sigma_T_ref, sigma_dTdT, bubbles_lagrange, lag_params, hyperelasticity, R0ref, num_bc_patches, Bx0, cont_damage, &
-            & tau_star, cont_damage_s, alpha_bar, hyper_cleaning, hyper_cleaning_speed, hyper_cleaning_tau, alf_factor, &
-            & num_igr_iters, num_igr_warm_start_iters, int_comp, ic_eps, ic_beta, nv_uvm_out_of_core, nv_uvm_igr_temps_on_gpu, &
-            & nv_uvm_pref_gpu, down_sample, fft_wrt
+            & sigma_T_ref, sigma_dTdT, thermal_conduction, thermal_scalar, bubbles_lagrange, lag_params, hyperelasticity, R0ref, &
+            & num_bc_patches, Bx0, cont_damage, tau_star, cont_damage_s, alpha_bar, hyper_cleaning, hyper_cleaning_speed, &
+            & hyper_cleaning_tau, alf_factor, num_igr_iters, num_igr_warm_start_iters, int_comp, ic_eps, ic_beta, &
+            & nv_uvm_out_of_core, nv_uvm_igr_temps_on_gpu, nv_uvm_pref_gpu, down_sample, fft_wrt
 
         inquire (FILE=trim(file_path), EXIST=file_exist)
 
@@ -681,7 +682,6 @@ contains
 
     !> Collect per-process wall-clock times and write aggregate performance metrics to file
     impure subroutine s_save_performance_metrics(time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, &
-
         & file_exists)
 
         real(wp), intent(inout)               :: time_avg, time_final
@@ -878,6 +878,8 @@ contains
 
         if (surface_tension) call s_initialize_surface_tension_module()
 
+        if (thermal_conduction) call s_initialize_thermal_conduction_module()
+
         if (relax) call s_initialize_phasechange_module()
 
         call s_initialize_data_output_module()
@@ -1068,6 +1070,7 @@ contains
 
         $:GPU_UPDATE(device='[acoustic_source, num_source]')
         $:GPU_UPDATE(device='[sigma, surface_tension, sigma_model, sigma_T_ref, sigma_dTdT]')
+        $:GPU_UPDATE(device='[thermal_conduction]')
 
         $:GPU_UPDATE(device='[dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc]')
         $:GPU_UPDATE(device='[bc_x%beg, bc_x%end, bc_y%beg, bc_y%end, bc_z%beg, bc_z%end]')
@@ -1139,6 +1142,7 @@ contains
         call s_finalize_mpi_proxy_module()
 
         if (surface_tension) call s_finalize_surface_tension_module()
+        if (thermal_conduction) call s_finalize_thermal_conduction_module()
         if (bodyForces) call s_finalize_body_forces_module()
         if (ib) call s_finalize_ibm_module()
 

@@ -29,6 +29,7 @@ module m_rhs
     use m_boundary_common
     use m_helper
     use m_surface_tension
+    use m_thermal_conduction
     use m_body_forces
     use m_chemistry
     use m_igr
@@ -133,17 +134,16 @@ contains
             end do
         end if
 
-        if (surface_tension) then
-            do l = eqn_idx%adv%end + 1, eqn_idx%c - 1
-                @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
-                           & idwbuff(3)%beg:idwbuff(3)%end))
-            end do
-        else
-            do l = eqn_idx%adv%end + 1, sys_size
-                @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
-                           & idwbuff(3)%beg:idwbuff(3)%end))
-            end do
-        end if
+        ! Allocate q_prim_qp for the scalar variables past the advection block, skipping the
+        ! passive scalars (color function, hyper-cleaning psi, temperature scalar) that are
+        ! aliased to their identical conservative counterparts below.
+        do l = eqn_idx%adv%end + 1, sys_size
+            if (surface_tension .and. l == eqn_idx%c) cycle
+            if (hyper_cleaning .and. l == eqn_idx%psi) cycle
+            if (thermal_scalar .and. l == eqn_idx%T_s) cycle
+            @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
+                       & idwbuff(3)%beg:idwbuff(3)%end))
+        end do
 
         if (.not. igr) then
             @:ACC_SETUP_VFs(q_cons_qp, q_prim_qp)
@@ -177,6 +177,12 @@ contains
             q_prim_qp%vf(eqn_idx%psi)%sf => q_cons_qp%vf(eqn_idx%psi)%sf
             $:GPU_ENTER_DATA(copyin='[q_prim_qp%vf(eqn_idx%psi)%sf]')
             $:GPU_ENTER_DATA(attach='[q_prim_qp%vf(eqn_idx%psi)%sf]')
+        end if
+
+        if (thermal_scalar) then
+            q_prim_qp%vf(eqn_idx%T_s)%sf => q_cons_qp%vf(eqn_idx%T_s)%sf
+            $:GPU_ENTER_DATA(copyin='[q_prim_qp%vf(eqn_idx%T_s)%sf]')
+            $:GPU_ENTER_DATA(attach='[q_prim_qp%vf(eqn_idx%T_s)%sf]')
         end if
 
         if (.not. igr) then
@@ -223,6 +229,17 @@ contains
                             @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
                                        & idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end))
                         end if
+                    end if
+
+                    if (thermal_conduction .and. .not. (viscous .or. surface_tension .or. thermal_scalar)) then
+                        @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
+                                   & idwbuff(3)%beg:idwbuff(3)%end))
+                    end if
+
+                    ! Temperature scalar conductive flux slot (diffusion is accumulated here)
+                    if (thermal_scalar) then
+                        @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%T_s)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
+                                   & idwbuff(3)%beg:idwbuff(3)%end))
                     end if
                 else
                     do l = 1, sys_size
@@ -506,8 +523,7 @@ contains
 
     !> Compute the right-hand side of the semi-discrete governing equations for a single time stage
     impure subroutine s_compute_rhs(q_cons_vf, q_T_sf, q_prim_vf, bc_type, rhs_vf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, &
-
-        & time_avg, stage)
+                                    & time_avg, stage)
 
         type(scalar_field), dimension(sys_size), intent(inout)                                     :: q_cons_vf
         type(scalar_field), intent(inout)                                                          :: q_T_sf
@@ -516,9 +532,8 @@ contains
         type(scalar_field), dimension(sys_size), intent(inout)                                     :: rhs_vf
         real(stp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:,1:), intent(inout) :: pb_in
 
-        real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:,1:), &
-             & intent(inout) &
-             & :: rhs_pb  ! TODO :: I think these other two variables need to be stp as well, but it doesn't compile like that right now
+        ! TODO :: I think these other two variables need to be stp as well, but it doesn't compile like that right now
+        real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:,1:), intent(inout) :: rhs_pb
         real(stp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:,1:), intent(inout) :: mv_in
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:,1:), intent(inout) :: rhs_mv
         integer, intent(in) :: t_step
@@ -614,6 +629,12 @@ contains
             call nvtxEndRange
         end if
 
+        if (thermal_conduction) then
+            call nvtxStartRange("RHS-THERMAL-CONDUCTION")
+            call s_get_thermal_conduction(q_prim_qp%vf)
+            call nvtxEndRange
+        end if
+
         ! Loop over coordinate directions for dimensional splitting
         do id = 1, num_dims
             if (igr .or. dummy) then
@@ -646,7 +667,6 @@ contains
                 end if
             end if
             if ((.not. igr) .or. dummy) then  ! Finite volume solve
-
                 ! Reconstructing Primitive/Conservative Variables
                 call nvtxStartRange("RHS-WENO")
 
@@ -749,8 +769,15 @@ contains
                     call nvtxEndRange
                 end if
 
+                ! Bulk thermal conduction face flux into the energy slot
+                if (thermal_conduction) then
+                    call nvtxStartRange("RHS-THERMAL-CONDUCTION-FLUX")
+                    call s_compute_conductive_flux(id, q_prim_qp%vf, flux_src_n(id)%vf, irx, iry, irz)
+                    call nvtxEndRange
+                end if
+
                 ! Viscous stress contribution to RHS
-                if (viscous .or. surface_tension .or. chem_params%diffusion) then
+                if (viscous .or. surface_tension .or. chem_params%diffusion .or. thermal_conduction) then
                     call nvtxStartRange("RHS-ADD-PHYSICS")
                     call s_compute_additional_physics_rhs(id, q_prim_qp%vf, rhs_vf, flux_src_n(id)%vf, dq_prim_dx_qp(1)%vf, &
                                                           & dq_prim_dy_qp(1)%vf, dq_prim_dz_qp(1)%vf)
@@ -1109,7 +1136,6 @@ contains
 
         !> Add the advection source flux-difference terms for a single coordinate direction to the RHS
         subroutine s_add_directional_advection_source_terms(current_idir, rhs_vf_arg, q_cons_vf_arg, q_prim_vf_arg, &
-
             & flux_src_n_vf_arg, Kterm_arg)
             integer, intent(in)                                    :: current_idir
             type(scalar_field), dimension(sys_size), intent(inout) :: rhs_vf_arg
@@ -1357,7 +1383,6 @@ contains
         integer                                                :: i, j, k, l
 
         if (idir == 1) then  ! x-direction
-
             if (surface_tension) then
                 $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3)
                 do l = 0, p
@@ -1372,7 +1397,7 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             end if
 
-            if ((surface_tension .or. viscous) .or. chem_params%diffusion) then
+            if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. thermal_conduction .or. thermal_scalar) then
                 $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3)
                 do l = 0, p
                     do k = 0, n
@@ -1397,6 +1422,25 @@ contains
                                            & l) + 1._wp/dx(j)*(flux_src_n_in(eqn_idx%E)%sf(j - 1, k, &
                                            & l) - flux_src_n_in(eqn_idx%E)%sf(j, k, l))
                                 end if
+                            end if
+
+                            ! Conduction-only energy divergence; when viscous or surface tension is
+                            ! active the generic mom:E loop above already differences the E slot
+                            if (thermal_conduction .and. .not. (viscous .or. surface_tension .or. thermal_scalar)) then
+                                rhs_vf(eqn_idx%E)%sf(j, k, l) = rhs_vf(eqn_idx%E)%sf(j, k, &
+                                       & l) + 1._wp/dx(j)*(flux_src_n_in(eqn_idx%E)%sf(j - 1, k, &
+                                       & l) - flux_src_n_in(eqn_idx%E)%sf(j, k, l))
+                            end if
+
+                            ! Independent temperature scalar: passive advection (non-conservative,
+                            ! mirrors the color function) plus the retargeted conductive diffusion
+                            if (thermal_scalar) then
+                                rhs_vf(eqn_idx%T_s)%sf(j, k, l) = rhs_vf(eqn_idx%T_s)%sf(j, k, &
+                                       & l) + 1._wp/dx(j)*q_prim_vf(eqn_idx%T_s)%sf(j, k, &
+                                       & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
+                                       & l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j - 1, k, &
+                                       & l)) + 1._wp/dx(j)*(flux_src_n_in(eqn_idx%T_s)%sf(j - 1, k, &
+                                       & l) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l))
                             end if
                         end do
                     end do
@@ -1457,7 +1501,7 @@ contains
                 end do
                 $:END_GPU_PARALLEL_LOOP()
             else
-                if ((surface_tension .or. viscous) .or. chem_params%diffusion) then
+                if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. thermal_conduction .or. thermal_scalar) then
                     $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
                     do l = 0, p
                         do k = 0, n
@@ -1481,6 +1525,25 @@ contains
                                                & l) + 1._wp/dy(k)*(flux_src_n_in(eqn_idx%E)%sf(j, k - 1, &
                                                & l) - flux_src_n_in(eqn_idx%E)%sf(j, k, l))
                                     end if
+                                end if
+
+                                ! Conduction-only energy divergence; when viscous or surface tension is
+                                ! active the generic mom:E loop above already differences the E slot
+                                if (thermal_conduction .and. .not. (viscous .or. surface_tension .or. thermal_scalar)) then
+                                    rhs_vf(eqn_idx%E)%sf(j, k, l) = rhs_vf(eqn_idx%E)%sf(j, k, &
+                                           & l) + 1._wp/dy(k)*(flux_src_n_in(eqn_idx%E)%sf(j, k - 1, &
+                                           & l) - flux_src_n_in(eqn_idx%E)%sf(j, k, l))
+                                end if
+
+                                ! Independent temperature scalar: passive advection (non-conservative,
+                                ! mirrors the color function) plus the retargeted conductive diffusion
+                                if (thermal_scalar) then
+                                    rhs_vf(eqn_idx%T_s)%sf(j, k, l) = rhs_vf(eqn_idx%T_s)%sf(j, k, &
+                                           & l) + 1._wp/dy(k)*q_prim_vf(eqn_idx%T_s)%sf(j, k, &
+                                           & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
+                                           & l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j, k - 1, &
+                                           & l)) + 1._wp/dy(k)*(flux_src_n_in(eqn_idx%T_s)%sf(j, k - 1, &
+                                           & l) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l))
                                 end if
                             end do
                         end do
@@ -1549,7 +1612,7 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             end if
 
-            if ((surface_tension .or. viscous) .or. chem_params%diffusion) then
+            if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. thermal_conduction .or. thermal_scalar) then
                 $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
                 do l = 0, p
                     do k = 0, n
@@ -1573,6 +1636,24 @@ contains
                                            & l) + 1._wp/dz(l)*(flux_src_n_in(eqn_idx%E)%sf(j, k, &
                                            & l - 1) - flux_src_n_in(eqn_idx%E)%sf(j, k, l))
                                 end if
+                            end if
+
+                            ! Conduction-only energy divergence; when viscous or surface tension is
+                            ! active the generic mom:E loop above already differences the E slot
+                            if (thermal_conduction .and. .not. (viscous .or. surface_tension .or. thermal_scalar)) then
+                                rhs_vf(eqn_idx%E)%sf(j, k, l) = rhs_vf(eqn_idx%E)%sf(j, k, &
+                                       & l) + 1._wp/dz(l)*(flux_src_n_in(eqn_idx%E)%sf(j, k, &
+                                       & l - 1) - flux_src_n_in(eqn_idx%E)%sf(j, k, l))
+                            end if
+
+                            ! Independent temperature scalar: passive advection (non-conservative,
+                            ! mirrors the color function) plus the retargeted conductive diffusion
+                            if (thermal_scalar) then
+                                rhs_vf(eqn_idx%T_s)%sf(j, k, l) = rhs_vf(eqn_idx%T_s)%sf(j, k, &
+                                       & l) + 1._wp/dz(l)*q_prim_vf(eqn_idx%T_s)%sf(j, k, &
+                                       & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
+                                       & l - 1)) + 1._wp/dz(l)*(flux_src_n_in(eqn_idx%T_s)%sf(j, k, &
+                                       & l - 1) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l))
                             end if
                         end do
                     end do
@@ -1862,6 +1943,14 @@ contains
 
                     if (chem_params%diffusion .and. .not. viscous) then
                         @:DEALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf)
+                    end if
+
+                    if (thermal_conduction .and. .not. (viscous .or. surface_tension .or. thermal_scalar)) then
+                        @:DEALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf)
+                    end if
+
+                    if (thermal_scalar) then
+                        @:DEALLOCATE(flux_src_n(i)%vf(eqn_idx%T_s)%sf)
                     end if
 
                     if (riemann_solver == 1 .or. riemann_solver == 4) then

@@ -130,8 +130,8 @@ contains
         pool_dims(4) = sys_size
         pool_starts(4) = 1
 #ifdef MFC_MIXED_PRECISION
-        pool_size = 1_8*(idwbuff(1)%end - idwbuff(1)%beg + 1)*(idwbuff(2)%end - idwbuff(2)%beg + 1)*(idwbuff(3)%end - idwbuff(3) &
-                         & %beg + 1)*sys_size
+        pool_size = 1_8*(idwbuff(1)%end - idwbuff(1)%beg + 1)*(idwbuff(2)%end - idwbuff(2)%beg + 1)*(idwbuff(3)%end &
+                         & - idwbuff(3)%beg + 1)*sys_size
         call hipCheck(hipMalloc_(cptr_device, pool_size*2_8))
         call c_f_pointer(cptr_device, q_cons_ts_pool_device, shape=pool_dims)
         q_cons_ts_pool_device(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:) => q_cons_ts_pool_device
@@ -290,6 +290,12 @@ contains
                 @:ALLOCATE(q_prim_vf(eqn_idx%c)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                            & idwbuff(3)%beg:idwbuff(3)%end))
                 @:ACC_SETUP_SFs(q_prim_vf(eqn_idx%c))
+            end if
+
+            if (thermal_scalar) then
+                @:ALLOCATE(q_prim_vf(eqn_idx%T_s)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
+                           & idwbuff(3)%beg:idwbuff(3)%end))
+                @:ACC_SETUP_SFs(q_prim_vf(eqn_idx%T_s))
             end if
 
             if (chemistry) then
@@ -627,22 +633,24 @@ contains
             real(wp), dimension(num_vels)   :: vel    !< Cell-avg. velocity
             real(wp), dimension(num_fluids) :: alpha  !< Cell-avg. volume fraction
         #:endif
-        real(wp)               :: vel_sum  !< Cell-avg. velocity sum
-        real(wp)               :: pres     !< Cell-avg. pressure
-        real(wp)               :: gamma    !< Cell-avg. sp. heat ratio
-        real(wp)               :: pi_inf   !< Cell-avg. liquid stiffness function
-        real(wp)               :: qv       !< Cell-avg. fluid reference energy
-        real(wp)               :: c        !< Cell-avg. sound speed
-        real(wp)               :: H        !< Cell-avg. enthalpy
-        real(wp), dimension(2) :: Re       !< Cell-avg. Reynolds numbers
+        real(wp)               :: vel_sum                       !< Cell-avg. velocity sum
+        real(wp)               :: pres                          !< Cell-avg. pressure
+        real(wp)               :: gamma                         !< Cell-avg. sp. heat ratio
+        real(wp)               :: pi_inf                        !< Cell-avg. liquid stiffness function
+        real(wp)               :: qv                            !< Cell-avg. fluid reference energy
+        real(wp)               :: c                             !< Cell-avg. sound speed
+        real(wp)               :: H                             !< Cell-avg. enthalpy
+        real(wp), dimension(2) :: Re                            !< Cell-avg. Reynolds numbers
         real(wp)               :: dt_local
-        integer                :: j, k, l  !< Generic loop iterators
+        real(wp)               :: k_mix, mCP_mix, alpha_T_cell  !< Cell-avg. thermal diffusivity pieces
+        integer                :: i, j, k, l                    !< Generic loop iterators
 
         if (.not. igr .or. dummy) then
             call s_convert_conservative_to_primitive_variables(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, idwint)
         end if
 
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv]')
+        $:GPU_PARALLEL_LOOP(collapse=3, &
+                            & private='[i, vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv, k_mix, mCP_mix, alpha_T_cell]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -655,7 +663,22 @@ contains
                     ! Compute mixture sound speed
                     call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, 0._wp, c, qv)
 
-                    call s_compute_dt_from_cfl(vel, c, max_dt, rho, Re, j, k, l)
+                    if (thermal_conduction) then
+                        ! Conduction is prohibited with igr, so q_prim_vf is valid here.
+                        ! Harmonic mixture conductivity (Samareh Eq. 8), consistent with the flux.
+                        k_mix = 0._wp; mCP_mix = 0._wp
+                        $:GPU_LOOP(parallelism='[seq]')
+                        do i = 1, num_fluids
+                            k_mix = k_mix + min(max(q_prim_vf(eqn_idx%adv%beg + i - 1)%sf(j, k, l), 0._wp), 1._wp)/max(kappas(i), &
+                                                & sgm_eps)
+                            mCP_mix = mCP_mix + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)*gs_min(i)
+                        end do
+                        alpha_T_cell = 1._wp/max(k_mix, sgm_eps)/max(mCP_mix, sgm_eps)
+
+                        call s_compute_dt_from_cfl(vel, c, max_dt, rho, Re, j, k, l, alpha_T_cell)
+                    else
+                        call s_compute_dt_from_cfl(vel, c, max_dt, rho, Re, j, k, l)
+                    end if
                 end do
             end do
         end do
@@ -748,8 +771,8 @@ contains
                              & 3)*dt*patch_ib(i)%torque/rk_coef(s, 4))  ! add the torque to the angular momentum
                     call s_compute_moment_of_inertia(i, patch_ib(i)%angular_vel)
                     ! update the moment of inertia to be based on the direction of the angular momentum
-                    patch_ib(i)%angular_vel = patch_ib(i)%angular_vel/patch_ib(i) &
-                             & %moment  ! convert back to angular velocity with the new moment of inertia
+                    ! convert back to angular velocity with the new moment of inertia
+                    patch_ib(i)%angular_vel = patch_ib(i)%angular_vel/patch_ib(i)%moment
                 end if
 
                 ! Update the angle of the IB
@@ -939,6 +962,10 @@ contains
 
             if (hyper_cleaning) then
                 @:DEALLOCATE(q_prim_vf(eqn_idx%psi)%sf)
+            end if
+
+            if (thermal_scalar) then
+                @:DEALLOCATE(q_prim_vf(eqn_idx%T_s)%sf)
             end if
 
             if (bubbles_euler) then
