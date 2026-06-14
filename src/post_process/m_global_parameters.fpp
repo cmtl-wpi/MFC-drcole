@@ -201,6 +201,7 @@ module m_global_parameters
     logical                            :: liutex_wrt
     logical                            :: schlieren_wrt
     logical                            :: cf_wrt
+    logical                            :: T_s_wrt
     logical                            :: ib
     logical                            :: ib_state_wrt
     logical                            :: chem_wrt_Y(1:num_species)
@@ -260,9 +261,10 @@ module m_global_parameters
     !> @{
     real(wp) :: sigma
     logical  :: surface_tension
-    integer  :: sigma_model  !< 0: constant sigma; 1: linear thermal closure sigma(T)
-    real(wp) :: sigma_T_ref  !< Reference temperature for the linear sigma(T) closure
-    real(wp) :: sigma_dTdT   !< dsigma/dT slope (with sign) for the linear sigma(T) closure
+    logical  :: thermal_scalar  !< Independent transported temperature scalar (decoupled from the EOS)
+    integer  :: sigma_model     !< 0: constant sigma; 1: linear thermal closure sigma(T)
+    real(wp) :: sigma_T_ref     !< Reference temperature for the linear sigma(T) closure
+    real(wp) :: sigma_dTdT      !< dsigma/dT slope (with sign) for the linear sigma(T) closure
     !> @}
 
     !> @name Lagrangian bubbles
@@ -417,6 +419,7 @@ contains
         schlieren_wrt = .false.
         sim_data = .false.
         cf_wrt = .false.
+        T_s_wrt = .false.
         ib = .false.
         ib_state_wrt = .false.
         lag_txt_wrt = .false.
@@ -457,6 +460,7 @@ contains
         sigR = dflt_real
         sigma = dflt_real
         surface_tension = .false.
+        thermal_scalar = .false.
         sigma_model = 0
         sigma_T_ref = dflt_real
         sigma_dTdT = 0._wp
@@ -742,6 +746,12 @@ contains
         else
             eqn_idx%species%beg = 1
             eqn_idx%species%end = 1
+        end if
+
+        ! Independent temperature scalar appended last so existing index ordering is preserved
+        if (thermal_scalar) then
+            eqn_idx%T_s = sys_size + 1
+            sys_size = eqn_idx%T_s
         end if
 
         if (output_partial_domain) then

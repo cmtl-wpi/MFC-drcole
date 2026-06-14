@@ -58,6 +58,8 @@
 #   SAMAREH_DSDT  : dsigma/dT slope (default -0.1 = Samareh)  -- the Marangoni-strength sweep knob
 #   SAMAREH_TAU   : run length in viscous times tau = rho*r^2/mu (default 3)
 #   SAMAREH_WALL  : 1 = Samareh slip-wall geometry, 0 = open/centered (default 0)
+#   SAMAREH_TS    : 1 = carry T as an independent scalar at UNIFORM density (decoupled; fixes the
+#                   2D conduction reversal), 0 = legacy density-proxy temperature (default 0)
 # The analytic density IC depends only on (T0, gradT), which are FIXED across the sweep, so its
 # compiled-in Fortran never changes: build once, then run every variant with --no-build.
 #
@@ -84,6 +86,23 @@ wall = os.environ.get("SAMAREH_WALL", "0") == "1"  # Samareh slip-wall geometry 
 # The 3D OPEN box without the BC does tame the frozen-T runaway (run with SAMAREH_MA>0, SAMAREH_DIM=3
 # and remove the isothermal block below to reproduce). See CONDUCTION_SCOPE.md.
 Ma_th = float(os.environ.get("SAMAREH_MA", "0"))
+# SAMAREH_TS = 1 carries temperature as an INDEPENDENT advected scalar (the thermal_scalar feature)
+# instead of as a density proxy. The density is then held UNIFORM and T(x) is imposed directly on
+# the scalar via patch_icpp%T_temp_val, so temperature is no longer slaved to density (1D check:
+# verify_1d_thermal_scalar.py -- the scalar diffuses at exactly alpha*kappa^2 with velocity at
+# machine zero). With SAMAREH_MA > 0 the scalar additionally diffuses at alpha = k/(rho cp); with
+# SAMAREH_MA = 0 it is purely advected (genuinely frozen, but decoupled).
+#
+# IMPORTANT, measured result: decoupling does NOT remove the 2D conduction reversal. SAMAREH_TS=1
+# SAMAREH_MA=0 (advection only) migrates correctly toward hot at +0.78 v_YGB, confirming the scalar
+# advection and sigma(T_s) coupling are right and that the density proxy was NOT the cause. But
+# SAMAREH_TS=1 SAMAREH_MA=0.3 (conduction + isothermal far-field BC) still reverses to ~-2.7 v_YGB,
+# essentially identical to the density-proxy mode and to its incompressible-limit extrapolation. The
+# reversal is therefore an artifact of the conduction + imposed-temperature-BC coupling with the
+# migrating drop, not of the density proxy (revising the earlier diagnosis). Use SAMAREH_TS=1 with
+# SAMAREH_MA=0 for a clean, density-decoupled frozen-T run; the finite-Ma conduction reversal is an
+# open issue (see README Sec. 5 and THERMAL_SCALAR_SCOPE.md).
+ts_mode = os.environ.get("SAMAREH_TS", "0") == "1"
 assert dim in (2, 3), "SAMAREH_DIM must be 2 or 3"
 assert Ma_th >= 0, "SAMAREH_MA must be >= 0 (0 disables conduction)"
 
@@ -136,7 +155,16 @@ eps = 1.0e-9  # trace volume fraction of the (identical) second phase
 # render "1e-09" and MFC would expand the `e` to Euler's number, corrupting rho to a NEGATIVE value.
 rho_num = (1.0 - eps) * rho_coeff  # = 9.999999990
 GRAD = "x"  # gradient / migration axis
-rho_expr = f"{rho_num:.9f}/({T0} + {gradT:.9f}*{GRAD})"  # ~ 10.0/(10.0 + 0.133333333*x)
+if ts_mode:
+    # Decoupled mode: hold density UNIFORM (= rho_coeff/T0 = 1.0) and impose T(x) directly on the
+    # independent scalar T_s. Temperature is no longer a density proxy, so conduction cannot drive
+    # the density inversion that reverses the migration. rho_expr must be a numeric value (not a
+    # string) so it is written to the namelist unquoted -- a quoted numeric string would be read
+    # into the real alpha_rho as a datatype mismatch.
+    rho_expr = (1.0 - eps) * rho_coeff / T0  # uniform background density (plain float = 0.999999999)
+    T_expr = f"{T0} + {gradT:.9f}*{GRAD}"  # T_s(x) = T0 + gradT*x imposed on the advected scalar
+else:
+    rho_expr = f"{rho_num:.9f}/({T0} + {gradT:.9f}*{GRAD})"  # ~ 10.0/(10.0 + 0.133333333*x)
 
 # -- Young-Goldstein-Block terminal speed (mu* = 1, k* = 1) and the diagnostic non-dim numbers --
 v_YGB = (2.0 / 15.0) * (-dsigma_dT) * gradT * r / mu  # = 8.88e-3 at dsigma_dT = -0.1
@@ -298,6 +326,20 @@ if Ma_th > 0:
             "bc_x%isothermal_out": "T",
             "bc_x%Twall_in": T0 + gradT * (-Lx / 2.0),  # far-field T at the cold (-x) end
             "bc_x%Twall_out": T0 + gradT * (Lx / 2.0),  # far-field T at the hot (+x) end
+        }
+    )
+
+if ts_mode:
+    # Independent temperature scalar: T(x) imposed directly on T_s for BOTH patches (temperature is
+    # continuous across the color interface; only the color function jumps). sigma(T) reads T_s, and
+    # with SAMAREH_MA > 0 the thermal_conduction block above diffuses T_s at alpha = k/(rho cp).
+    # T_s_wrt exposes the field for visualization (finally a real temperature output).
+    data.update(
+        {
+            "thermal_scalar": "T",
+            "T_s_wrt": "T",
+            "patch_icpp(1)%T_temp_val": T_expr,
+            "patch_icpp(2)%T_temp_val": T_expr,
         }
     )
 

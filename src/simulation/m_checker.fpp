@@ -38,6 +38,8 @@ contains
 
         call s_check_inputs_thermal_conduction
 
+        call s_check_inputs_thermal_scalar
+
         @:PROHIBIT(ib_state_wrt .and. .not. ib, "ib_state_wrt requires ib to be enabled")
 
     end subroutine s_check_inputs
@@ -68,6 +70,34 @@ contains
         end if
 
     end subroutine s_check_inputs_thermal_conduction
+
+    !> Checks constraints on the independent temperature scalar (thermal_scalar)
+    impure subroutine s_check_inputs_thermal_scalar
+
+        integer :: i
+
+        if (thermal_scalar) then
+            @:PROHIBIT(igr, "thermal_scalar is not supported with igr")
+            @:PROHIBIT(cyl_coord, "thermal_scalar is not supported with cyl_coord")
+            @:PROHIBIT(chemistry, "thermal_scalar is not supported with chemistry")
+            @:PROHIBIT(bubbles_euler .or. bubbles_lagrange, "thermal_scalar is not supported with bubble models")
+            @:PROHIBIT(hypoelasticity .or. hyperelasticity, "thermal_scalar is not supported with elasticity")
+            @:PROHIBIT(mhd, "thermal_scalar is not supported with mhd")
+            @:PROHIBIT(relax, "thermal_scalar is not supported with relax (phase change)")
+            @:PROHIBIT(ib, "thermal_scalar is not supported with immersed boundaries")
+            @:PROHIBIT(model_eqns == 1 .or. model_eqns == 4, "thermal_scalar requires model_eqns = 2 or 3")
+            @:PROHIBIT(riemann_solver /= 1 .and. riemann_solver /= 2, &
+                       & "thermal_scalar requires riemann_solver = 1 (HLL) or 2 (HLLC) for passive-scalar advection")
+
+            if (thermal_conduction) then
+                do i = 1, num_fluids
+                    @:PROHIBIT(fluid_pp(i)%cv <= 0._wp, &
+                               & "thermal_scalar with thermal_conduction requires fluid_pp(i)%cv > 0 for every fluid (rho*cp diffusivity)")
+                end do
+            end if
+        end if
+
+    end subroutine s_check_inputs_thermal_scalar
 
     !> Checks constraints on compiler options
     impure subroutine s_check_inputs_compilers

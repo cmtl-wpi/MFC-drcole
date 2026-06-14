@@ -152,6 +152,7 @@ module m_derived_types
         integer               :: c        !< Color function equation
         integer               :: damage   !< Damage variable equation
         integer               :: psi      !< Psi variable equation
+        integer               :: T_s      !< Independent transported temperature scalar (thermal_scalar)
     end type eqn_idx_info
 
     type bc_patch_parameters
@@ -260,6 +261,7 @@ module m_derived_types
         real(wp) :: m0  !< Bubble velocity
         integer :: hcid  !< Hardcoded initial condition ID
         real(wp) :: cf_val  !< Color function value
+        real(wp) :: T_temp_val  !< Independent temperature scalar value (thermal_scalar)
         real(wp) :: Y(1:num_species)  !< Species mass fractions
 
         ! STL or OBJ model input parameter

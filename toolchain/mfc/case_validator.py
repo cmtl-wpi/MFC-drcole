@@ -161,6 +161,21 @@ PHYSICS_DOCS = {
             "relaxation, or immersed boundaries."
         ),
     },
+    "check_thermal_scalar": {
+        "title": "Independent Temperature Scalar",
+        "category": "Numerical Schemes",
+        "math": r"\partial_t T_s + \mathbf{u}\cdot\nabla T_s = \nabla\cdot(\alpha\,\nabla T_s), \quad \alpha = \frac{k}{\rho c_p}",
+        "explanation": (
+            "Carries temperature as its own advected scalar (eqn_idx%T_s), decoupled from the "
+            "stiffened-gas EOS, so a prescribed thermal field is not aliased to density. It is "
+            "advected like the color function and, when thermal_conduction is also enabled, diffused "
+            "at the thermal diffusivity alpha = k/(rho cp); the surface-tension closure sigma(T) then "
+            "reads T_s directly. Prescribe the field per patch via patch_icpp(i)%T_temp_val (a constant "
+            "or an analytic expression of x, y, z). Requires model_eqns 2 or 3 and riemann_solver 1 or "
+            "2. Not supported with chemistry, IGR, cylindrical coordinates, bubbles, elasticity, MHD, "
+            "relaxation, or immersed boundaries."
+        ),
+    },
     # Feature Compatibility
     "check_mhd": {
         "title": "Magnetohydrodynamics (MHD)",
@@ -960,6 +975,49 @@ class CaseValidator:
         # Isothermal boundaries are supported with thermal_conduction: they impose a Dirichlet
         # wall/far-field temperature that drives the conductive flux (see check_chemistry for
         # the Twall constraints). Boundaries left non-isothermal are adiabatic (zero-gradient).
+
+    def check_thermal_scalar(self):
+        """Checks constraints on the independent temperature scalar (thermal_scalar)"""
+        thermal_scalar = self.get("thermal_scalar", "F") == "T"
+        if not thermal_scalar:
+            return
+
+        model_eqns = self.get("model_eqns")
+        riemann_solver = self.get("riemann_solver")
+        thermal_conduction = self.get("thermal_conduction", "F") == "T"
+        num_fluids = self.get("num_fluids")
+        if num_fluids is None:
+            num_fluids = 1
+
+        self.prohibit(model_eqns not in [2, 3], "thermal_scalar requires model_eqns = 2 or 3")
+        self.prohibit(
+            riemann_solver is not None and riemann_solver not in [1, 2],
+            "thermal_scalar requires riemann_solver = 1 (HLL) or 2 (HLLC) for passive-scalar advection",
+        )
+
+        # When diffused by thermal_conduction the scalar uses alpha = k/(rho cp), so every fluid
+        # needs cv > 0 (the harmonic conductivity closure already enforces k_therm > 0).
+        if thermal_conduction:
+            for i in range(1, num_fluids + 1):
+                cv = self.get(f"fluid_pp({i})%cv")
+                self.prohibit(cv is None or cv <= 0, f"thermal_scalar with thermal_conduction requires fluid_pp({i})%cv > 0")
+
+        # The temperature scalar is appended last in the conserved-variable index; these features
+        # either change that index layout or bypass the scalar advection/diffusion wiring.
+        incompatible = [
+            ("chemistry", "the temperature scalar shares the conserved-variable index space with chemistry species"),
+            ("igr", "IGR bypasses the additional-physics flux divergence and the scalar advection"),
+            ("cyl_coord", "the cylindrical flux divergence lacks the temperature-scalar terms"),
+            ("bubbles_euler", "untested with the bubble void fraction"),
+            ("bubbles_lagrange", "untested with the Lagrangian bubble phase"),
+            ("hypoelasticity", "untested with elasticity"),
+            ("hyperelasticity", "untested with elasticity"),
+            ("mhd", "untested with magnetohydrodynamics"),
+            ("relax", "untested with pressure-temperature relaxation"),
+            ("ib", "the scalar reconstruction next to an immersed body would read unphysical interior values"),
+        ]
+        for flag, reason in incompatible:
+            self.prohibit(self.get(flag, "F") == "T", f"thermal_scalar is not supported with {flag}: {reason}")
 
     def check_mhd_simulation(self):
         """Checks MHD constraints specific to simulation"""
@@ -2181,6 +2239,7 @@ class CaseValidator:
         self.check_body_forces()
         self.check_viscosity()
         self.check_thermal_conduction()
+        self.check_thermal_scalar()
         self.check_mhd_simulation()
         self.check_igr_simulation()
         self.check_acoustic_source()

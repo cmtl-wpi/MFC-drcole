@@ -321,16 +321,21 @@ contains
         end do
 
         ! Linear thermal closure sigma(T): compute cell-centered surface tension over the
-        ! full buffer range. Temperature is recovered from the mixture stiffened-gas EOS
-        ! (T = ((gamma_mix + 1)*p + pi_inf_mix)/mCP, with mCP = sum(alpha*rho*cv*gamma)).
-        ! q_prim_vf ghost cells are already populated, so no extra halo exchange is needed;
-        ! the face value is later formed by averaging adjacent cells in the flux assembly.
+        ! full buffer range. When thermal_scalar is on the temperature is read directly from
+        ! the independent advected scalar eqn_idx%T_s (decoupled from density); otherwise it is
+        ! recovered from the mixture stiffened-gas EOS (T = ((gamma_mix + 1)*p + pi_inf_mix)/mCP,
+        ! with mCP = sum(alpha*rho*cv*gamma)). q_prim_vf ghost cells are already populated, so no
+        ! extra halo exchange is needed; the face value is later formed by averaging adjacent cells.
         if (sigma_model == 1) then
             $:GPU_PARALLEL_LOOP(collapse=3, private='[T_cell]')
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
                     do j = idwbuff(1)%beg, idwbuff(1)%end
-                        T_cell = f_compute_mixture_temperature(q_prim_vf, j, k, l)
+                        if (thermal_scalar) then
+                            T_cell = q_prim_vf(eqn_idx%T_s)%sf(j, k, l)
+                        else
+                            T_cell = f_compute_mixture_temperature(q_prim_vf, j, k, l)
+                        end if
                         c_sigma(j, k, l) = sigma + sigma_dTdT*(T_cell - sigma_T_ref)
                     end do
                 end do

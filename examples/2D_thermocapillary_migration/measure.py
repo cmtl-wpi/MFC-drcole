@@ -74,6 +74,9 @@ dsigma_dT = param("sigma_dtdt")  # sigma(T) slope
 dim = 3 if int(param("p")) > 0 else 2
 wall = int(param("bc_x%beg")) == -2  # slip-wall (Samareh geometry) vs open box
 x_drop0 = param("patch_icpp(2)%x_centroid", patches)  # initial drop position
+# thermal_scalar appends an independent temperature scalar (eqn_idx%T_s) AFTER the color function,
+# so in that mode the color function is the second-to-last conserved variable, not the last.
+ts_mode = str(params.get("thermal_scalar", "F")).upper().strip(". ").startswith("T")
 
 # Not in the namelists -- analysis choices. MUST match case.py.
 r = 0.5  # droplet radius (D = 1)
@@ -84,7 +87,8 @@ tau = r**2 / mu  # viscous time rho*r^2/mu (rho(drop) = 1 by construction in cas
 v_YGB = (2.0 / 15.0) * (-dsigma_dT) * gradT * r / mu  # YGB terminal speed (mu* = k* = 1)
 
 # Conserved-variable layout (model_eqns=3, num_fluids=2, surface_tension):
-#   indices 0,1 = partial densities, index 2 = x-momentum, last index = color c.
+#   indices 0,1 = partial densities, index 2 = x-momentum, color c is the last variable --
+#   or the second-to-last when thermal_scalar appends T_s after it.
 restart_dir = os.path.join(case_dir, "restart_data")
 
 # Cell-center x positions from the boundary file (last nx+1 boundaries are the interior).
@@ -123,7 +127,8 @@ times, x_centroid, u_lab, u_far = [], [], [], []
 for s in steps:
     snap = np.fromfile(os.path.join(restart_dir, f"lustre_{s}.dat"), np.float64)
     vx = field(snap, 2) / (field(snap, 0) + field(snap, 1))  # x-velocity (rho = sum of partials)
-    c = np.clip(field(snap, nvars - 1), 0.0, None)  # color function (last variable)
+    c_idx = nvars - 2 if ts_mode else nvars - 1  # color function: T_s is appended after it in ts_mode
+    c = np.clip(field(snap, c_idx), 0.0, None)  # color function
     times.append(s * dt)
     x_centroid.append((c * x[None, :]).sum() / c.sum())  # color-weighted x-centroid
     u_lab.append((c * vx).sum() / c.sum())  # color-weighted drop velocity

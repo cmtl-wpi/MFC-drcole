@@ -93,7 +93,7 @@ contains
             & 'bc_x%isothermal_in', 'bc_y%isothermal_in', 'bc_z%isothermal_in',        &
             & 'bc_x%isothermal_out', 'bc_y%isothermal_out', 'bc_z%isothermal_out', &
             & 'cfl_adap_dt', 'cfl_const_dt', 'cfl_dt', 'surface_tension',       &
-            & 'thermal_conduction',                                             &
+            & 'thermal_conduction', 'thermal_scalar',                           &
             & 'shear_stress', 'bulk_stress', 'bubbles_lagrange',                &
             & 'hyperelasticity', 'down_sample', 'int_comp','fft_wrt', &
             & 'hyper_cleaning', 'ib_state_wrt']
