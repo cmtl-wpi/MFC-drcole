@@ -26,14 +26,18 @@
 # HOW MFC REALIZES THE "Ma = 0" PREMISE (and where that breaks down)
 # Samareh's Test Case 1 holds the temperature field INVARIANT (their word): both fluids get an
 # effectively INFINITE thermal diffusivity, so the imposed linear T never responds to the flow
-# (Ma = 0). MFC has NO Fourier bulk conduction -- the opposite diffusivity limit (alpha -> 0,
-# thermal Peclet -> infinity): the linear T is a frozen initial condition that the flow slowly
-# advects/distorts. The two limits agree at EARLY times, before interfacial parcels (speed
+# (Ma = 0). In the DEFAULT mode here (SAMAREH_MA = 0) MFC uses the opposite diffusivity limit
+# (alpha -> 0, thermal Peclet -> infinity): the linear T is a frozen initial condition that the flow
+# slowly advects/distorts. The two limits agree at EARLY times, before interfacial parcels (speed
 # ~ U_r = |sigma_T|*gradT*r/mu) have traveled far enough to reshape the frozen gradient. All
 # quoted ratios therefore come from a stated measurement window; the long-time diagnostics measure
 # where the frozen-IC approximation holds (2D: a true plateau) and where it fails (3D: an unbounded
-# velocity drift). It is NOT a conjugate-conduction test: the finite-Ma cases (Samareh Sec. 4.1.2 /
-# 4.2, Figs 7/8/12/13/16) need bulk conduction and mu(T) that MFC does not provide.
+# velocity drift). Bulk Fourier conduction is now available (SAMAREH_MA > 0, the thermal_conduction
+# feature) for finite-Ma physics, and an independent temperature scalar (SAMAREH_TS) decouples T from
+# density; both are documented in the env-var list below. The finite-Ma cases (Samareh Sec. 4.1.2 /
+# 4.2, Figs 7/8/12/13/16) need bulk conduction (now available) and temperature-dependent viscosity
+# mu(T) (which MFC still does not provide), so a fully faithful finite-Ma reproduction is not yet
+# possible here; SAMAREH_MA enables the conduction half of that physics.
 #
 # SAMAREH PARAMETERS (their Sec. 4.1.1) AND THE ONE DEVIATION
 #   D = 1, box 5D wide x 7.5D tall, rho_d = rho_b = 0.2, mu_d = mu_b = 0.1,
@@ -59,6 +63,13 @@
 #   SAMAREH_DSDT  : dsigma/dT slope (default -0.1 = Samareh)  -- the Marangoni-strength sweep knob
 #   SAMAREH_TR    : run length in capillary-thermal times t_r = mu/|sigma_T*gradT| = 7.5 (default 4)
 #   SAMAREH_WALL  : 1 = Samareh slip-wall geometry (default), 0 = open/centered
+#   SAMAREH_MA    : thermal Marangoni number; > 0 enables bulk Fourier conduction (default 0 = frozen-T).
+#                   k follows from alpha = U_r*r/Ma. The isothermal far-field BC is imposed only with
+#                   the slip-wall geometry; the open box stays adiabatic (open + isothermal reverses
+#                   the drop -- see CONDUCTION_REVERSAL_SAGA.md).
+#   SAMAREH_TS    : 1 = carry T as an INDEPENDENT advected scalar (thermal_scalar) at UNIFORM density,
+#                   decoupled from the EOS; T(y) imposed via patch_icpp%T_temp_val, output via T_s_wrt.
+#   SAMAREH_NOBC  : 1 = (diagnostic) conduction with adiabatic ends, no isothermal far-field BC.
 # The analytic density IC depends only on (T0, gradT), which are FIXED across the sweep, so its
 # compiled-in Fortran never changes: build once, then run every variant with --no-build.
 #
@@ -73,6 +84,11 @@ width_cells = int(os.environ.get("SAMAREH_NX", "128"))  # cells across the 5D bo
 dsigma_dT = float(os.environ.get("SAMAREH_DSDT", "-0.1"))  # dsigma/dT (Samareh: -0.1)
 n_tr = float(os.environ.get("SAMAREH_TR", "4"))  # run length in capillary-thermal times t_r
 wall = os.environ.get("SAMAREH_WALL", "1") == "1"  # Samareh slip-wall geometry (default) vs open
+# Finite-Ma conduction / independent-temperature modes (ported from the thermal_scalar feature):
+Ma_th = float(os.environ.get("SAMAREH_MA", "0"))  # thermal Marangoni number; > 0 enables bulk Fourier conduction
+ts_mode = os.environ.get("SAMAREH_TS", "0") == "1"  # carry T as an independent advected scalar (decoupled from rho)
+no_bc = os.environ.get("SAMAREH_NOBC", "0") == "1"  # diagnostic: conduction with adiabatic ends (no isothermal BC)
+assert Ma_th >= 0, "SAMAREH_MA must be >= 0 (0 disables conduction)"
 
 # -- Geometry (Samareh Sec. 4.1.1: D=1 drop, 5D wide x 7.5D tall box; rise axis = y) --
 D = 1.0  # droplet diameter
@@ -121,7 +137,14 @@ eps = 1.0e-9  # trace volume fraction of the (identical) second phase
 # render "1e-09" and MFC would expand the `e` to Euler's number, corrupting rho to a NEGATIVE value.
 rho_num = (1.0 - eps) * rho_coeff  # = 1.999999998
 GRAD = "y"  # gradient / rise axis
-rho_expr = f"{rho_num:.9f}/({T0} + {gradT:.9f}*{GRAD})"  # ~ 2.0/(10.0 + 0.133333333*y)
+if ts_mode:
+    # Decoupled mode: hold density UNIFORM (= rho_coeff/T0 = rho_drop = 0.2) and impose T(y) directly
+    # on the independent scalar T_s. A numeric value (not a string) so it is written unquoted to the
+    # namelist -- a quoted numeric string would be read into the real alpha_rho as a datatype mismatch.
+    rho_expr = (1.0 - eps) * rho_coeff / T0  # uniform background density (= 0.2)
+    T_expr = f"{T0} + {gradT:.9f}*{GRAD}"  # T_s(y) = T0 + gradT*y imposed on the advected scalar
+else:
+    rho_expr = f"{rho_num:.9f}/({T0} + {gradT:.9f}*{GRAD})"  # ~ 2.0/(10.0 + 0.133333333*y)
 
 # -- Young-Goldstein-Block terminal speed (mu* = 1, k* = 1) and the diagnostic time scales --
 v_YGB = (2.0 / 15.0) * (-dsigma_dT) * gradT * r / mu  # = 8.88e-3 at dsigma_dT = -0.1
@@ -134,11 +157,23 @@ c_max = (gam * (p0 + p_inf) / rho_min) ** 0.5  # ~ 20.5
 tau = rho_drop * r**2 / mu  # viscous time rho*r^2/mu = 0.5 (Samareh's)
 t_r = mu / abs(dsigma_dT * gradT)  # capillary-thermal time mu/|sigma_T*gradT| = 7.5 (Samareh scale)
 
+# -- Bulk thermal conduction (k* = 1): alpha_T from the requested thermal Marangoni number Ma --
+# U_r = |sigma_T|*gradT*r/mu is the Marangoni interfacial velocity scale; alpha_T = U_r*r/Ma. The
+# conductivity follows from alpha_T = k/(rho*cv*gam) (stiffened-gas cp = gam*cv) at the drop density
+# rho = rho_coeff/T0 = 0.2; both fluids get the same k (the YGB k* = 1 limit).
+if Ma_th > 0:
+    U_r = (-dsigma_dT) * gradT * r / mu
+    alpha_T = U_r * r / Ma_th
+    k_therm = alpha_T * (rho_coeff / T0) * cv * gam
+
 # -- Time stepping: acoustic-CFL limited (Ma ~ U/c ~ 4e-4, so cost is set by step count) --
 # dt = ICFL*dx/c_max with ICFL = 0.35 (RK3 + WENO5 stable, with margin for the brief acoustic
 # capillary-relaxation transient that briefly raises |u|+c). Run n_tr capillary-thermal times t_r
 # to reach -- and hold -- the quasi-steady migration plateau (Samareh's Fig 5/6 plateau by t/t_r ~ 1-2).
 mydt = 0.35 * dx / c_max
+# With conduction on, also cap by the explicit-diffusion number: dt <= 0.35*dx^2/(2*d*alpha), d=2 (2D).
+if Ma_th > 0:
+    mydt = min(mydt, 0.35 * dx**2 / (4.0 * alpha_T))
 t_end = n_tr * t_r  # default 4*t_r = 30; covers the plateau with margin
 t_step_stop = int(round(t_end / mydt))
 t_step_save = max(1, t_step_stop // 80)  # ~80 snapshots, enough to resolve the rise-velocity curve
@@ -240,5 +275,35 @@ data = {
     "patch_icpp(2)%alpha(2)": eps,
     "patch_icpp(2)%cf_val": 1.0,
 }
+
+if Ma_th > 0:
+    # Bulk Fourier conduction (harmonic mixture closure; equal k -> the YGB k* = 1 limit).
+    data.update({"thermal_conduction": "T", "fluid_pp(1)%k_therm": k_therm, "fluid_pp(2)%k_therm": k_therm})
+    # Isothermal far-field BC pins the cold floor / hot ceiling to the imposed gradient. It is a WALL
+    # BC, applied ONLY with the slip-wall geometry. At an OPEN boundary it clamps T against the advected
+    # field and REVERSES the migration (see CONDUCTION_REVERSAL_SAGA.md), so the open box is left
+    # adiabatic -- the imposed gradient is sustained by the IC over the quasi-steady window.
+    if wall and not no_bc:
+        data.update(
+            {
+                "bc_y%isothermal_in": "T",
+                "bc_y%isothermal_out": "T",
+                "bc_y%Twall_in": T0 + gradT * (-Ly / 2.0),  # cold floor (y%beg)
+                "bc_y%Twall_out": T0 + gradT * (Ly / 2.0),  # hot ceiling (y%end)
+            }
+        )
+
+if ts_mode:
+    # Independent temperature scalar: T(y) imposed directly on T_s for both patches (T is continuous
+    # across the color interface; only the color function jumps). sigma(T) reads T_s; with Ma > 0 the
+    # conduction block above diffuses T_s at alpha = k/(rho cp). T_s_wrt exposes it for visualization.
+    data.update(
+        {
+            "thermal_scalar": "T",
+            "T_s_wrt": "T",
+            "patch_icpp(1)%T_temp_val": T_expr,
+            "patch_icpp(2)%T_temp_val": T_expr,
+        }
+    )
 
 print(json.dumps(data))

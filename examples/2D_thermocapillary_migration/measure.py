@@ -57,6 +57,9 @@ def read_namelist(path):
 
 params = read_namelist(os.path.join(case_dir, "simulation.inp"))
 patches = read_namelist(os.path.join(case_dir, "pre_process.inp"))
+# thermal_scalar appends an independent temperature scalar (eqn_idx%T_s) AFTER the color function,
+# so in that mode the color function is the second-to-last conserved variable, not the last.
+ts_mode = str(params.get("thermal_scalar", "F")).upper().strip(". ").startswith("T")
 
 
 def param(name, src=params):
@@ -87,7 +90,8 @@ v_YGB = (2.0 / 15.0) * (-dsigma_dT) * gradT * r / mu  # YGB terminal speed (mu* 
 samareh_ratio = 0.80
 
 # Conserved-variable layout (model_eqns=3, num_fluids=2, surface_tension):
-#   indices 0,1 = partial densities, 2 = x-momentum, 3 = y-momentum, last = color c.
+#   indices 0,1 = partial densities, 2 = x-momentum, 3 = y-momentum, color c is last --
+#   or second-to-last when thermal_scalar appends T_s after it.
 restart_dir = os.path.join(case_dir, "restart_data")
 
 # Cell-center y positions from the boundary file (last ny+1 boundaries are the interior).
@@ -124,7 +128,8 @@ for s in steps:
     snap = np.fromfile(os.path.join(restart_dir, f"lustre_{s}.dat"), np.float64)
     rho = field(snap, 0) + field(snap, 1)  # total density (sum of partial densities)
     vy = field(snap, 3) / rho  # rise (y) velocity
-    c = np.clip(field(snap, nvars - 1), 0.0, None)  # color function (last variable)
+    c_idx = nvars - 2 if ts_mode else nvars - 1  # T_s is appended after the color function in ts_mode
+    c = np.clip(field(snap, c_idx), 0.0, None)  # color function
     csum = c.sum()
     times.append(s * dt)
     y_centroid.append((c * yb3).sum() / csum)  # color-weighted y-centroid
