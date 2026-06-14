@@ -66,10 +66,13 @@ contains
     end subroutine s_get_thermal_conduction
 
     !> Overwrite the ghost-cell temperature at isothermal boundaries with a Dirichlet reflection T_ghost = 2*Twall - T_interior, so
-    !! the face temperature equals Twall and the conductive flux through the boundary is set by the prescribed wall/far-field
-    !! temperature. Mirrors the chemistry q_T_sf isothermal handling in m_boundary_common, but is standalone: it applies for any
-    !! boundary type (e.g. an open boundary holding a far-field temperature), not just no-slip/slip walls. Boundaries left
-    !! non-isothermal keep the extrapolated (zero-gradient, adiabatic) ghost temperature.
+    !! the face temperature equals Twall and the conductive flux through the boundary is set by the prescribed wall temperature.
+    !! Mirrors the chemistry q_T_sf isothermal handling in m_boundary_common. This is a WALL boundary condition: it is correct at
+    !! no-slip/slip walls, where there is no advective throughflow. WARNING: do NOT use it at an open/non-reflecting boundary
+    !! (e.g. bc = -3) with throughflow -- clamping the value there fights the advected temperature and pumps a spurious flow
+    !! (it reverses 2D thermocapillary migration; see examples/2D_thermocapillary_migration). Open boundaries should be left
+    !! non-isothermal (adiabatic, zero-gradient extrapolation), which sustains an imposed far-field gradient over the
+    !! quasi-steady window. Boundaries left non-isothermal keep the extrapolated (zero-gradient, adiabatic) ghost temperature.
     subroutine s_apply_thermal_conduction_bc()
 
         integer :: j, k, l

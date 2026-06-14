@@ -103,6 +103,10 @@ Ma_th = float(os.environ.get("SAMAREH_MA", "0"))
 # SAMAREH_MA=0 for a clean, density-decoupled frozen-T run; the finite-Ma conduction reversal is an
 # open issue (see README Sec. 5 and THERMAL_SCALAR_SCOPE.md).
 ts_mode = os.environ.get("SAMAREH_TS", "0") == "1"
+# SAMAREH_NOBC = 1 (diagnostic) runs conduction with ADIABATIC x-boundaries (no isothermal far-field
+# Dirichlet BC). Isolates whether the 2D conduction reversal comes from the imposed-temperature BC or
+# from the bulk conduction operator itself. Adiabatic ends let the imposed gradient slowly relax.
+no_bc = os.environ.get("SAMAREH_NOBC", "0") == "1"
 assert dim in (2, 3), "SAMAREH_DIM must be 2 or 3"
 assert Ma_th >= 0, "SAMAREH_MA must be >= 0 (0 disables conduction)"
 
@@ -312,22 +316,30 @@ if dim == 3:
 
 if Ma_th > 0:
     # Bulk Fourier conduction (harmonic mixture closure; equal k -> the YGB k* = 1 limit).
-    # Pin the x-end temperatures to the imposed far-field profile T(x) = T0 + gradT*x via the
-    # Dirichlet isothermal BC. Without this, the x boundaries are adiabatic (zero-gradient),
-    # which is incompatible with the imposed gradient: conduction would accumulate heat at the
-    # domain ends and pump a spurious O(k) bulk flow (the artifact the open box exhibited before
-    # this BC existed). The y/z boundaries vary no temperature, so they stay adiabatic (correct).
     data.update(
         {
             "thermal_conduction": "T",
             "fluid_pp(1)%k_therm": k_therm,
             "fluid_pp(2)%k_therm": k_therm,
-            "bc_x%isothermal_in": "T",
-            "bc_x%isothermal_out": "T",
-            "bc_x%Twall_in": T0 + gradT * (-Lx / 2.0),  # far-field T at the cold (-x) end
-            "bc_x%Twall_out": T0 + gradT * (Lx / 2.0),  # far-field T at the hot (+x) end
         }
     )
+    # Isothermal far-field BC: pin the x-end temperatures to T(x) = T0 + gradT*x via the Dirichlet
+    # reflection T_ghost = 2*Twall - T_interior. This is a WALL boundary condition and is ONLY applied
+    # with the slip-wall geometry (SAMAREH_WALL=1). Measured fact: applying it at an OPEN boundary
+    # (bc_x = -3, the default) catastrophically REVERSES the drop (-2.7 v_YGB) -- the fixed-value
+    # reflection fights the advective throughflow and pumps the thermal field. The open box instead
+    # leaves the x-ends ADIABATIC, which migrates correctly toward hot (+0.75 v_YGB); the imposed
+    # gradient is sustained by the IC over the quasi-steady window (conduction relaxes it only on the
+    # slow domain^2/alpha timescale). See README Sec. 5 and the SAMAREH_NOBC diagnostic.
+    if wall and not no_bc:
+        data.update(
+            {
+                "bc_x%isothermal_in": "T",
+                "bc_x%isothermal_out": "T",
+                "bc_x%Twall_in": T0 + gradT * (-Lx / 2.0),  # cold (-x) wall temperature
+                "bc_x%Twall_out": T0 + gradT * (Lx / 2.0),  # hot (+x) wall temperature
+            }
+        )
 
 if ts_mode:
     # Independent temperature scalar: T(x) imposed directly on T_s for BOTH patches (temperature is
