@@ -500,8 +500,14 @@ contains
                                         mCP_L = mCP_L + alpha_rho_L(i)*cvs(i)*gs_min(i)
                                         mCP_R = mCP_R + alpha_rho_R(i)*cvs(i)*gs_min(i)
                                     end do
-                                    T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
-                                    T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
+                                    if (thermal_scalar) then
+                                        ! mu(T) reads the independent temperature scalar T_s when carried (matches sigma(T))
+                                        T_L = qL_prim_rs${XYZ}$_vf(j, k, l, eqn_idx%T_s)
+                                        T_R = qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%T_s)
+                                    else
+                                        T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
+                                        T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
+                                    end if
                                     mu_mix_L = 0._wp; mu_mix_R = 0._wp
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do q = 1, Re_size(1)
@@ -1938,20 +1944,23 @@ contains
                                 end if
 
                                 if (viscous .and. viscous_T_dependent) then
-                                    ! Arrhenius mu(T) = exp(C + D/T) override of the shear Re(1) (model_eqns=3 HLLC path, the one
-                                    ! the
-                                    ! thermocapillary cases use). alpha and partial densities come from the reconstructed
-                                    ! primitives,
-                                    ! matching the constant-Re block above so a uniform-mu run reproduces it bitwise. Re stores
-                                    ! 1/mu.
+                                    ! Arrhenius mu(T)=exp(C+D/T) override of the shear Re(1) (model_eqns=3 HLLC path the
+                                    ! thermocapillary cases use). alpha/alpha_rho from reconstructed primitives, matching the
+                                    ! constant-Re block so a uniform-mu run reproduces it bitwise. Re stores 1/mu.
                                     mCP_L = 0._wp; mCP_R = 0._wp
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do i = 1, num_fluids
                                         mCP_L = mCP_L + qL_prim_rs${XYZ}$_vf(j, k, l, i)*cvs(i)*gs_min(i)
                                         mCP_R = mCP_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, i)*cvs(i)*gs_min(i)
                                     end do
-                                    T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
-                                    T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
+                                    if (thermal_scalar) then
+                                        ! mu(T) reads the independent temperature scalar T_s when carried (matches sigma(T))
+                                        T_L = qL_prim_rs${XYZ}$_vf(j, k, l, eqn_idx%T_s)
+                                        T_R = qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%T_s)
+                                    else
+                                        T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
+                                        T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
+                                    end if
                                     mu_mix_L = 0._wp; mu_mix_R = 0._wp
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do q = 1, Re_size(1)

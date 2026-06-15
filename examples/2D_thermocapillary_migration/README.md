@@ -23,7 +23,7 @@ and that is called out explicitly below rather than left missing.
 |---|---|---|---|---|
 | **TC1** | Drop at zero Marangoni number (§4.1.1) | `Ma = 0` (invariant `T`) | **Fig 5** (planar 2D → 0.80), **Fig 6** (3D sphere → 0.95) | **2D ✅** · 3D ❌ |
 | **TC2** | Low Marangoni number, Nas & Tryggvason (§4.1.2) | `Re=5, Ma=20, Ca=0.0167` | **Fig 7** | **✅** |
-| **TC3** | Large Marangoni number, LMS flight experiment (§4.2) | large `Ma`, `mu(T)` | Figs 8, 10–13 | **❌** (needs `mu(T)`) |
+| **TC3** | Large Marangoni number, LMS flight experiment (§4.2) | large `Ma`, `mu(T)` | Figs 8, 10–13 | **🟡** `case_tc3.py` (needs a production run) |
 
 ## How MFC realizes the temperature field (shared by both 2D cases)
 
@@ -115,16 +115,20 @@ Life and Microgravity Science Space Shuttle experiment: a `60 mm × 45 × 45 mm`
 `sigma_0 = 0.007 N/m`, `sigma_T = −3.6×10⁻⁵ N/m·K`, and crucially a **temperature-dependent viscosity**
 `mu(T) = exp(C + D/T)` (Figs 8, 10–13).
 
-**Where `mu(T)` bites.** TC3 needs two pieces of physics: bulk conduction (now **implemented**) *and*
-temperature-dependent viscosity (still **missing**). The viscosity is the load-bearing one here. The
-real silicon oil's viscosity varies substantially across the 60 K cell (Samareh: density and `cp`
-variations are negligible — *only* `mu` changes appreciably, "which can affect the droplet
-acceleration"). Because both the migration and the Stokes drag scale as `1/mu_b`, as the drop rises
-into warmer, less-viscous oil it speeds up — this is what produces the **non-monotonic** rise-velocity
-profile (the accelerate–decelerate–reaccelerate "loop" in Fig 8 / Fig 13) that the experiment shows.
-A constant-`mu` run (as in TC1/TC2) gives a smooth monotonic approach to a single terminal velocity and
-cannot reproduce that signature. So with conduction in hand, **`mu(T)` is the sole remaining blocker**
-for TC3 — not the dimensionality.
+**What MFC builds** (`case_tc3.py`): the full LMS cell in SI units — a 3D Fluorinert sphere in silicon
+oil, real per-fluid densities/conductivities/heat capacities, `sigma(T)`, bulk conduction, and the
+**temperature-dependent viscosity `mu(T) = exp(C + D/T)`** (the `visc_model = 1` feature) with the
+paper's Arrhenius coefficients (Eq. 30: silicon oil `C=−10.17, D=1643`; Fluorinert `C=−11.76, D=1540`).
+Because the two fluids have different ~constant densities, temperature is carried by the independent
+`thermal_scalar` (`T_s`, in Kelvin) — both `sigma(T)` and `mu(T)` read it. The case validates and
+smoke-runs; the headline Fig 8/13 comparison is a heavy 3D **production run** (Samareh used up to
+240×640×240), left to the user.
+
+**Why `mu(T)` is load-bearing here.** The silicon oil's viscosity varies substantially across the 60 K
+cell (Samareh: density and `cp` variations are negligible — *only* `mu` changes appreciably). Because
+the migration and Stokes drag scale as `1/mu_b`, as the drop rises into warmer, less-viscous oil it
+speeds up — this produces the experiment's **non-monotonic** rise-velocity "loop" (Fig 8/13) that a
+constant-`mu` run (TC1/TC2) structurally cannot reproduce.
 
 ---
 
