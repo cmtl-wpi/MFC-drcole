@@ -1,0 +1,68 @@
+% Thermocapillary (Marangoni) migration of a droplet -- introduction schematic.
+% Companion to examples/2D_thermocapillary_migration (Samareh et al. 2014, Test Case 1).
+%
+% Compile:  pdflatex thermocapillary_migration.tex   (or lualatex / tectonic)
+%
+% A drop in an imposed linear temperature field. Surface tension falls with T, so sigma
+% varies CONTINUOUSLY around the interface -- drawn as a gradient: dark/heavy = high sigma
+% on the cold side, light/thin = low sigma on the hot side. That tangential sigma-gradient
+% is the Marangoni stress; it drives interfacial fluid hot -> cold and an internal
+% recirculation, and by reaction the drop migrates toward the hot side (U).
+
+\documentclass[border=4pt]{standalone}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+
+% restrained, print-friendly palette
+\definecolor{coldc}{RGB}{46,86,149}
+\definecolor{hotc}{RGB}{171,57,52}
+\definecolor{marac}{RGB}{31,107,99}
+\definecolor{flowc}{RGB}{125,125,125}
+\definecolor{inkc}{RGB}{30,30,30}
+
+\begin{document}
+\begin{tikzpicture}[>=Stealth, font=\footnotesize, line cap=round]
+  \def\R{1.6}
+
+  % imposed temperature field (subtle) + thin domain frame
+  \shade[left color=coldc!14, right color=hotc!16] (-4,-2.5) rectangle (4,2.5);
+  \draw[gray!50, line width=0.4pt] (-4,-2.5) rectangle (4,2.5);
+  \node[coldc] at (-3.5,2.12) {cold};
+  \node[hotc]  at ( 3.5,2.12) {hot};
+
+  % temperature-gradient arrow
+  \draw[->, gray!65, line width=0.7pt] (-2.3,2.86) -- (2.3,2.86);
+  \node[gray!70] at (0,3.08) {$\nabla T$};
+
+  % droplet interior (lightened so the interior arrows read cleanly)
+  \fill[white, opacity=0.55] (0,0) circle (\R);
+
+  % INTERFACE drawn as a gradient in sigma: each arc segment is shaded by its local
+  % temperature (x = R cos a). cold/left -> high sigma (dark, heavy); hot/right -> low
+  % sigma (light, thin). This is the surface-tension gradient that drives the flow.
+  \foreach \a in {0,4,...,356}{
+    \pgfmathsetmacro{\t}{(cos(\a)+1)/2}      % 0 at cold pole, 1 at hot pole
+    \pgfmathsetmacro{\dk}{90-50*\t}          % line darkness  (high sigma -> dark)
+    \pgfmathsetmacro{\lw}{1.9-1.0*\t}        % line weight    (high sigma -> heavy)
+    \draw[black!\dk, line width=\lw pt] (\a:\R) arc[start angle=\a, end angle=\a+5, radius=\R];
+  }
+  \node[coldc, anchor=east] at (-1.74,0.96) {high $\sigma$};
+  \node[hotc,  anchor=west] at ( 1.74,0.96) {low $\sigma$};
+
+  % Marangoni surface stress: tangential, hot -> cold (over top and under bottom)
+  \def\Mr{1.86}
+  \draw[marac, line width=1.1pt, ->] (24:\Mr)  arc[start angle=24,  end angle=156,  radius=\Mr];
+  \draw[marac, line width=1.1pt, ->] (-24:\Mr) arc[start angle=-24, end angle=-156, radius=\Mr];
+  \node[marac] at (0,2.18) {Marangoni stress $\;\nabla_{\!s}\sigma$};
+
+  % internal recirculation (subtle)
+  \draw[flowc, line width=0.7pt, ->] (0.76, 0.82) arc[start angle=0, end angle=300, x radius=0.76, y radius=0.48];
+  \draw[flowc, line width=0.7pt, ->] (0.76,-0.82) arc[start angle=0, end angle=-300, x radius=0.76, y radius=0.48];
+
+  % migration of the drop toward the hot side
+  \draw[inkc, line width=2.0pt, ->] (-0.15,0) -- (2.7,0);
+  \node[inkc] at (2.05,0.36) {$U$};
+
+\end{tikzpicture}
+\end{document}
