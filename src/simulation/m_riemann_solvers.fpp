@@ -200,14 +200,15 @@ contains
         real(wp)                  :: vel_L_tmp, vel_R_tmp
         real(wp)                  :: Ms_L, Ms_R, pres_SL, pres_SR
         real(wp)                  :: alpha_L_sum, alpha_R_sum
-        real(wp)                  :: zcoef, pcorr   !< low Mach number correction
+        real(wp)                  :: zcoef, pcorr                      !< low Mach number correction
         type(riemann_states)      :: c_fast, pres_mag
         type(riemann_states_vec3) :: B
-        type(riemann_states)      :: Ga             !< Gamma (Lorentz factor)
+        type(riemann_states)      :: Ga                                !< Gamma (Lorentz factor)
         type(riemann_states)      :: vdotB, B2
-        type(riemann_states_vec3) :: b4             !< 4-magnetic field components (spatial: b4x, b4y, b4z)
-        type(riemann_states_vec3) :: cm             !< Conservative momentum variables
-        integer                   :: i, j, k, l, q  !< Generic loop iterators
+        type(riemann_states_vec3) :: b4                                !< 4-magnetic field components (spatial: b4x, b4y, b4z)
+        type(riemann_states_vec3) :: cm                                !< Conservative momentum variables
+        real(wp)                  :: mCP_L, mCP_R, mu_mix_L, mu_mix_R  !< mu(T) viscosity mixing locals
+        integer                   :: i, j, k, l, q                     !< Generic loop iterators
         ! Populating the buffers of the left and right Riemann problem states variables, based on the choice of boundary conditions
 
         call s_populate_riemann_states_variables_buffers(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_vf, &
@@ -226,7 +227,8 @@ contains
                                     & Y_L, Y_R, MW_L, MW_R, R_gas_L, R_gas_R, Cp_L, Cp_R, Cv_L, Cv_R, Gamm_L, Gamm_R, gamma_L, &
                                     & gamma_R, pi_inf_L, pi_inf_R, qv_L, qv_R, qv_avg, c_L, c_R, G_L, G_R, rho_avg, H_avg, c_avg, &
                                     & gamma_avg, ptilde_L, ptilde_R, vel_L_rms, vel_R_rms, vel_avg_rms, Ms_L, Ms_R, pres_SL, &
-                                    & pres_SR, alpha_L_sum, alpha_R_sum, flux_tau_L, flux_tau_R]', copyin='[norm_dir]')
+                                    & pres_SR, alpha_L_sum, alpha_R_sum, flux_tau_L, flux_tau_R, mCP_L, mCP_R, mu_mix_L, &
+                                    & mu_mix_R]', copyin='[norm_dir]')
                 do l = is3%beg, is3%end
                     do k = is2%beg, is2%end
                         do j = is1%beg, is1%end
@@ -487,6 +489,34 @@ contains
                             if (viscous) then
                                 if (chemistry) then
                                     call compute_viscosity_and_inversion(T_L, Ys_L, T_R, Ys_R, Re_L(1), Re_R(1))
+                                else if (viscous_T_dependent) then
+                                    ! Arrhenius mu(T) = exp(C + D/T): override the shear Re(1) using the stiffened-gas
+                                    ! L/R temperature T = ((Gamma_mix+1)*p + pi_inf_mix)/mCP (= f_compute_mixture_temperature),
+                                    ! with arithmetic alpha-weighted mu mixing to match the constant-Re path (so a uniform-mu
+                                    ! run is bitwise-identical). MFC stores 1/mu in Re, hence Re(1) = 1/sum(alpha_i*mu_i).
+                                    mCP_L = 0._wp; mCP_R = 0._wp
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do i = 1, num_fluids
+                                        mCP_L = mCP_L + alpha_rho_L(i)*cvs(i)*gs_min(i)
+                                        mCP_R = mCP_R + alpha_rho_R(i)*cvs(i)*gs_min(i)
+                                    end do
+                                    T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
+                                    T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
+                                    mu_mix_L = 0._wp; mu_mix_R = 0._wp
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do q = 1, Re_size(1)
+                                        if (visc_models(Re_idx(1, q)) == 1) then
+                                            mu_mix_L = mu_mix_L + alpha_L(Re_idx(1, q))*exp(visc_cs(Re_idx(1, &
+                                                                          & q)) + visc_ds(Re_idx(1, q))/max(T_L, sgm_eps))
+                                            mu_mix_R = mu_mix_R + alpha_R(Re_idx(1, q))*exp(visc_cs(Re_idx(1, &
+                                                                          & q)) + visc_ds(Re_idx(1, q))/max(T_R, sgm_eps))
+                                        else
+                                            mu_mix_L = mu_mix_L + alpha_L(Re_idx(1, q))/max(Res_gs(1, q), sgm_eps)
+                                            mu_mix_R = mu_mix_R + alpha_R(Re_idx(1, q))/max(Res_gs(1, q), sgm_eps)
+                                        end if
+                                    end do
+                                    Re_L(1) = 1._wp/max(mu_mix_L, sgm_eps)
+                                    Re_R(1) = 1._wp/max(mu_mix_R, sgm_eps)
                                 end if
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do i = 1, 2
@@ -1736,6 +1766,7 @@ contains
         #:endif
         real(wp)               :: Cp_avg, Cv_avg, T_avg, c_sum_Yi_Phi, eps
         real(wp)               :: T_L, T_R
+        real(wp)               :: mCP_L, mCP_R, mu_mix_L, mu_mix_R  !< mu(T) viscosity mixing locals
         real(wp)               :: MW_L, MW_R
         real(wp)               :: R_gas_L, R_gas_R
         real(wp)               :: Cp_L, Cp_R
@@ -1753,7 +1784,7 @@ contains
         real(wp)               :: qv_avg
         real(wp)               :: c_avg
         real(wp)               :: s_L, s_R, s_M, s_P, s_S
-        real(wp)               :: xi_L, xi_R  !< Left and right wave speeds functions
+        real(wp)               :: xi_L, xi_R                        !< Left and right wave speeds functions
         real(wp)               :: xi_M, xi_P
         real(wp)               :: xi_MP, xi_PP
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
@@ -1811,7 +1842,7 @@ contains
                                         & rho_avg, H_avg, c_avg, gamma_avg, ptilde_L, ptilde_R, vel_L_rms, vel_R_rms, &
                                         & vel_avg_rms, vel_L_tmp, vel_R_tmp, Ms_L, Ms_R, pres_SL, pres_SR, alpha_L_sum, &
                                         & alpha_R_sum, rho_Star, E_Star, p_Star, p_K_Star, vel_K_star, s_L, s_R, s_M, s_P, s_S, &
-                                        & xi_M, xi_P, xi_L, xi_R, xi_MP, xi_PP]')
+                                        & xi_M, xi_P, xi_L, xi_R, xi_MP, xi_PP, mCP_L, mCP_R, mu_mix_L, mu_mix_R]')
                     do l = is3%beg, is3%end
                         do k = is2%beg, is2%end
                             do j = is1%beg, is1%end
@@ -1904,6 +1935,40 @@ contains
                                         Re_L(i) = 1._wp/max(Re_L(i), sgm_eps)
                                         Re_R(i) = 1._wp/max(Re_R(i), sgm_eps)
                                     end do
+                                end if
+
+                                if (viscous .and. viscous_T_dependent) then
+                                    ! Arrhenius mu(T) = exp(C + D/T) override of the shear Re(1) (model_eqns=3 HLLC path, the one
+                                    ! the
+                                    ! thermocapillary cases use). alpha and partial densities come from the reconstructed
+                                    ! primitives,
+                                    ! matching the constant-Re block above so a uniform-mu run reproduces it bitwise. Re stores
+                                    ! 1/mu.
+                                    mCP_L = 0._wp; mCP_R = 0._wp
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do i = 1, num_fluids
+                                        mCP_L = mCP_L + qL_prim_rs${XYZ}$_vf(j, k, l, i)*cvs(i)*gs_min(i)
+                                        mCP_R = mCP_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, i)*cvs(i)*gs_min(i)
+                                    end do
+                                    T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
+                                    T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
+                                    mu_mix_L = 0._wp; mu_mix_R = 0._wp
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do q = 1, Re_size(1)
+                                        if (visc_models(Re_idx(1, q)) == 1) then
+                                            mu_mix_L = mu_mix_L + qL_prim_rs${XYZ}$_vf(j, k, l, eqn_idx%E + Re_idx(1, &
+                                                & q))*exp(visc_cs(Re_idx(1, q)) + visc_ds(Re_idx(1, q))/max(T_L, sgm_eps))
+                                            mu_mix_R = mu_mix_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%E + Re_idx(1, &
+                                                & q))*exp(visc_cs(Re_idx(1, q)) + visc_ds(Re_idx(1, q))/max(T_R, sgm_eps))
+                                        else
+                                            mu_mix_L = mu_mix_L + qL_prim_rs${XYZ}$_vf(j, k, l, eqn_idx%E + Re_idx(1, &
+                                                & q))/max(Res_gs(1, q), sgm_eps)
+                                            mu_mix_R = mu_mix_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%E + Re_idx(1, &
+                                                & q))/max(Res_gs(1, q), sgm_eps)
+                                        end if
+                                    end do
+                                    Re_L(1) = 1._wp/max(mu_mix_L, sgm_eps)
+                                    Re_R(1) = 1._wp/max(mu_mix_R, sgm_eps)
                                 end if
 
                                 E_L = gamma_L*pres_L + pi_inf_L + 5.e-1_wp*rho_L*vel_L_rms + qv_L
@@ -2233,7 +2298,7 @@ contains
                                         & vel_avg_rms, vel_L_tmp, vel_R_tmp, Ms_L, Ms_R, pres_SL, pres_SR, alpha_L_sum, &
                                         & alpha_R_sum, rho_Star, E_Star, p_Star, p_K_Star, vel_K_star, s_L, s_R, s_M, s_P, s_S, &
                                         & xi_M, xi_P, xi_L, xi_R, xi_MP, xi_PP, Ys_L, Ys_R, Cp_iL, Cp_iR, Xs_L, Xs_R, Gamma_iL, &
-                                        & Gamma_iR, Yi_avg, Phi_avg, h_iL, h_iR, h_avg_2]')
+                                        & Gamma_iR, Yi_avg, Phi_avg, h_iL, h_iR, h_avg_2, mCP_L, mCP_R, mu_mix_L, mu_mix_R]')
                     do l = is3%beg, is3%end
                         do k = is2%beg, is2%end
                             do j = is1%beg, is1%end
@@ -3073,6 +3138,33 @@ contains
                                 if (viscous) then
                                     if (chemistry) then
                                         call compute_viscosity_and_inversion(T_L, Ys_L, T_R, Ys_R, Re_L(1), Re_R(1))
+                                    else if (viscous_T_dependent) then
+                                        ! Arrhenius mu(T) = exp(C + D/T): override the shear Re(1) from the stiffened-gas
+                                        ! L/R temperature, arithmetic alpha-weighted to match the constant-Re path. MFC
+                                        ! stores 1/mu in Re, so Re(1) = 1/sum(alpha_i*mu_i).
+                                        mCP_L = 0._wp; mCP_R = 0._wp
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_fluids
+                                            mCP_L = mCP_L + alpha_rho_L(i)*cvs(i)*gs_min(i)
+                                            mCP_R = mCP_R + alpha_rho_R(i)*cvs(i)*gs_min(i)
+                                        end do
+                                        T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
+                                        T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
+                                        mu_mix_L = 0._wp; mu_mix_R = 0._wp
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do q = 1, Re_size(1)
+                                            if (visc_models(Re_idx(1, q)) == 1) then
+                                                mu_mix_L = mu_mix_L + alpha_L(Re_idx(1, q))*exp(visc_cs(Re_idx(1, &
+                                                                              & q)) + visc_ds(Re_idx(1, q))/max(T_L, sgm_eps))
+                                                mu_mix_R = mu_mix_R + alpha_R(Re_idx(1, q))*exp(visc_cs(Re_idx(1, &
+                                                                              & q)) + visc_ds(Re_idx(1, q))/max(T_R, sgm_eps))
+                                            else
+                                                mu_mix_L = mu_mix_L + alpha_L(Re_idx(1, q))/max(Res_gs(1, q), sgm_eps)
+                                                mu_mix_R = mu_mix_R + alpha_R(Re_idx(1, q))/max(Res_gs(1, q), sgm_eps)
+                                            end if
+                                        end do
+                                        Re_L(1) = 1._wp/max(mu_mix_L, sgm_eps)
+                                        Re_R(1) = 1._wp/max(mu_mix_R, sgm_eps)
                                     end if
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do i = 1, 2

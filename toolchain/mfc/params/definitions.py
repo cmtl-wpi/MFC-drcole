@@ -80,6 +80,9 @@ _ATTR_DESCS = {
     "G": "Shear modulus",
     "Re": "Reynolds number",
     "k_therm": "Thermal conductivity",
+    "visc_model": "Viscosity model: 0=constant Re, 1=Arrhenius mu=exp(C+D/T)",
+    "visc_c": "Arrhenius viscosity coefficient C",
+    "visc_d": "Arrhenius viscosity coefficient D",
     "mul0": "Reference viscosity",
     "ss": "Surface tension",
     "pv": "Vapor pressure",
@@ -1177,6 +1180,9 @@ def _load():
         _r(f"{px}Re(1)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (shear)")
         _r(f"{px}Re(2)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (bulk)")
         _r(f"{px}k_therm", REAL, {"thermal_conduction"}, math=r"\f$k_k\f$")
+        _r(f"{px}visc_model", INT, {"viscosity"})
+        _r(f"{px}visc_c", REAL, {"viscosity"}, math=r"\f$C_{\mu,k}\f$")
+        _r(f"{px}visc_d", REAL, {"viscosity"}, math=r"\f$D_{\mu,k}\f$")
 
     # bub_pp (bubble properties)
     for a, sym in [

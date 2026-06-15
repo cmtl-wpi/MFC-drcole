@@ -456,6 +456,12 @@ module m_global_parameters
     real(wp), allocatable, dimension(:) :: kappas  !< Per-fluid thermal conductivities on the device
     $:GPU_DECLARE(create='[kappas]')
 
+    integer, allocatable, dimension(:)  :: visc_models       !< Per-fluid viscosity-model ids on the device
+    real(wp), allocatable, dimension(:) :: visc_cs, visc_ds  !< Per-fluid Arrhenius mu(T) coefficients on the device
+    $:GPU_DECLARE(create='[visc_models, visc_cs, visc_ds]')
+    logical :: viscous_T_dependent  !< .true. if any fluid uses an Arrhenius mu(T) (visc_model = 1)
+    $:GPU_DECLARE(create='[viscous_T_dependent]')
+
     real(wp)                                    :: mytime     !< Current simulation time
     real(wp)                                    :: finaltime  !< Final simulation time
     logical                                     :: rdma_mpi
@@ -619,6 +625,9 @@ contains
             fluid_pp(i)%Re(:) = dflt_real
             fluid_pp(i)%G = 0._wp
             fluid_pp(i)%k_therm = 0._wp
+            fluid_pp(i)%visc_model = 0
+            fluid_pp(i)%visc_c = 0._wp
+            fluid_pp(i)%visc_d = 0._wp
         end do
 
         ! Subgrid bubble parameters

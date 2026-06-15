@@ -366,6 +366,18 @@ contains
             kappas(i) = fluid_pp(i)%k_therm
         end do
         $:GPU_UPDATE(device='[kappas]')
+
+        ! Per-fluid viscosity model + Arrhenius mu(T) coefficients. Always allocated (like kappas) so the
+        ! GPU device mapping is valid even when no fluid uses mu(T); viscous_T_dependent gates the override.
+        @:ALLOCATE(visc_models(1:num_fluids), visc_cs(1:num_fluids), visc_ds(1:num_fluids))
+        viscous_T_dependent = .false.
+        do i = 1, num_fluids
+            visc_models(i) = fluid_pp(i)%visc_model
+            visc_cs(i) = fluid_pp(i)%visc_c
+            visc_ds(i) = fluid_pp(i)%visc_d
+            if (fluid_pp(i)%visc_model == 1) viscous_T_dependent = .true.
+        end do
+        $:GPU_UPDATE(device='[visc_models, visc_cs, visc_ds, viscous_T_dependent]')
 #endif
 
         if (bubbles_euler) then
@@ -1244,6 +1256,7 @@ contains
 #ifdef MFC_SIMULATION
         @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
         @:DEALLOCATE(kappas)
+        @:DEALLOCATE(visc_models, visc_cs, visc_ds)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
         end if

@@ -174,9 +174,10 @@ contains
         #:endif
 
         do i = 1, num_fluids_max
-            #:for VAR in [ 'gamma','pi_inf','G','cv','qv','qvp','k_therm' ]
+            #:for VAR in [ 'gamma','pi_inf','G','cv','qv','qvp','k_therm','visc_c','visc_d' ]
                 call MPI_BCAST(fluid_pp(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
+            call MPI_BCAST(fluid_pp(i)%visc_model, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(fluid_pp(i)%Re(1), 2, mpi_p, 0, MPI_COMM_WORLD, ierr)
         end do
 

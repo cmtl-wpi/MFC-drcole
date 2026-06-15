@@ -925,6 +925,29 @@ class CaseValidator:
         weno_Re_flux = self.get("weno_Re_flux", "F") == "T"
         self.prohibit(weno_Re_flux and not viscous, "weno_Re_flux requires viscous to be enabled")
 
+    def check_visc_model(self):
+        """Checks constraints on the temperature-dependent (Arrhenius) viscosity model fluid_pp(i)%visc_model"""
+        viscous = self.get("viscous", "F") == "T"
+        chemistry = self.get("chemistry", "F") == "T"
+        riemann_solver = self.get("riemann_solver")
+        model_eqns = self.get("model_eqns")
+        num_fluids = self.get("num_fluids") or 1
+
+        for i in range(1, num_fluids + 1):
+            visc_model = self.get(f"fluid_pp({i})%visc_model")
+            if visc_model is None:
+                continue
+            self.prohibit(visc_model not in (0, 1), f"fluid_pp({i})%visc_model must be 0 (constant) or 1 (Arrhenius mu=exp(C+D/T))")
+            if visc_model == 1:
+                cv = self.get(f"fluid_pp({i})%cv")
+                self.prohibit(not viscous, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires viscous = T")
+                self.prohibit(cv is not None and cv <= 0, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires cv > 0")
+                self.prohibit(chemistry, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) is not supported with chemistry")
+                self.prohibit(
+                    riemann_solver != 2 or model_eqns != 3,
+                    f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) currently requires riemann_solver=2 (HLLC) and model_eqns=3",
+                )
+
     def check_thermal_conduction(self):
         """Checks constraints on bulk thermal conduction"""
         thermal_conduction = self.get("thermal_conduction", "F") == "T"
@@ -2239,6 +2262,7 @@ class CaseValidator:
         self.check_body_forces()
         self.check_viscosity()
         self.check_thermal_conduction()
+        self.check_visc_model()
         self.check_thermal_scalar()
         self.check_mhd_simulation()
         self.check_igr_simulation()
