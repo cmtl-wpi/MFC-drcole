@@ -52,10 +52,23 @@ SAMAREH_2D = 0.80  # Samareh Fig 5: converged 2D ratio in their slip-wall box
 #   w064 (64x96):   6 = 2x3   -> 32x32
 #   w128 (128x192): 16 = 4x4  -> 32x48
 #   w256 (256x384): 64 = 8x8  -> 32x48
+# Frozen-T grid convergence (Samareh Fig 5) plus the finite-Ma modes at w128: bulk conduction
+# (SAMAREH_MA, with the wall-only isothermal BC fix) and the independent temperature scalar
+# (SAMAREH_TS, density-decoupled). The mode variants share the slip-wall geometry so all curves are
+# lab-frame-comparable. `env` overrides the per-variant case.py knobs.
 VARIANTS = [
-    dict(name="fig5_2D_w064", nx=64, ranks=6, tr=2.0),
-    dict(name="fig5_2D_w128", nx=128, ranks=16, tr=2.0),
-    dict(name="fig5_2D_w256", nx=256, ranks=64, tr=2.0),
+    dict(name="fig5_2D_w064", nx=64, ranks=6, tr=2.0, env={}),
+    dict(name="fig5_2D_w128", nx=128, ranks=16, tr=2.0, env={}),
+    dict(name="fig5_2D_w256", nx=256, ranks=64, tr=2.0, env={}),
+    dict(name="modes_conduction_w128", nx=128, ranks=16, tr=2.0, env={"SAMAREH_MA": "0.3"}),
+    dict(name="modes_thermal_scalar_w128", nx=128, ranks=16, tr=2.0, env={"SAMAREH_TS": "1", "SAMAREH_MA": "0.3"}),
+]
+
+# Curves overlaid in the finite-Ma modes-comparison figure (reuses the frozen-T w128 run as baseline).
+MODE_CURVES = [
+    ("fig5_2D_w128", "C7", "frozen-T (Ma=0)"),
+    ("modes_conduction_w128", "C0", "conduction (Ma=0.3, wall isothermal BC)"),
+    ("modes_thermal_scalar_w128", "C3", "thermal_scalar (Ma=0.3, T decoupled)"),
 ]
 
 
@@ -67,7 +80,7 @@ def run_variant(v):
     os.makedirs(workdir)
     shutil.copy(os.path.join(HERE, "case.py"), os.path.join(workdir, "case.py"))
 
-    env = {**os.environ, "SAMAREH_NX": str(v["nx"]), "SAMAREH_WALL": "1", "SAMAREH_TR": str(v["tr"])}
+    env = {**os.environ, "SAMAREH_NX": str(v["nx"]), "SAMAREH_WALL": "1", "SAMAREH_TR": str(v["tr"]), **v.get("env", {})}
     rel_case = os.path.relpath(os.path.join(workdir, "case.py"), REPO)
     print(f"\n>>> {v['name']}: width={v['nx']} ranks={v['ranks']} tr={v['tr']}", flush=True)
     proc = subprocess.run(["./mfc.sh", "run", rel_case, "-n", str(v["ranks"])], cwd=REPO, env=env, capture_output=True, text=True, check=False)
@@ -108,6 +121,7 @@ def ratio_curve(case_dir):
     nx, ny, nz = int(f("m")) + 1, int(f("n")) + 1, int(f("p")) + 1
     dt, mu, dsdt = f("dt"), 1.0 / f("fluid_pp(1)%re(1)"), f("sigma_dtdt")
     wall = int(f("bc_y%beg")) == -2
+    ts = str(p.get("thermal_scalar", "F")).upper().strip(". ").startswith("T")  # T_s appended after color c
     gradT = 2.0 / 15.0
     t_r = mu / abs(dsdt * gradT)
     v_YGB = (2.0 / 15.0) * (-dsdt) * gradT * 0.5 / mu
@@ -126,7 +140,7 @@ def ratio_curve(case_dir):
         snap = np.fromfile(os.path.join(rd, f"lustre_{s}.dat"), np.float64)
         fld = lambda i: snap[i * cells : (i + 1) * cells].reshape(nz, ny, nx)  # noqa: E731
         vy = fld(3) / (fld(0) + fld(1))
-        c = np.clip(fld(nvars - 1), 0.0, None)
+        c = np.clip(fld(nvars - 2 if ts else nvars - 1), 0.0, None)  # color c; T_s is last in ts mode
         u = (c * vy).sum() / c.sum() - (0.0 if wall else vy[:, is_far, :].mean())
         t_tr.append(s * dt / t_r)
         ratio.append(u / v_YGB)
@@ -164,15 +178,52 @@ def make_figure():
     print(f"  wrote {out}")
 
 
+def make_modes_figure():
+    """Overlay frozen-T vs conduction vs thermal_scalar rise curves at w128 (the finite-Ma modes).
+    All in the slip-wall box (lab frame). y-axis is left unclipped so any reversal would be visible."""
+    curves = []
+    for name, col, lab in MODE_CURVES:
+        cur = ratio_curve(os.path.join(RUNS, name))
+        if cur is not None:
+            curves.append((lab, col, cur))
+    if not curves:
+        return
+    fig, ax = plt.subplots(figsize=(7.4, 4.8))
+    for lab, col, (t, rr) in curves:
+        ax.plot(t, rr, "-", color=col, lw=1.7, label="MFC " + lab)
+    ax.axhline(1.0, ls=":", color="0.45", lw=1.2, label=r"$v_{\mathrm{YGB}}$ (Samareh Eq. 29)")
+    ax.axhline(SAMAREH_2D, ls="--", color="0.2", lw=1.4, label=r"Samareh 2D $\approx$ 0.80")
+    ax.axhline(0.0, ls="-", color="0.6", lw=0.8)
+    ax.set_xlabel(r"$t / t_r$  ($t_r = \mu / |\sigma_T \nabla T|$)")
+    ax.set_ylabel(r"normalized rise velocity  $v / v_{\mathrm{YGB}}$")
+    ax.set_title("Finite-Ma modes at 128 cells/width (slip-wall box): forward migration restored")
+    ax.set_xlim(left=0.0)
+    ax.grid(alpha=0.3)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    os.makedirs(RESULTS, exist_ok=True)
+    out = os.path.join(RESULTS, "finite_ma_modes_2D.png")
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    print(f"  wrote {out}")
+
+
 def print_table(summary):
+    # Only rows produced by the current measure.py have these keys; skip stale entries from older
+    # example versions (e.g. a pre-merge summary.json) rather than crashing on a missing key.
+    cols = ("cells_per_D", "rho_drop", "ratio_plateau", "t_plateau_tr", "overshoot", "ratio_final", "samareh_ratio")
+    rows = {k: v for k, v in summary.items() if all(c in v for c in cols)}
+    skipped = [k for k in summary if k not in rows]
     print("\n" + "=" * 84)
     print(f"{'variant':>16} {'cells/D':>8} {'rho_drop':>8} {'plateau':>8} {'@t/t_r':>7} {'oversh':>7} {'endpt':>7} {'ref':>5}")
-    for name, r in sorted(summary.items(), key=lambda kv: kv[1]["cells_per_D"]):
+    for name, r in sorted(rows.items(), key=lambda kv: kv[1]["cells_per_D"]):
         print(
             f"{name:>16} {r['cells_per_D']:>8.1f} {r['rho_drop']:>8.3f} {r['ratio_plateau']:>+8.3f} "
             f"{r['t_plateau_tr']:>7.2f} {r['overshoot']:>+7.3f} {r['ratio_final']:>+7.3f} {r['samareh_ratio']:>5.2f}"
         )
     print("=" * 84)
+    if skipped:
+        print(f"(skipped {len(skipped)} stale entr{'y' if len(skipped) == 1 else 'ies'} missing current fields: {', '.join(sorted(skipped))})")
 
 
 def load_summary():
@@ -207,8 +258,10 @@ if __name__ == "__main__":
                 if res is not None:
                     summary[v["name"]] = res
                     save_summary(summary)  # checkpoint after every successful variant
-                    make_figure()  # rebuild the figure incrementally
+                    make_figure()  # rebuild the figures incrementally
+                    make_modes_figure()
 
     make_figure()
+    make_modes_figure()
     print_table(summary)
     print(f"\nwrote {os.path.join(RESULTS, 'summary.json')} and figure in {RESULTS}/")

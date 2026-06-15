@@ -64,12 +64,12 @@
 #   SAMAREH_TR    : run length in capillary-thermal times t_r = mu/|sigma_T*gradT| = 7.5 (default 4)
 #   SAMAREH_WALL  : 1 = Samareh slip-wall geometry (default), 0 = open/centered
 #   SAMAREH_MA    : thermal Marangoni number; > 0 enables bulk Fourier conduction (default 0 = frozen-T).
-#                   k follows from alpha = U_r*r/Ma. The isothermal far-field BC is imposed only with
-#                   the slip-wall geometry; the open box stays adiabatic (open + isothermal reverses
-#                   the drop -- see CONDUCTION_REVERSAL_SAGA.md).
+#                   k follows from alpha = U_r*r/Ma. The isothermal Dirichlet wall BC (cold floor / hot
+#                   ceiling) is imposed with the slip-wall geometry; the open box stays adiabatic (a
+#                   Dirichlet wall BC belongs at a closed wall, not an outflow boundary). Wall +
+#                   conduction gives a stable forward plateau v_t/v_YGB ~ 0.85 (Samareh ~0.80).
 #   SAMAREH_TS    : 1 = carry T as an INDEPENDENT advected scalar (thermal_scalar) at UNIFORM density,
 #                   decoupled from the EOS; T(y) imposed via patch_icpp%T_temp_val, output via T_s_wrt.
-#   SAMAREH_NOBC  : 1 = (diagnostic) conduction with adiabatic ends, no isothermal far-field BC.
 # The analytic density IC depends only on (T0, gradT), which are FIXED across the sweep, so its
 # compiled-in Fortran never changes: build once, then run every variant with --no-build.
 #
@@ -87,7 +87,6 @@ wall = os.environ.get("SAMAREH_WALL", "1") == "1"  # Samareh slip-wall geometry 
 # Finite-Ma conduction / independent-temperature modes (ported from the thermal_scalar feature):
 Ma_th = float(os.environ.get("SAMAREH_MA", "0"))  # thermal Marangoni number; > 0 enables bulk Fourier conduction
 ts_mode = os.environ.get("SAMAREH_TS", "0") == "1"  # carry T as an independent advected scalar (decoupled from rho)
-no_bc = os.environ.get("SAMAREH_NOBC", "0") == "1"  # diagnostic: conduction with adiabatic ends (no isothermal BC)
 assert Ma_th >= 0, "SAMAREH_MA must be >= 0 (0 disables conduction)"
 
 # -- Geometry (Samareh Sec. 4.1.1: D=1 drop, 5D wide x 7.5D tall box; rise axis = y) --
@@ -279,11 +278,14 @@ data = {
 if Ma_th > 0:
     # Bulk Fourier conduction (harmonic mixture closure; equal k -> the YGB k* = 1 limit).
     data.update({"thermal_conduction": "T", "fluid_pp(1)%k_therm": k_therm, "fluid_pp(2)%k_therm": k_therm})
-    # Isothermal far-field BC pins the cold floor / hot ceiling to the imposed gradient. It is a WALL
-    # BC, applied ONLY with the slip-wall geometry. At an OPEN boundary it clamps T against the advected
-    # field and REVERSES the migration (see CONDUCTION_REVERSAL_SAGA.md), so the open box is left
-    # adiabatic -- the imposed gradient is sustained by the IC over the quasi-steady window.
-    if wall and not no_bc:
+    # Isothermal Dirichlet wall BC pins the cold floor / hot ceiling to the imposed gradient -- the
+    # faithful Samareh closed-box setup. Applied with the slip-wall geometry only (a Dirichlet wall BC
+    # does not belong at the open/outflow box, which stays adiabatic). Verified: wall + conduction
+    # gives a stable forward plateau v_t/v_YGB ~ 0.85, matching Samareh's ~0.80. (This case used to
+    # REVERSE -- that was an MPI halo-corruption bug, interior ranks overwriting their halo cells in
+    # the isothermal conduction BC, since fixed in s_apply_thermal_conduction_bc; NOT the density
+    # proxy or advective throughflow as earlier believed. See CONDUCTION_REVERSAL_SAGA.md.)
+    if wall:
         data.update(
             {
                 "bc_y%isothermal_in": "T",
