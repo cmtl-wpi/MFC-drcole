@@ -67,17 +67,19 @@ contains
 
     !> Overwrite the ghost-cell temperature at isothermal boundaries with a Dirichlet reflection T_ghost = 2*Twall - T_interior, so
     !! the face temperature equals Twall and the conductive flux through the boundary is set by the prescribed wall temperature.
-    !! Mirrors the chemistry q_T_sf isothermal handling in m_boundary_common. This is a WALL boundary condition: it is correct at
-    !! no-slip/slip walls, where there is no advective throughflow. WARNING: do NOT use it at an open/non-reflecting boundary
-    !! (e.g. bc = -3) with throughflow -- clamping the value there fights the advected temperature and pumps a spurious flow
-    !! (it reverses 2D thermocapillary migration; see examples/2D_thermocapillary_migration). Open boundaries should be left
-    !! non-isothermal (adiabatic, zero-gradient extrapolation), which sustains an imposed far-field gradient over the
-    !! quasi-steady window. Boundaries left non-isothermal keep the extrapolated (zero-gradient, adiabatic) ghost temperature.
+    !! Mirrors the chemistry q_T_sf isothermal handling in m_boundary_common.
+    !!
+    !! MPI: each isothermal overwrite is applied ONLY on a rank that actually owns the PHYSICAL domain face -- i.e. when the
+    !! per-rank bc code is negative (bc%beg/end < 0). On an interior rank the corresponding bc holds the neighbour rank id (>= 0)
+    !! and the "ghost" cells of T_tc are valid halo data filled by s_populate_variables_buffers; overwriting them with the
+    !! isothermal reflection would corrupt the cross-rank temperature stencil (it scrambles T into bands pinned to the rank
+    !! boundaries and reverses 2D thermocapillary migration -- see examples/2D_thermocapillary_migration). Boundaries left
+    !! non-isothermal keep the extrapolated (zero-gradient, adiabatic) ghost temperature.
     subroutine s_apply_thermal_conduction_bc()
 
         integer :: j, k, l
 
-        if (bc_x%isothermal_in) then
+        if (bc_x%isothermal_in .and. bc_x%beg < 0) then
             $:GPU_PARALLEL_LOOP(collapse=2, private='[j, k, l]')
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
@@ -90,7 +92,7 @@ contains
             $:END_GPU_PARALLEL_LOOP()
         end if
 
-        if (bc_x%isothermal_out) then
+        if (bc_x%isothermal_out .and. bc_x%end < 0) then
             $:GPU_PARALLEL_LOOP(collapse=2, private='[j, k, l]')
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
@@ -104,7 +106,7 @@ contains
         end if
 
         if (n > 0) then
-            if (bc_y%isothermal_in) then
+            if (bc_y%isothermal_in .and. bc_y%beg < 0) then
                 $:GPU_PARALLEL_LOOP(collapse=2, private='[j, k, l]')
                 do l = idwbuff(3)%beg, idwbuff(3)%end
                     do k = idwbuff(1)%beg, idwbuff(1)%end
@@ -117,7 +119,7 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             end if
 
-            if (bc_y%isothermal_out) then
+            if (bc_y%isothermal_out .and. bc_y%end < 0) then
                 $:GPU_PARALLEL_LOOP(collapse=2, private='[j, k, l]')
                 do l = idwbuff(3)%beg, idwbuff(3)%end
                     do k = idwbuff(1)%beg, idwbuff(1)%end
@@ -132,7 +134,7 @@ contains
         end if
 
         if (p > 0) then
-            if (bc_z%isothermal_in) then
+            if (bc_z%isothermal_in .and. bc_z%beg < 0) then
                 $:GPU_PARALLEL_LOOP(collapse=2, private='[j, k, l]')
                 do l = idwbuff(2)%beg, idwbuff(2)%end
                     do k = idwbuff(1)%beg, idwbuff(1)%end
@@ -145,7 +147,7 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             end if
 
-            if (bc_z%isothermal_out) then
+            if (bc_z%isothermal_out .and. bc_z%end < 0) then
                 $:GPU_PARALLEL_LOOP(collapse=2, private='[j, k, l]')
                 do l = idwbuff(2)%beg, idwbuff(2)%end
                     do k = idwbuff(1)%beg, idwbuff(1)%end
@@ -170,7 +172,6 @@ contains
         type(scalar_field), dimension(sys_size), intent(inout) :: flux_src_vf
         type(int_bounds_info), intent(in)                      :: irx, iry, irz
         real(wp)                                               :: k_L, k_R, k_face, dT_dxi, grid_spacing
-        real(wp)                                               :: mCP_L, mCP_R, alpha_face
         integer                                                :: x, y, z, i
         integer, dimension(3)                                  :: offsets
 
@@ -181,8 +182,7 @@ contains
         offsets = 0
         offsets(idir) = 1
 
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[x, y, z, i, k_L, k_R, k_face, dT_dxi, grid_spacing, mCP_L, mCP_R, alpha_face]', &
-                            & copyin='[offsets]')
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[x, y, z, i, k_L, k_R, k_face, dT_dxi, grid_spacing]', copyin='[offsets]')
         do z = isc3_tc%beg, isc3_tc%end
             do y = isc2_tc%beg, isc2_tc%end
                 do x = isc1_tc%beg, isc1_tc%end
@@ -215,18 +215,14 @@ contains
                     dT_dxi = (T_tc(x + offsets(1), y + offsets(2), z + offsets(3)) - T_tc(x, y, z))/grid_spacing
 
                     if (thermal_scalar) then
-                        ! Diffuse the independent temperature scalar at the thermal diffusivity
-                        ! alpha = k/(rho*cp); the mixture rho*cp = sum_i alpha_rho_i*cv_i*gamma_i
-                        ! matches the EOS temperature helper, so the dt restriction stays consistent.
-                        mCP_L = 0._wp; mCP_R = 0._wp
-                        $:GPU_LOOP(parallelism='[seq]')
-                        do i = 1, num_fluids
-                            mCP_L = mCP_L + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(x, y, z)*cvs(i)*gs_min(i)
-                            mCP_R = mCP_R + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(x + offsets(1), y + offsets(2), &
-                                                      & z + offsets(3))*cvs(i)*gs_min(i)
-                        end do
-                        alpha_face = k_face/max(0.5_wp*(mCP_L + mCP_R), sgm_eps)
-                        flux_src_vf(eqn_idx%T_s)%sf(x, y, z) = flux_src_vf(eqn_idx%T_s)%sf(x, y, z) - alpha_face*dT_dxi
+                        ! Independent temperature scalar: store the CONSERVATIVE conductive heat flux
+                        ! -k_face*dT/dx (same form as the energy slot). The variable-property division
+                        ! by the LOCAL cell rho*cp = sum_i alpha_rho_i*cv_i*gamma_i is applied to the
+                        ! flux divergence in m_rhs, giving the correct rho*cp dT/dt = div(k grad T).
+                        ! (Folding alpha = k/(rho*cp) inside the divergence is only valid for uniform
+                        ! rho*cp; with a property jump it injects a spurious (rho*cp)' term that
+                        ! reverses thermocapillary migration -- see CONDUCTION_REVERSAL_SAGA.md.)
+                        flux_src_vf(eqn_idx%T_s)%sf(x, y, z) = flux_src_vf(eqn_idx%T_s)%sf(x, y, z) - k_face*dT_dxi
                     else
                         flux_src_vf(eqn_idx%E)%sf(x, y, z) = flux_src_vf(eqn_idx%E)%sf(x, y, z) - k_face*dT_dxi
                     end if

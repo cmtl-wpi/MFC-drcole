@@ -1381,6 +1381,7 @@ contains
         type(scalar_field), dimension(sys_size), intent(in)    :: flux_src_n_in
         type(scalar_field), dimension(sys_size), intent(in)    :: dq_prim_dx_vf, dq_prim_dy_vf, dq_prim_dz_vf
         integer                                                :: i, j, k, l
+        real(wp)                                               :: mCP_cell  ! cell rho*cp for variable-property T_s conduction
 
         if (idir == 1) then  ! x-direction
             if (surface_tension) then
@@ -1398,7 +1399,7 @@ contains
             end if
 
             if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. thermal_conduction .or. thermal_scalar) then
-                $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3)
+                $:GPU_PARALLEL_LOOP(private='[j, k, l, mCP_cell]', collapse=3)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
@@ -1435,12 +1436,19 @@ contains
                             ! Independent temperature scalar: passive advection (non-conservative,
                             ! mirrors the color function) plus the retargeted conductive diffusion
                             if (thermal_scalar) then
+                                ! Variable-property heat equation: divide the conductive flux
+                                ! divergence by the LOCAL cell rho*cp = sum_i alpha_rho_i*cv_i*gamma_i.
+                                mCP_cell = 0._wp
+                                $:GPU_LOOP(parallelism='[seq]')
+                                do i = 1, num_fluids
+                                    mCP_cell = mCP_cell + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)*gs_min(i)
+                                end do
                                 rhs_vf(eqn_idx%T_s)%sf(j, k, l) = rhs_vf(eqn_idx%T_s)%sf(j, k, &
                                        & l) + 1._wp/dx(j)*q_prim_vf(eqn_idx%T_s)%sf(j, k, &
                                        & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
                                        & l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j - 1, k, &
-                                       & l)) + 1._wp/dx(j)*(flux_src_n_in(eqn_idx%T_s)%sf(j - 1, k, &
-                                       & l) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l))
+                                       & l)) + (1._wp/dx(j)*(flux_src_n_in(eqn_idx%T_s)%sf(j - 1, k, &
+                                       & l) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l)))/max(mCP_cell, sgm_eps)
                             end if
                         end do
                     end do
@@ -1502,7 +1510,7 @@ contains
                 $:END_GPU_PARALLEL_LOOP()
             else
                 if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. thermal_conduction .or. thermal_scalar) then
-                    $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
+                    $:GPU_PARALLEL_LOOP(private='[i, j, k, l, mCP_cell]', collapse=3)
                     do l = 0, p
                         do k = 0, n
                             do j = 0, m
@@ -1538,12 +1546,19 @@ contains
                                 ! Independent temperature scalar: passive advection (non-conservative,
                                 ! mirrors the color function) plus the retargeted conductive diffusion
                                 if (thermal_scalar) then
+                                    ! Variable-property heat equation: divide the conductive flux
+                                    ! divergence by the LOCAL cell rho*cp = sum_i alpha_rho_i*cv_i*gamma_i.
+                                    mCP_cell = 0._wp
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do i = 1, num_fluids
+                                        mCP_cell = mCP_cell + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)*gs_min(i)
+                                    end do
                                     rhs_vf(eqn_idx%T_s)%sf(j, k, l) = rhs_vf(eqn_idx%T_s)%sf(j, k, &
                                            & l) + 1._wp/dy(k)*q_prim_vf(eqn_idx%T_s)%sf(j, k, &
                                            & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
                                            & l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j, k - 1, &
-                                           & l)) + 1._wp/dy(k)*(flux_src_n_in(eqn_idx%T_s)%sf(j, k - 1, &
-                                           & l) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l))
+                                           & l)) + (1._wp/dy(k)*(flux_src_n_in(eqn_idx%T_s)%sf(j, k - 1, &
+                                           & l) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l)))/max(mCP_cell, sgm_eps)
                                 end if
                             end do
                         end do
@@ -1613,7 +1628,7 @@ contains
             end if
 
             if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. thermal_conduction .or. thermal_scalar) then
-                $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
+                $:GPU_PARALLEL_LOOP(private='[i, j, k, l, mCP_cell]', collapse=3)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
@@ -1649,11 +1664,18 @@ contains
                             ! Independent temperature scalar: passive advection (non-conservative,
                             ! mirrors the color function) plus the retargeted conductive diffusion
                             if (thermal_scalar) then
+                                ! Variable-property heat equation: divide the conductive flux
+                                ! divergence by the LOCAL cell rho*cp = sum_i alpha_rho_i*cv_i*gamma_i.
+                                mCP_cell = 0._wp
+                                $:GPU_LOOP(parallelism='[seq]')
+                                do i = 1, num_fluids
+                                    mCP_cell = mCP_cell + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)*gs_min(i)
+                                end do
                                 rhs_vf(eqn_idx%T_s)%sf(j, k, l) = rhs_vf(eqn_idx%T_s)%sf(j, k, &
                                        & l) + 1._wp/dz(l)*q_prim_vf(eqn_idx%T_s)%sf(j, k, &
                                        & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
-                                       & l - 1)) + 1._wp/dz(l)*(flux_src_n_in(eqn_idx%T_s)%sf(j, k, &
-                                       & l - 1) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l))
+                                       & l - 1)) + (1._wp/dz(l)*(flux_src_n_in(eqn_idx%T_s)%sf(j, k, &
+                                       & l - 1) - flux_src_n_in(eqn_idx%T_s)%sf(j, k, l)))/max(mCP_cell, sgm_eps)
                             end if
                         end do
                     end do

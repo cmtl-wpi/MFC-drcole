@@ -1,10 +1,44 @@
-This file was created on 2026-06-13 20:25:52.025275.
+This file was created on 2026-06-14 19:21:41.693035.
 
 mfc.sh:
 
-    Invocation: test --generate --only B1DD2B6F C397DA82 AD43CCD1 EB20AB98 -j 8
+    Invocation: test --generate --only Thermal Scalar -j 8
     Lock:       mpi=Yes & gpu=No & debug=No & reldebug=No & gcov=No & unified=No & single=No & mixed=No & fastmath=No
-    Git:        b9f5d7b2a9a6bedeafd68ae3d048a3cf5a521c54 on claude/sleepy-rubin-2eb977 (dirty)
+    Git:        6d9e1e17235fca684580ae654bd11c1ff1e9a66f on feature/thermal-marangoni (dirty)
+
+simulation:
+
+    CMake Configuration:
+    
+        CMake v3.31.6 on ubuntu
+    
+        C       : GNU v15.2.0 (/usr/bin/cc)
+        Fortran : GNU v15.2.0 (/usr/bin/gfortran)
+    
+        PRE_PROCESS   : OFF
+        SIMULATION    : ON
+        POST_PROCESS  : OFF
+        SYSCHECK      : OFF
+        DOCUMENTATION : OFF
+        ALL           : OFF
+    
+        MPI     : ON
+        OpenACC : OFF
+        OpenMP  : OFF
+    
+        Fypp    : /home/daveygravy/repos/MFC/build/venv/bin/fypp
+        Doxygen : 
+    
+        Build Type : Release
+    
+    Configuration Environment:
+    
+        CC       : 
+        CXX      : 
+        FC       : 
+        OMPI_CC  : 
+        OMPI_CXX : 
+        OMPI_FC  : 
 
 pre_process:
 
@@ -26,16 +60,16 @@ pre_process:
         OpenACC : OFF
         OpenMP  : OFF
     
-        Fypp    : /home/daveygravy/repos/MFC/.claude/worktrees/sleepy-rubin-2eb977/build/venv/bin/fypp
+        Fypp    : /home/daveygravy/repos/MFC/build/venv/bin/fypp
         Doxygen : 
     
         Build Type : Release
     
     Configuration Environment:
     
-        CC       : /usr/bin/cc
-        CXX      : /usr/bin/c++
-        FC       : /usr/bin/gfortran
+        CC       : 
+        CXX      : 
+        FC       : 
         OMPI_CC  : 
         OMPI_CXX : 
         OMPI_FC  : 
@@ -60,16 +94,16 @@ syscheck:
         OpenACC : OFF
         OpenMP  : OFF
     
-        Fypp    : /home/daveygravy/repos/MFC/.claude/worktrees/sleepy-rubin-2eb977/build/venv/bin/fypp
+        Fypp    : /home/daveygravy/repos/MFC/build/venv/bin/fypp
         Doxygen : 
     
         Build Type : Release
     
     Configuration Environment:
     
-        CC       : /usr/bin/cc
-        CXX      : /usr/bin/c++
-        FC       : /usr/bin/gfortran
+        CC       : 
+        CXX      : 
+        FC       : 
         OMPI_CC  : 
         OMPI_CXX : 
         OMPI_FC  : 
@@ -94,50 +128,16 @@ post_process:
         OpenACC : OFF
         OpenMP  : OFF
     
-        Fypp    : /home/daveygravy/repos/MFC/.claude/worktrees/sleepy-rubin-2eb977/build/venv/bin/fypp
+        Fypp    : /home/daveygravy/repos/MFC/build/venv/bin/fypp
         Doxygen : 
     
         Build Type : Release
     
     Configuration Environment:
     
-        CC       : /usr/bin/cc
-        CXX      : /usr/bin/c++
-        FC       : /usr/bin/gfortran
-        OMPI_CC  : 
-        OMPI_CXX : 
-        OMPI_FC  : 
-
-simulation:
-
-    CMake Configuration:
-    
-        CMake v3.31.6 on ubuntu
-    
-        C       : GNU v15.2.0 (/usr/bin/cc)
-        Fortran : GNU v15.2.0 (/usr/bin/gfortran)
-    
-        PRE_PROCESS   : OFF
-        SIMULATION    : ON
-        POST_PROCESS  : OFF
-        SYSCHECK      : OFF
-        DOCUMENTATION : OFF
-        ALL           : OFF
-    
-        MPI     : ON
-        OpenACC : OFF
-        OpenMP  : OFF
-    
-        Fypp    : /home/daveygravy/repos/MFC/.claude/worktrees/sleepy-rubin-2eb977/build/venv/bin/fypp
-        Doxygen : 
-    
-        Build Type : Release
-    
-    Configuration Environment:
-    
-        CC       : /usr/bin/cc
-        CXX      : /usr/bin/c++
-        FC       : /usr/bin/gfortran
+        CC       : 
+        CXX      : 
+        FC       : 
         OMPI_CC  : 
         OMPI_CXX : 
         OMPI_FC  : 
@@ -161,7 +161,7 @@ CPU:
     Socket(s):                               2
     Stepping:                                2
     Frequency boost:                         enabled
-    CPU(s) scaling MHz:                      50%
+    CPU(s) scaling MHz:                      44%
     CPU max MHz:                             3529.9060
     CPU min MHz:                             401.4410
     BogoMIPS:                                4400.12
