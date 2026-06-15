@@ -32,8 +32,9 @@ stiffened-gas EOS, `T = (p + p_inf)/((gamma−1)·rho·cv)`, and the linear prof
 it in the *density* IC, `rho(y) = rho_coeff/(T_0 + gradT·y)`. So Samareh's "isothermal walls at T=0/T=1"
 have **no direct analogue** in the default case — instead the linear `T` is a frozen density IC. This
 is the *opposite* diffusivity limit from Samareh's `Ma = 0` (their infinite diffusivity holds `T`
-invariant; MFC's zero bulk conduction lets the flow advect the frozen profile), and the two agree only
-at **early times** — hence every quoted ratio comes from a stated measurement window. Bulk Fourier
+invariant; the **default case** here (`SAMAREH_MA = 0`) uses *zero* conduction, so the flow advects the
+frozen profile), and the two agree only at **early times** — hence every quoted ratio comes from a
+stated measurement window. Bulk Fourier
 conduction with a true isothermal Dirichlet wall BC (`bc_y%isothermal_*`, `T_wall_*`) switches on only
 when conduction is enabled (`SAMAREH_MA > 0`), which TC2 uses.
 
@@ -82,9 +83,11 @@ and localized at the drop:
 
 ![TC1 recirculation](figures/tc1_recirculation_2D.png)
 
-**Fig 6 (3D sphere, → 0.95) is NOT reproduced here.** On this no-conduction branch the 3D frozen-`T`
-rise drifts unboundedly (finer grid → faster, no quasi-steady plateau), so there is no validatable 3D
-number — it belongs in a separate `3D_thermocapillary_migration` example with bulk conduction, not here.
+**Fig 6 (3D sphere, → 0.95) is NOT reproduced here — but only by dimensionality, not physics.** With
+the *default* zero-conduction setting the 3D frozen-`T` rise drifts unboundedly (finer grid → faster,
+no quasi-steady plateau); now that **bulk conduction is implemented** (`SAMAREH_MA > 0`), that runaway
+is tamed and a steady 3D plateau is recoverable. So Fig 6 is feasible — it just belongs in a separate
+`3D_thermocapillary_migration` example, since this one is 2D.
 
 ## TC2 — Low Marangoni number, Nas & Tryggvason (§4.1.2)
 
@@ -112,9 +115,16 @@ Life and Microgravity Science Space Shuttle experiment: a `60 mm × 45 × 45 mm`
 `sigma_0 = 0.007 N/m`, `sigma_T = −3.6×10⁻⁵ N/m·K`, and crucially a **temperature-dependent viscosity**
 `mu(T) = exp(C + D/T)` (Figs 8, 10–13).
 
-**NOT reproduced.** MFC does not provide temperature-dependent viscosity `mu(T)`, which dominates this
-regime, so a faithful reproduction is not yet possible. (This is the only scenario for which MFC lacks
-the *physics*, not just the dimensionality.)
+**Where `mu(T)` bites.** TC3 needs two pieces of physics: bulk conduction (now **implemented**) *and*
+temperature-dependent viscosity (still **missing**). The viscosity is the load-bearing one here. The
+real silicon oil's viscosity varies substantially across the 60 K cell (Samareh: density and `cp`
+variations are negligible — *only* `mu` changes appreciably, "which can affect the droplet
+acceleration"). Because both the migration and the Stokes drag scale as `1/mu_b`, as the drop rises
+into warmer, less-viscous oil it speeds up — this is what produces the **non-monotonic** rise-velocity
+profile (the accelerate–decelerate–reaccelerate "loop" in Fig 8 / Fig 13) that the experiment shows.
+A constant-`mu` run (as in TC1/TC2) gives a smooth monotonic approach to a single terminal velocity and
+cannot reproduce that signature. So with conduction in hand, **`mu(T)` is the sole remaining blocker**
+for TC3 — not the dimensionality.
 
 ---
 
