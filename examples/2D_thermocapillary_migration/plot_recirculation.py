@@ -19,7 +19,7 @@ partial densities, 2 = x-momentum, 3 = y-momentum, then color c (last, or second
 a thermal_scalar T_s is appended).
 
 Usage:  python3 plot_recirculation.py runs/fig5_2D_w256 [t_over_tau_target=2.6]
-Writes: figures/recirculation_2D_w256.png / .pdf
+Writes: figures/tc1_recirculation_2D.png / .pdf
 """
 
 import glob
@@ -180,7 +180,7 @@ axa.text(xc_drop + 0.28 * r, yc_drop + 0.15 * r, rf"$U={v_drop / v_YGB:.2f}\,v_{
 fig.suptitle(rf"2D thermocapillary drop  $\cdot$  {ny / 7.5:.1f} cells/$D$  $\cdot$  $t={ttau:.1f}\,\tau$",
              fontsize=9.5)
 
-out = os.path.join(here, "figures", "recirculation_2D_w256")
+out = os.path.join(here, "figures", "tc1_recirculation_2D")
 fig.savefig(out + ".png", dpi=300)
 fig.savefig(out + ".pdf")
 print(f"step={step}  t/tau={ttau:.3f}  nvars={nvars}  rho_drop={rho_drop:.3f}  tau={tau:.3f}")

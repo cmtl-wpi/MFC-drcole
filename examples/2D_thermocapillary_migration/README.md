@@ -6,154 +6,145 @@ This example validates MFC's temperature-dependent surface-tension closure `sigm
 > B. Samareh, J. Mostaghimi, C. Moreau, **"Thermocapillary migration of a deformable
 > droplet"**, *Int. J. Heat Mass Transfer* **73** (2014) 616–626.
 
-A neutrally-buoyant drop sits in an imposed linear temperature field. Surface tension falls as
-temperature rises (`sigma_T = dsigma/dT < 0`), so the interface carries a tension gradient; the
-resulting tangential **Marangoni stress** drags interfacial fluid from the hot side to the cold
-side and, by reaction, the drop migrates toward the **hot** wall. In the creeping-flow,
-zero-Marangoni-number limit this has a closed-form answer — the Young–Goldstein–Block (YGB)
-terminal velocity (Samareh Eq. 29).
+A neutrally-buoyant drop in an imposed linear temperature field develops a surface-tension gradient
+along its interface (tension falls as temperature rises, `sigma_T = dsigma/dT < 0`). The resulting
+tangential **Marangoni stress** drags interfacial fluid hot→cold and, by reaction, the drop migrates
+toward the **hot** wall.
 
-![Marangoni migration mechanism](figures/thermocapillary_migration.png)
+![Marangoni migration mechanism](figures/mechanism_schematic.png)
 
-The drop-frame data analogue (real MFC fields: internal recirculation + the two counter-rotating
-Marangoni cells) is in [`figures/recirculation_2D_w256.png`](figures/recirculation_2D_w256.png).
+## Samareh's three scenarios — and where MFC stands
 
-## What this reproduces
+Samareh §4 studies the drop in three Marangoni-number regimes. This example reproduces the **2D**
+parts of the two validation scenarios; the 3D sphere and the large-Ma application are out of scope,
+and that is called out explicitly below rather than left missing.
 
-| Samareh case | Here | Status |
-|---|---|---|
-| **§4.1.1 / Fig 5** — 2D drop, zero Marangoni number (`Ma = 0`) | headline `case.py` | ✅ converges to their plateau |
-| **§4.1.2 / Fig 7** — 2D finite-Ma (Nas & Tryggvason, `Re = 5`, `Ma = 20`, `Ca = 0.01666`) | `case_fig7.py` (bulk conduction) | ✅ peak brackets theirs |
-| §4.1 / Fig 6 — fully-3D sphere (`≈ 0.95`) | **out of scope** | 3D frozen-`T` rise drifts unboundedly (no plateau) |
-| §4.2 / Figs 8, 13 — large-Ma flight experiment | **out of scope** | needs temperature-dependent viscosity `mu(T)`, which MFC lacks |
+| | Samareh scenario | Regime | Their figures | MFC here |
+|---|---|---|---|---|
+| **TC1** | Drop at zero Marangoni number (§4.1.1) | `Ma = 0` (invariant `T`) | **Fig 5** (planar 2D → 0.80), **Fig 6** (3D sphere → 0.95) | **2D ✅** · 3D ❌ |
+| **TC2** | Low Marangoni number, Nas & Tryggvason (§4.1.2) | `Re=5, Ma=20, Ca=0.0167` | **Fig 7** | **✅** |
+| **TC3** | Large Marangoni number, LMS flight experiment (§4.2) | large `Ma`, `mu(T)` | Figs 8, 10–13 | **❌** (needs `mu(T)`) |
 
-This example is **2D only**.
+## How MFC realizes the temperature field (shared by both 2D cases)
 
-## Case setup (Samareh §4.1.1)
+MFC has **no transport equation for temperature and no thermal wall BC**. `T` is recovered from the
+stiffened-gas EOS, `T = (p + p_inf)/((gamma−1)·rho·cv)`, and the linear profile is imposed by encoding
+it in the *density* IC, `rho(y) = rho_coeff/(T_0 + gradT·y)`. So Samareh's "isothermal walls at T=0/T=1"
+have **no direct analogue** in the default case — instead the linear `T` is a frozen density IC. This
+is the *opposite* diffusivity limit from Samareh's `Ma = 0` (their infinite diffusivity holds `T`
+invariant; MFC's zero bulk conduction lets the flow advect the frozen profile), and the two agree only
+at **early times** — hence every quoted ratio comes from a stated measurement window. Bulk Fourier
+conduction with a true isothermal Dirichlet wall BC (`bc_y%isothermal_*`, `T_wall_*`) switches on only
+when conduction is enabled (`SAMAREH_MA > 0`), which TC2 uses.
 
-| Quantity | Samareh | Here |
-|---|---|---|
-| Droplet diameter `D` | 1.0 | 1.0 (`r = 0.5`) |
-| Box (width × gradient axis) | 5D × 7.5D | same; gradient along **+y** |
-| Drop position | 1.5D above the cold (bottom) wall | `y = −2.25` |
-| Densities `rho_d = rho_b` | 0.2 | **0.2** (matched) |
-| Viscosities `mu_d = mu_b` | 0.1 | 0.1 (`fluid_pp(i)%Re(1) = 1/mu`) |
-| `sigma_0` | 0.1 | 0.1 |
-| `sigma_T = dsigma/dT` | −0.1 | −0.1 |
-| `\|gradT\|` | 0.13 | 2/15 = 0.1333 |
-| `v_YGB` (Eq. 29) | 8.88×10⁻³ | **8.889×10⁻³** |
+**Numerics that affect appearance, not the migration.** MFC is compressible, and the closed slip-wall
+box rings: the unbalanced Laplace jump at `t=0` excites the box's **fundamental vertical acoustic
+standing wave** (FFT of the drop velocity peaks at `f ≈ 1.37`, matching `c/(2·Ly) ≈ 1.33`; the drop
+sits 1.5D off the floor, in that mode's *antinode*, so it carries a ±~6% `v_YGB` ripple). This is a
+real, *resolved* oscillation (~4 samples/period, above Nyquist) — **not** aliasing — but connecting
+~4 points/period of a sinusoid with lines looks like a sawtooth, so the curve figures use **dots** and
+the migration is read as the *mean of the cloud*. Samareh's incompressible solver has no acoustics.
+(See `results/oscillation_investigation.png`.)
 
-With these matched, the viscous time `tau = rho·r²/mu = 0.5` and the capillary-thermal time
-`t_r = mu/\|sigma_T·gradT\| = 7.5` are Samareh's, so the time axes are directly comparable.
+---
 
-**The one deviation** is the absolute temperature baseline. MFC is a *compressible* solver with no
-transport equation for `T` — temperature is recovered from the stiffened-gas EOS,
-`T = (p + p_inf)/((gamma−1)·rho·cv)`. To impose a linear `T(y)` at uniform pressure we let the
-*density* carry the profile, `rho(y) = rho_coeff/(T_0 + gradT·y)`. That proxy diverges as `T → 0`,
-so the whole field is shifted up by `T_0 = 10` (Samareh use `T = 0` at the cold wall). Only the
-absolute level changes — `\|gradT\|` and the slope `sigma_T`, the only things `v_YGB` and the
-Marangoni stress depend on, are exact. The flow is deeply incompressible (`Mach ~ 4×10⁻⁴`), so the
-EOS stiffness knobs (`pi_inf`, `cv`, `p_0`) set only the acoustic CFL, not the migration.
+## TC1 — Drop at zero Marangoni number (§4.1.1)
 
-## How variants are selected (one build serves the whole sweep)
+**Samareh's setup.** A drop of `D=1` in a `5D × 5D × 7.5D` box, slip walls all sides, centered
+horizontally and 1.5D above the bottom wall; an invariant linear `T` (T=0 floor, T=1 ceiling,
+`|gradT| = 1/7.5 = 0.133`); `rho_d = rho_b = 0.2`, `mu_d = mu_b = 0.1`, `sigma_0 = 0.1`,
+`sigma_T = −0.1` → `v_YGB = |sigma_T·gradT|·D/(6·mu_b + 9·mu_d) = 8.88×10⁻³`. They run it two ways:
 
-| Env var | Meaning | Default |
-|---|---|---|
-| `SAMAREH_NX` | cells per box **width** (Samareh used 64/128/256 → 12.8/25.6/51.2 cells per `D`) | 128 |
-| `SAMAREH_DSDT` | `dsigma/dT` (Marangoni strength) | −0.1 |
-| `SAMAREH_TR` | run length in capillary-thermal times `t_r` | 4 |
-| `SAMAREH_WALL` | `1` = Samareh's slip-wall box (anchor **0.80**), `0` = open box (anchor **15/16**) | 1 |
-| `SAMAREH_MA` | thermal Marangoni number; `> 0` enables bulk Fourier conduction | 0 (frozen-`T`) |
-| `SAMAREH_TS` | `1` = carry `T` as an independent advected scalar, decoupled from density | 0 |
+- **Fig 5 — planar 2D** (a 2D grid; the drop is an infinite **cylinder**). The grid-converged value
+  of three of their four methods is `v_t/v_YGB ≈ 0.80`.
+- **Fig 6 — fully 3D** (the full `5D×5D×7.5D` box; the drop is a **sphere**) → `≈ 0.95`.
 
-**Geometry modes.** `SAMAREH_WALL=1` (default) is Samareh's actual Fig 5/6 box — slip walls on all
-sides, drop 1.5D off the cold floor — measured in the lab frame, comparing against **their 0.80**.
-`SAMAREH_WALL=0` centers the drop in an open box approximating the unbounded domain; the 2D anchor
-is then the unbounded-cylinder analytic **15/16 = 0.938**, and `measure.py` subtracts the small
-open-box return drift.
+**What MFC builds = Samareh's Fig 5 plane**, exactly: a 2D `5D × 7.5D` domain
+(`x∈[−2.5,2.5]`, `y∈[−3.75,3.75]`), slip walls (`bc = −2`), a 2D circle (`r=0.5`) at `(0, −2.25)`.
+The one deviation is the absolute temperature baseline — the density proxy diverges as `T→0`, so `T`
+is shifted up by `T_0 = 10`; the gradient and the slope `sigma_T` (all that `v_YGB` and the Marangoni
+stress depend on) are exact. Viscous time `tau = rho·r²/mu = 0.5`, capillary-thermal time
+`t_r = mu/|sigma_T·gradT| = 7.5`.
 
-## Results
+![TC1 Fig 5: rise velocity, grid convergence](figures/tc1_fig5_rise_velocity_2D.png)
 
-### Fig 5 — 2D rise velocity, zero Marangoni number (grid convergence)
-
-![Fig 5](figures/fig5_rise_velocity_2D.png)
-
-Lab-frame `v/v_YGB` in the slip-wall box. At Samareh's coarse grid MFC lands on their value; finer
-grids sit in the 0.80–0.90 spread of the four methods compared in their Fig 5.
-
-| cells/`D` (`SAMAREH_NX`) | quasi-steady plateau `v_t/v_YGB` |
+| cells/`D` (`SAMAREH_NX`) | plateau `v_t/v_YGB` |
 |---|---|
 | 12.8 (64) | **0.81** — lands on Samareh's `≈ 0.80` |
 | 25.6 (128) | 0.89 |
 | 51.2 (256) | 0.87 |
 
-### Fig 7 — 2D finite-Ma migration (Nas & Tryggvason)
+A 2D cylinder **cannot** reach `v/v_YGB = 1` (that is the *sphere* value): the unbounded-cylinder
+analytic is `15/16 = 0.938`, and the finite slip-wall box costs the rest → `≈ 0.80`. This is *not* an
+MFC defect — Samareh's own Fig 5 is the same cylinder-in-a-box, and 0.80 is the value their four 2D
+methods agree on. The internal Marangoni recirculation (the data analogue of the schematic) is real
+and localized at the drop:
 
-![Fig 7](figures/fig7_migration_2D.png)
+![TC1 recirculation](figures/tc1_recirculation_2D.png)
 
-`case_fig7.py` runs the `Re = 5`, `Ma = 20`, `Ca = 0.01666` test with bulk conduction of an
-independent temperature scalar in the closed isothermal-wall box. The migration `U* = U/U_r` ramps
-from rest, overshoots, and relaxes — bracketing the Nas & Tryggvason peak:
+**Fig 6 (3D sphere, → 0.95) is NOT reproduced here.** On this no-conduction branch the 3D frozen-`T`
+rise drifts unboundedly (finer grid → faster, no quasi-steady plateau), so there is no validatable 3D
+number — it belongs in a separate `3D_thermocapillary_migration` example with bulk conduction, not here.
 
-| cells/`D` | peak `U*` (at `t*`) | N&T peak |
+## TC2 — Low Marangoni number, Nas & Tryggvason (§4.1.2)
+
+**Samareh's setup.** A *real* two-fluid drop (all properties 0.5× the bulk) in a `2D × 4D` box,
+`Re = 5`, `Ma = 20`, `Ca = 0.01666`, drop 1D above the bottom wall. A non-zero `Ma` couples the energy
+equation, so this needs bulk conduction. **Fig 7** plots `U* = U/U_r` vs `t* = t/t_r` against Nas &
+Tryggvason: ramp from rest, overshoot to `U* ≈ 0.13`, relax.
+
+**What MFC builds** (`case_fig7.py`): the `2×4D` box with isothermal Dirichlet walls + bulk conduction
+of an independent temperature scalar (`thermal_conduction` + `thermal_scalar`). The overshoot brackets
+the published peak:
+
+![TC2 Fig 7: finite-Ma migration](figures/tc2_fig7_migration_2D.png)
+
+| cells/`D` | peak `U*` (at `t*`) | Nas & Tryggvason |
 |---|---|---|
 | 32 (64) | 0.138 (2.5) | 0.13 |
 | 64 (128) | 0.154 (2.1) | 0.13 |
 
-### Why the curves are plotted as dots, not lines
+## TC3 — Large Marangoni number, LMS flight experiment (§4.2)
 
-MFC is compressible, and the closed slip-wall box **reverberates acoustically**: the initial
-condition is not in capillary equilibrium (uniform pressure across a curved interface leaves the
-Laplace jump `sigma/r` unbalanced at `t = 0`), which launches standing waves that ring for a long
-time, only weakly damped by `mu`. The color-weighted drop velocity picks this up as a ±~8% `v_YGB`
-ripple. Because only ~80–100 snapshots are saved — about 2.6 per acoustic period, right at the
-Nyquist limit — connecting samples with lines would **alias** the oscillation into a spurious
-sawtooth. Plotting each snapshot as an unconnected marker shows the data honestly; the migration
-signal is the *mean of the cloud*. The ripple is set by sound speed and box size, not by `dx`, so
-it does not shrink with grid refinement (Samareh's incompressible solver has no such acoustics).
+**Samareh's setup.** A Fluorinert FC-75 drop (`D = 10.7 mm`) in Dow-Corning silicon oil, matched to the
+Life and Microgravity Science Space Shuttle experiment: a `60 mm × 45 × 45 mm` cell, cold wall
+`T_c = 283 K`, hot wall `T_h = 343 K`, side walls linear, `|gradT| = 1000 K/m`,
+`sigma_0 = 0.007 N/m`, `sigma_T = −3.6×10⁻⁵ N/m·K`, and crucially a **temperature-dependent viscosity**
+`mu(T) = exp(C + D/T)` (Figs 8, 10–13).
+
+**NOT reproduced.** MFC does not provide temperature-dependent viscosity `mu(T)`, which dominates this
+regime, so a faithful reproduction is not yet possible. (This is the only scenario for which MFC lacks
+the *physics*, not just the dimensionality.)
+
+---
 
 ## Reproducing the figures
 
 ```bash
 # Run from the repo root; the python scripts need numpy, matplotlib, and seaborn.
 
-# Headline 2D Fig 5 case (slip-wall box, 25.6 cells/D):
+# TC1 headline (slip-wall box, 25.6 cells/D):
 ./mfc.sh run examples/2D_thermocapillary_migration/case.py -n 16
 python3 examples/2D_thermocapillary_migration/measure.py examples/2D_thermocapillary_migration
 
-# Full sweeps (launch MPI jobs via ./mfc.sh run, so run from an interactive shell):
-python3 examples/2D_thermocapillary_migration/run_validation.py   # Fig 5 grids + finite-Ma modes
-python3 examples/2D_thermocapillary_migration/run_fig7.py         # Fig 7 (Nas & Tryggvason)
+# Full TC1 grid sweep + TC2 (launch MPI jobs, so run from an interactive shell):
+python3 examples/2D_thermocapillary_migration/run_validation.py   # TC1 Fig 5 grids
+python3 examples/2D_thermocapillary_migration/run_fig7.py         # TC2 Fig 7
 
 # Rebuild the curated figures/ from existing runs/ (no simulation):
-python3 examples/2D_thermocapillary_migration/plot_curves.py            # Fig 5 + Fig 7 dot plots
+python3 examples/2D_thermocapillary_migration/plot_curves.py            # TC1 Fig 5 + TC2 Fig 7
 python3 examples/2D_thermocapillary_migration/plot_recirculation.py runs/fig5_2D_w256
 ```
-
-`run_validation.py remeasure` / `run_fig7.py remeasure` rebuild `results/` from existing runs
-without re-simulating.
-
-## Scope and limitations
-
-- **Frozen-`T` by default.** Samareh's `Ma = 0` comes from *infinite* thermal diffusivity (`T` held
-  invariant). MFC's default is the opposite limit — *zero* bulk conduction, so the linear `T` is a
-  frozen initial condition the flow advects. The two agree at early times, before interfacial
-  parcels reshape the gradient; all quoted ratios come from a stated quasi-steady window. Bulk
-  Fourier conduction is available (`SAMAREH_MA > 0`) for the finite-Ma cases.
-- **No `mu(T)`.** Samareh's large-Marangoni flight experiment (Figs 8/13) needs
-  temperature-dependent viscosity, which MFC does not provide — out of scope here.
-- **Compressible acoustics** add the ripple discussed above; compare windowed means, not endpoints.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `case.py` | Parameterized Samareh §4.1.1 case (env vars above); the headline Fig 5 setup |
-| `case_fig7.py` | Finite-Ma Nas & Tryggvason case (Fig 7) — bulk conduction + independent `T` scalar |
-| `measure.py` / `measure_fig7.py` | Window-honest migration-velocity measurement; per-run JSON summary |
-| `run_validation.py` | Fig 5 grid sweep + finite-Ma modes; aggregates `results/summary.json` |
-| `run_fig7.py` | Fig 7 grid sweep; aggregates `results/fig7_summary.json` |
-| `plot_curves.py` | Builds the Fig 5 + Fig 7 dot-plot figures into `figures/` |
-| `plot_recirculation.py` | Builds the drop-frame recirculation figure into `figures/` |
-| `verify_1d_*.py` | Standalone 1D analytic checks (diffusion / conduction / thermal scalar) |
-| `figures/` | Curated figures (committed); `results/` holds working summaries; `runs/` is gitignored output |
+| `case.py` | TC1 — parameterized Samareh §4.1.1 case (`SAMAREH_NX/DSDT/TR/WALL/MA/TS`) |
+| `case_fig7.py` | TC2 — finite-Ma Nas & Tryggvason case (bulk conduction + independent `T` scalar) |
+| `measure.py` / `measure_fig7.py` | window-honest migration-velocity measurement; per-run JSON |
+| `run_validation.py` / `run_fig7.py` | grid sweeps; aggregate `results/summary.json` / `fig7_summary.json` |
+| `plot_curves.py` / `plot_recirculation.py` | build the curated `figures/` (TC1 + TC2) |
+| `verify_1d_*.py` | standalone 1D analytic checks (diffusion / conduction / thermal scalar) |
+| `figures/` | curated figures, prefixed by test case (`tc1_*`, `tc2_*`) + the mechanism schematic |
+| `results/` | working summaries + diagnostics; `runs/` is gitignored output |

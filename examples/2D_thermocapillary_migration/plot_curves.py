@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Build the two curated VALIDATION curves into figures/, straight from the current runs:
 
-  figures/fig5_rise_velocity_2D.png  -- Samareh Fig 5(d): 2D zero-Marangoni (Ma=0) rise velocity
-                                        v/v_YGB vs t/t_r, grid convergence (64/128/256), anchor 0.80.
-  figures/fig7_migration_2D.png      -- Samareh Fig 7: finite-Ma (Re=5, Ma=20, Ca=0.01666) migration
-                                        U* vs t*, grids 64/128, vs the Nas & Tryggvason peak ~0.13.
+  figures/tc1_fig5_rise_velocity_2D.png  -- TC1 / Samareh Fig 5(d): 2D zero-Marangoni (Ma=0) rise
+                                            velocity v/v_YGB vs t/t_r, grid convergence (64/128/256), anchor 0.80.
+  figures/tc2_fig7_migration_2D.png      -- TC2 / Samareh Fig 7: finite-Ma (Re=5, Ma=20, Ca=0.01666)
+                                            migration U* vs t*, grids 64/128, vs the Nas & Tryggvason peak ~0.13.
 
 Both curves are drawn as UNCONNECTED DOTS, one marker per saved snapshot. The runs are compressible
 and the closed slip-wall box rings acoustically (the initial unbalanced Laplace jump sigma/r launches
@@ -111,7 +111,7 @@ def fig5_rise_velocity():
     ax.set_ylim(0.0, 1.4)
     ax.legend(loc="lower right", fontsize=11, frameon=True, framealpha=0.92)
     sns.despine(ax=ax)
-    out = os.path.join(FIGS, "fig5_rise_velocity_2D.png")
+    out = os.path.join(FIGS, "tc1_fig5_rise_velocity_2D.png")
     fig.savefig(out, dpi=200)
     plt.close(fig)
     print(f"  wrote {out}")
@@ -148,7 +148,7 @@ def fig7_migration():
     ax.set_ylim(-0.04, 0.185)
     ax.legend(loc="upper right", fontsize=11, frameon=True, framealpha=0.92)
     sns.despine(ax=ax)
-    out = os.path.join(FIGS, "fig7_migration_2D.png")
+    out = os.path.join(FIGS, "tc2_fig7_migration_2D.png")
     fig.savefig(out, dpi=200)
     plt.close(fig)
     print(f"  wrote {out}")
