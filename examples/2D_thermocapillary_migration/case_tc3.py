@@ -34,8 +34,10 @@ import os
 
 # -- Variant selection --
 nx_cross = int(os.environ.get("TC3_NX", "30"))  # cells across the 45 mm cross-section (Samareh used much finer)
-uniform_ic = os.environ.get("TC3_UNIFORM", "0") == "1"  # 0 = linear initial T (Fig 8), 1 = uniform 298 K (Fig 13)
+uniform_ic = os.environ.get("TC3_UNIFORM", "0") == "1"  # sub-case A (0): drop equilibrated/linear; sub-case B (1): drop uniform 298 K, bulk stays linear
 n_tr = float(os.environ.get("TC3_TR", "1"))  # run length in capillary-thermal times t_r
+two_d = os.environ.get("TC3_2D", "0") == "1"  # 1 = 2D cylinder analogue (tractable Fig-8 physics, like TC1 Fig 5)
+const_visc = os.environ.get("TC3_VISC", "1") == "0"  # 1 = mu(T) Arrhenius (default); 0 = constant-mu control run
 
 # -- Geometry (LMS test cell; gradient along +y) --
 D = 10.7e-3  # droplet diameter (m)
@@ -44,10 +46,15 @@ Wx = 45.0e-3  # cross-section (x, z)
 Ly = 60.0e-3  # gradient / rise axis (y), cold floor -> hot ceiling
 y_drop = -Ly / 2 + 15.0e-3  # released ~15 mm above the cold wall (experiment's start, Fig 8 x-axis)
 
-dx = Wx / nx_cross  # isotropic cell size
+dx = Wx / nx_cross  # cross-section (x, z) cell size
+# Rise-axis (y) resolution is independent of the cross-section. Samareh's meshes are ~2x finer along the
+# gradient (180x480x180, 240x640x240 -> y-count = 2.67x the cross-section, not the isotropic 1.33x). TC3_NY
+# defaults to the isotropic count (dy = dx); set TC3_NX=180 TC3_NY=480 (or 240 / 640) to match the paper.
+ny_rise = int(os.environ.get("TC3_NY", str(round(Ly / dx))))  # cells along the 60 mm rise axis
+dy = Ly / ny_rise
 m = nx_cross - 1  # x
-p = nx_cross - 1  # z (3D)
-n = round(Ly / dx) - 1  # y (gradient axis)
+p = 0 if two_d else nx_cross - 1  # z (0 in the 2D cylinder analogue)
+n = ny_rise - 1  # y (gradient axis)
 
 cf_smooth_coeff = 0.5  # ~2-cell diffuse color interface
 
@@ -79,23 +86,42 @@ G = abs(sigma_T * gradT)  # Marangoni stress scale
 U_r = G * r / mu_b0  # ~ 26.5 mm/s
 t_r = mu_b0 / G  # ~ 0.20 s
 
+# -- Viscosity model: mu(T) Arrhenius (default) or a constant-mu CONTROL frozen at the IC reference T --
+# The control freezes mu at the temperature the DROP sits in at t=0 (so the two runs are identical at t=0
+# and diverge ONLY because mu(T) lets the local viscosity change as the drop migrates into warmer oil).
+visc_model = 0 if const_visc else 1  # 0 = constant mu (control), 1 = mu(T) = exp(C + D/T)
+T_visc_ref = 298.0 if uniform_ic else (T0 + gradT * y_drop)  # T at the drop center at t=0
+mu_b_ref = math.exp(C_b + Db / T_visc_ref)  # bulk constant-mu (= mu at the drop's start)
+mu_d_ref = math.exp(C_d + Dd / T_visc_ref)  # drop constant-mu
+
 # -- Bulk conduction diffusivity (slowest fluid sets the explicit-diffusion dt cap) --
 alpha_b = k_b / (rho_b * cp_b)  # ~ 8.2e-8 m^2/s (large Ma -> tiny diffusivity, dt cap not binding)
 alpha_d = k_d / (rho_d * cp_d)
 
-# -- Time stepping: acoustic CFL, capped by the 3D explicit-diffusion number (d = 3) --
-mydt = 0.35 * dx / c_snd
-mydt = min(mydt, 0.35 * dx**2 / (6.0 * max(alpha_b, alpha_d)))
+# -- Time stepping: acoustic CFL + 3D explicit-diffusion cap, evaluated on the SMALLEST cell so an
+#    anisotropic (dy < dx) mesh stays stable (d = 3) --
+dmin = min(dx, dy)
+mydt = 0.35 * dmin / c_snd
+mydt = min(mydt, 0.35 * dmin**2 / (6.0 * max(alpha_b, alpha_d)))
 t_end = n_tr * t_r
 t_step_stop = int(round(t_end / mydt))
-t_step_save = max(1, t_step_stop // 60)
+n_save = int(os.environ.get("TC3_NSAVE", "60"))  # # of snapshots (denser sampling averages over acoustic ringing)
+t_step_save = max(1, t_step_stop // n_save)
 
-# -- Temperature scalar IC: linear T(y) (Fig 8) or uniform 298 K inside-and-out (Fig 13 idealization) --
+# -- Optional chunked restart: run [TC3_TSTART, TC3_TSTOP] instead of [0, t_step_stop], so a long run can be
+#    completed in short pieces (each piece restarts from the previous chunk's checkpoint at TC3_TSTART, which
+#    must be a saved step). Defaults span the whole run, so the normal single-shot run is unchanged.
+t_step_start = int(os.environ.get("TC3_TSTART", "0"))
+t_step_stop = int(os.environ.get("TC3_TSTOP", str(t_step_stop)))
+
+# -- Temperature scalar IC. The bulk liquid ALWAYS starts on the imposed linear profile; the sub-cases
+#    differ only in the DROP's initial internal temperature (the experiment's drop temperature was unknown):
+#      Sub-case A (TC3_UNIFORM=0, Sec. 4.2.1): drop equilibrated to the local linear field (matches bulk).
+#      Sub-case B (TC3_UNIFORM=1, Sec. 4.2.2): drop injected at a uniform 298 K; the bulk stays linear.
 GRAD = "y"
-if uniform_ic:
-    T_expr = "298.0"  # Sec 4.2.2: uniform initial temperature
-else:
-    T_expr = f"{T0} + {gradT:.6f}*{GRAD}"  # Sec 4.2.1: linear initial temperature (T0 at y=0)
+T_linear = f"{T0} + {gradT:.6f}*{GRAD}"  # imposed linear field (T0 at y=0)
+T_bulk = T_linear  # the bulk is always the linear gradient
+T_drop = "298.0" if uniform_ic else T_linear  # uniform 298 K only in sub-case B
 
 eps = 1.0e-9  # trace volume fraction of the other phase
 
@@ -112,7 +138,7 @@ data = {
     "p": p,
     "cyl_coord": "F",
     "dt": mydt,
-    "t_step_start": 0,
+    "t_step_start": t_step_start,
     "t_step_stop": t_step_stop,
     "t_step_save": t_step_save,
     "model_eqns": 3,
@@ -159,18 +185,18 @@ data = {
     "fluid_pp(1)%gamma": 1.0 / (gam - 1.0),
     "fluid_pp(1)%pi_inf": gam * p_inf_b / (gam - 1.0),
     "fluid_pp(1)%cv": cv_b,
-    "fluid_pp(1)%Re(1)": 1.0 / mu_b0,
+    "fluid_pp(1)%Re(1)": 1.0 / mu_b_ref,
     "fluid_pp(1)%k_therm": k_b,
-    "fluid_pp(1)%visc_model": 1,
+    "fluid_pp(1)%visc_model": visc_model,
     "fluid_pp(1)%visc_c": C_b,
     "fluid_pp(1)%visc_d": Db,
     # Fluid 2 -- Fluorinert (drop): Arrhenius mu(T), real k/cp
     "fluid_pp(2)%gamma": 1.0 / (gam - 1.0),
     "fluid_pp(2)%pi_inf": gam * p_inf_d / (gam - 1.0),
     "fluid_pp(2)%cv": cv_d,
-    "fluid_pp(2)%Re(1)": 1.0 / math.exp(C_d + Dd / T0),
+    "fluid_pp(2)%Re(1)": 1.0 / mu_d_ref,
     "fluid_pp(2)%k_therm": k_d,
-    "fluid_pp(2)%visc_model": 1,
+    "fluid_pp(2)%visc_model": visc_model,
     "fluid_pp(2)%visc_c": C_d,
     "fluid_pp(2)%visc_d": Dd,
     # Patch 1 -- silicon oil filling the cell (3D cuboid)
@@ -190,7 +216,7 @@ data = {
     "patch_icpp(1)%alpha(1)": 1.0 - eps,
     "patch_icpp(1)%alpha(2)": eps,
     "patch_icpp(1)%cf_val": 0.0,
-    "patch_icpp(1)%T_temp_val": T_expr,
+    "patch_icpp(1)%T_temp_val": T_bulk,
     # Patch 2 -- Fluorinert drop (3D sphere), distinct density/properties from the bulk
     "patch_icpp(2)%geometry": 8,
     "patch_icpp(2)%x_centroid": 0.0,
@@ -210,12 +236,30 @@ data = {
     "patch_icpp(2)%alpha(1)": eps,
     "patch_icpp(2)%alpha(2)": 1.0 - eps,
     "patch_icpp(2)%cf_val": 1.0,
-    "patch_icpp(2)%T_temp_val": T_expr,
+    "patch_icpp(2)%T_temp_val": T_drop,
     # Isothermal Dirichlet walls on the gradient axis pin the cold floor / hot ceiling
     "bc_y%isothermal_in": "T",
     "bc_y%isothermal_out": "T",
     "bc_y%Twall_in": T_c,
     "bc_y%Twall_out": T_h,
 }
+
+if two_d:
+    # 2D cylinder analogue (Samareh's Fig-5-style plane of the 3D drop): a circle in a rectangular cell,
+    # no z-direction. Same mu(T)/sigma(T)/conduction physics; tractable enough to run to migration.
+    data["patch_icpp(1)%geometry"] = 3  # rectangle (was 3D cuboid, geometry 9)
+    data["patch_icpp(2)%geometry"] = 2  # circle    (was 3D sphere, geometry 8)
+    for key in (
+        "z_domain%beg",
+        "z_domain%end",
+        "bc_z%beg",
+        "bc_z%end",
+        "patch_icpp(1)%z_centroid",
+        "patch_icpp(1)%length_z",
+        "patch_icpp(1)%vel(3)",
+        "patch_icpp(2)%z_centroid",
+        "patch_icpp(2)%vel(3)",
+    ):
+        data.pop(key, None)
 
 print(json.dumps(data))

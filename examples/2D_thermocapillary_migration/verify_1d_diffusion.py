@@ -18,7 +18,7 @@ import sys
 
 # Shared physical constants (module level so both the generator and the measurer agree)
 L = 1.0
-m = 199
+m = 399  # 400 cells (raised from 200 for a finer field-vs-analytic curve fit)
 gam, p_inf, cv, p0, T0 = 2.0, 100.0, 12.5, 25.0, 10.0
 eps = 0.03  # perturbation amplitude (small -> low-Mach, isobaric)
 alpha = 0.05  # target thermal diffusivity

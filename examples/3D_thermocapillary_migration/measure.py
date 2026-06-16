@@ -63,6 +63,9 @@ patches = read_namelist(os.path.join(case_dir, "pre_process.inp"))
 # thermal_scalar appends an independent temperature scalar (eqn_idx%T_s) AFTER the color function,
 # so in that mode the color function is the second-to-last conserved variable, not the last.
 ts_mode = str(params.get("thermal_scalar", "F")).upper().strip(". ").startswith("T")
+# Bulk Fourier conduction tames the frozen-T runaway; when it's on (this 3D case by construction)
+# the "frozen-T drift" caveat -- a 2D no-conduction artifact -- does not apply.
+cond_mode = str(params.get("thermal_conduction", "F")).upper().strip(". ").startswith("T")
 
 
 def param(name, src=params):
@@ -174,6 +177,12 @@ ratio_final = float(ratio_t[-1])
 in_tail = times >= times[-1] - tau
 slope_per_tr = float(np.polyfit(times[in_tail] / t_r, ratio_t[in_tail], 1)[0]) if in_tail.sum() > 1 else 0.0
 
+# The "frozen-T drift" caveat applies ONLY without bulk conduction. With conduction on, a positive
+# late-time slope at t < ~t_r is just the unfinished ramp, not drift. A run shorter than ~1 t_r has
+# not had time to overshoot and settle, so its "plateau" is really the current (still-ramping) value.
+drift_is_frozenT = (not cond_mode) and abs(slope_per_tr) > 0.05
+short_run = times[-1] < 1.0 * t_r
+
 # Print the time series and the headline numbers.
 mode = "slip-wall box (lab-frame U)" if wall else "open box (drift-corrected U)"
 print(f"dim={dim}D  nx={nx} ny={ny} nz={nz}  cells={cells}  nvars={nvars}  mode: {mode}")
@@ -183,9 +192,11 @@ for i, t in enumerate(times):
     print(f"{steps[i]:>7} {t:>8.4f} {t / t_r:>6.2f} {y_centroid[i]:>9.5f} {u_lab[i]:>9.5f} {u_far[i]:>9.5f} {U[i]:>9.5f} {U[i] / v_YGB:>+8.2f}")
 print(f"\nrising (+y, toward hot top): {y_centroid[-1] > y_centroid[0]}")
 print(f"quasi-steady plateau  v_t/v_YGB = {ratio_plateau:+.3f}  (at t/t_r = {t_plateau_tr:.2f})   [Samareh {dim}D ~ {samareh_ratio:.2f}]")
-print(f"overshoot peak = {overshoot:+.3f}   endpoint = {ratio_final:+.3f}   late-time drift = {slope_per_tr:+.3f}/t_r")
-if abs(slope_per_tr) > 0.05:
+print(f"overshoot peak = {overshoot:+.3f}   endpoint = {ratio_final:+.3f}   late-time slope = {slope_per_tr:+.3f}/t_r")
+if drift_is_frozenT:
     print(f"  NOTE: endpoint is frozen-T-drift contaminated ({slope_per_tr:+.3f}/t_r) -- the plateau, not the endpoint, is the Samareh comparison")
+elif short_run:
+    print(f"  NOTE: run is only {times[-1] / t_r:.2f} t_r -- the rise is still ramping, not yet a settled plateau (need >~1 t_r for the Samareh comparison)")
 
 # Figure: U(t)/v_YGB vs t/t_r against the v_YGB ceiling and Samareh's converged ratio.
 fig, ax = plt.subplots(figsize=(7.2, 4.6))
@@ -193,14 +204,17 @@ ax.plot(times / t_r, ratio_t, "o-", color="C0", ms=3.0, lw=1.0, label="MFC " + (
 ax.axhline(1.0, ls=":", color="0.45", lw=1.3)
 ax.text(0.02, 1.0, r" $v_{\mathrm{YGB}}$ (zero-Ma Stokes, sphere)", va="bottom", ha="left", color="0.4", fontsize=9)
 ax.axhline(samareh_ratio, ls="--", color="C3", lw=1.3, label=rf"Samareh {dim}D $\approx$ {samareh_ratio:.2f}")
-ax.plot(t_plateau_tr, ratio_plateau, "*", color="k", ms=14, zorder=5, label=rf"quasi-steady plateau = {ratio_plateau:.2f}")
+if short_run:
+    ax.plot(times[-1] / t_r, ratio_final, "*", color="k", ms=14, zorder=5, label=rf"current value = {ratio_final:.2f} (still ramping, {times[-1] / t_r:.2f} $t_r$)")
+else:
+    ax.plot(t_plateau_tr, ratio_plateau, "*", color="k", ms=14, zorder=5, label=rf"quasi-steady plateau = {ratio_plateau:.2f}")
 ax.annotate(
-    "frozen-$T$ drift\n(no bulk conduction)" if abs(slope_per_tr) > 0.05 else "",
+    "frozen-$T$ drift\n(no bulk conduction)" if drift_is_frozenT else "",
     xy=(times[-1] / t_r, ratio_final),
     xytext=(0.55 * times[-1] / t_r, min(1.08, ratio_final + 0.12)),
     color="0.4",
     fontsize=8,
-    arrowprops=dict(arrowstyle="->", color="0.5", lw=1.0) if abs(slope_per_tr) > 0.05 else None,
+    arrowprops=dict(arrowstyle="->", color="0.5", lw=1.0) if drift_is_frozenT else None,
 )
 ax.set_xlabel(r"$t / t_r$  ($t_r = \mu / |\sigma_T \nabla T|$, Samareh time scale)")
 ax.set_ylabel(r"normalized rise velocity  $v / v_{\mathrm{YGB}}$")

@@ -61,6 +61,14 @@ n_tr = float(os.environ.get("FIG7_TR", "15"))  # run length in capillary-thermal
 prop_ratio = float(os.environ.get("FIG7_RATIO", "0.5"))  # droplet/bulk material-property ratio (Samareh: 0.5)
 conduction = os.environ.get("FIG7_COND", "1") == "1"  # diagnostic: FIG7_COND=0 -> advection of T_s only (no Fourier)
 adiabatic = os.environ.get("FIG7_ADIABATIC", "0") == "1"  # diagnostic: adiabatic walls instead of the faithful isothermal Dirichlet
+# Acoustic-ring control. The box is compressible and closed (reflective -2 walls); a curved interface
+# at uniform pressure leaves the Laplace jump sigma/r unbalanced at t=0, which launches an acoustic
+# standing wave that the walls trap (a domain-filling vertical mode, fundamental f = c/2Ly), riding on
+# the slow migration as a ~few-% ripple. We remove it at the source by initializing the droplet at its
+# Laplace overpressure (see patch_icpp(2)%pres below): an ablation showed this cuts the ripple by ~97%,
+# down to the diffuse-interface parasitic-current floor -- bulk viscosity / EOS stiffening then add
+# nothing. FIG7_UNBALANCED=1 restores Samareh's bare uniform-pressure IC (rings) for that diagnostic.
+unbalanced_ic = os.environ.get("FIG7_UNBALANCED", "0") == "1"
 
 # -- Samareh's Fig 7 non-dimensional targets --
 Re = 5.0
@@ -234,7 +242,11 @@ data = {
     "patch_icpp(2)%smooth_coeff": cf_smooth_coeff,
     "patch_icpp(2)%vel(1)": 0.0,
     "patch_icpp(2)%vel(2)": 0.0,
-    "patch_icpp(2)%pres": p0,
+    # Initialize the droplet interior at the Laplace overpressure p_out + sigma/r (2D circle: single
+    # curvature 1/r) so the t=0 interface is in mechanical equilibrium -- the smoothed patch tanh-blends
+    # this into a balanced pressure profile, removing the unbalanced CSF kick that otherwise launches
+    # the acoustic standing wave. FIG7_UNBALANCED=1 reverts to Samareh's bare uniform-pressure IC.
+    "patch_icpp(2)%pres": p0 if unbalanced_ic else p0 + sigma0 / r0,
     "patch_icpp(2)%alpha_rho(1)": eps * rho_b,
     "patch_icpp(2)%alpha_rho(2)": (1.0 - eps) * rho_d,
     "patch_icpp(2)%alpha(1)": eps,

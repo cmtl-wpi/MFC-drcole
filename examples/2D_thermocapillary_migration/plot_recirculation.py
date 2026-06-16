@@ -180,7 +180,7 @@ axa.text(xc_drop + 0.28 * r, yc_drop + 0.15 * r, rf"$U={v_drop / v_YGB:.2f}\,v_{
 fig.suptitle(rf"2D thermocapillary drop  $\cdot$  {ny / 7.5:.1f} cells/$D$  $\cdot$  $t={ttau:.1f}\,\tau$",
              fontsize=9.5)
 
-out = os.path.join(here, "figures", "tc1_recirculation_2D")
+out = os.path.join(here, "figures", "case1_zero_marangoni_2D_recirculation")
 fig.savefig(out + ".png", dpi=300)
 fig.savefig(out + ".pdf")
 print(f"step={step}  t/tau={ttau:.3f}  nvars={nvars}  rho_drop={rho_drop:.3f}  tau={tau:.3f}")

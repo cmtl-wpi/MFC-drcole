@@ -87,6 +87,12 @@ wall = os.environ.get("SAMAREH_WALL", "1") == "1"  # Samareh slip-wall geometry 
 # Finite-Ma conduction / independent-temperature modes (ported from the thermal_scalar feature):
 Ma_th = float(os.environ.get("SAMAREH_MA", "0"))  # thermal Marangoni number; > 0 enables bulk Fourier conduction
 ts_mode = os.environ.get("SAMAREH_TS", "0") == "1"  # carry T as an independent advected scalar (decoupled from rho)
+# Balance the t=0 Laplace jump in the IC (droplet at p_out + sigma/r) so the closed compressible box
+# does not ring acoustically. Default ON. In this density-proxy mode sigma(T) reads the EOS temperature,
+# so the pressure bump shifts the drop's T by (sigma/r)/(p0+p_inf) ~ 0.5%; it is azimuthally uniform
+# (no tangential sigma gradient), so the migration is unaffected to well within grid scatter.
+# SAMAREH_UNBALANCED=1 restores Samareh's bare uniform-pressure IC (rings) for the acoustic diagnostic.
+unbalanced_ic = os.environ.get("SAMAREH_UNBALANCED", "0") == "1"
 assert Ma_th >= 0, "SAMAREH_MA must be >= 0 (0 disables conduction)"
 
 # -- Geometry (Samareh Sec. 4.1.1: D=1 drop, 5D wide x 7.5D tall box; rise axis = y) --
@@ -254,9 +260,10 @@ data = {
     "patch_icpp(1)%alpha(1)": 1.0 - eps,
     "patch_icpp(1)%alpha(2)": eps,
     "patch_icpp(1)%cf_val": 0.0,
-    # Patch 2 -- droplet (2D circle): marks c=1, smeared over ~2 cells. IDENTICAL density/composition/
-    # pressure to patch 1, so the capillary stress acts purely on the c interface with no real
-    # fluid/density jump (the mu*=1, k*=1 / undistorted-T limit of YGB).
+    # Patch 2 -- droplet (2D circle): marks c=1, smeared over ~2 cells. IDENTICAL density/composition to
+    # patch 1 (capillary stress acts purely on the c interface, no real fluid/density jump -- the mu*=1,
+    # k*=1 / undistorted-T limit of YGB). Pressure is the Laplace overpressure p_out + sigma/r (balanced
+    # IC; see unbalanced_ic above), removing the acoustic ring; the smoothed patch tanh-blends it.
     "patch_icpp(2)%geometry": 2,  # 2D circle
     "patch_icpp(2)%x_centroid": 0.0,
     "patch_icpp(2)%y_centroid": y_drop,
@@ -267,7 +274,7 @@ data = {
     "patch_icpp(2)%smooth_coeff": cf_smooth_coeff,
     "patch_icpp(2)%vel(1)": 0.0,
     "patch_icpp(2)%vel(2)": 0.0,
-    "patch_icpp(2)%pres": p0,
+    "patch_icpp(2)%pres": p0 if unbalanced_ic else p0 + sigma0 / r,
     "patch_icpp(2)%alpha_rho(1)": rho_expr,
     "patch_icpp(2)%alpha_rho(2)": eps,
     "patch_icpp(2)%alpha(1)": 1.0 - eps,
