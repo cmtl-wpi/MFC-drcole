@@ -304,14 +304,14 @@ RUN_COMMAND = Command(
         ),
         Argument(
             name="archive",
-            help="(Interactive) Archive case inputs and outputs to PATH after the run completes.",
+            help="(Interactive) Run inside PATH/<case>-<timestamp>/ so inputs and outputs land there, with a provenance manifest.",
             default=None,
             metavar="PATH",
             completion=Completion(type=CompletionType.DIRECTORIES),
         ),
         Argument(
             name="archive-format",
-            help="(Interactive) Archive container format: dir (default), tar, or tar.zst.",
+            help="(Interactive) Archive container format: dir (run dir kept as-is, default), tar, or tar.zst (run dir packed then removed).",
             choices=["dir", "tar", "tar.zst"],
             default="dir",
             dest="archive_format",
@@ -348,8 +348,8 @@ RUN_COMMAND = Command(
         Example("./mfc.sh run case.py -n 4", "Run with 4 MPI ranks"),
         Example("./mfc.sh run case.py --case-optimization -j 8", "10x faster with case optimization!"),
         Example("./mfc.sh run case.py -e batch -N 2 -n 4", "Submit batch job: 2 nodes, 4 ranks/node"),
-        Example("./mfc.sh run case.py --archive /mnt/nas/mfc-runs", "Archive run into /mnt/nas/mfc-runs/<name>-<timestamp>/"),
-        Example("./mfc.sh run case.py --archive /mnt/nas/mfc-runs --archive-format tar.zst", "Archive as a compressed tarball"),
+        Example("./mfc.sh run case.py --archive runs", "Run inside ./runs/<case>-<timestamp>/ (results written there)"),
+        Example("./mfc.sh run case.py --archive runs --archive-format tar.zst", "Same, then pack the run dir into a compressed tarball"),
     ],
     key_options=[
         ("--case-optimization", "Hard-code params for 10x speedup!"),
@@ -358,7 +358,7 @@ RUN_COMMAND = Command(
         ("-e, --engine", "interactive or batch"),
         ("-a, --account", "Account to charge (batch)"),
         ("-w, --walltime", "Wall time limit (batch)"),
-        ("--archive PATH", "Archive inputs+outputs after interactive run"),
+        ("--archive PATH", "Run inside PATH/<case>-<timestamp>/ (results land there)"),
         ("--archive-format FMT", "Archive format: dir, tar, tar.zst"),
     ],
 )

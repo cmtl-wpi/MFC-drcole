@@ -1,9 +1,10 @@
 """
 Tests for the archive module.
 
-Covers source collection, archive format round-trips (dir, tar, tar.zst),
-the no-op path when --archive is unset, destination-collision tally
-fallback, and plan_archive() error cases.
+Covers run-directory planning (stem naming + collision tally), the
+redirect that makes the run execute inside the run directory, the manifest
+stamp, the tar/tar.zst pack-and-remove path, and the no-op path when
+--archive is unset.
 """
 
 import datetime
@@ -20,73 +21,39 @@ from unittest.mock import patch
 from .. import state
 
 
-def _make_fake_case(dirpath: str):
+def _make_fake_case(dirpath: str, params: dict = None):
     from .input import MFCInputFile
 
     case_py = os.path.join(dirpath, "case.py")
     with open(case_py, "w") as f:
         f.write("# fake case\n")
-    with open(os.path.join(dirpath, "simulation.inp"), "w") as f:
-        f.write("&user_inputs /\n")
-    with open(os.path.join(dirpath, "equations.dat"), "w") as f:
-        f.write("eq\n")
-    with open(os.path.join(dirpath, "MFC.out"), "w") as f:
-        f.write("log\n")
-    os.makedirs(os.path.join(dirpath, "D"))
-    with open(os.path.join(dirpath, "D", "output.dat"), "w") as f:
-        f.write("data\n")
 
-    return MFCInputFile(case_py, dirpath, {})
+    return MFCInputFile(case_py, dirpath, params if params is not None else {})
 
 
 def _fake_targets():
     return [types.SimpleNamespace(name="simulation")]
 
 
-def _collect_sources_fn():
-    # Module-level dunder names aren't mangled; attribute access inside a class body
-    # would be, so we reach through __dict__.
-    from . import archive
-
-    return archive.__dict__["__collect_sources"]
+def _simulate_run_outputs(run_dir: str):
+    """Drop the kind of files a real run would write into the run dir."""
+    with open(os.path.join(run_dir, "simulation.inp"), "w") as f:
+        f.write("&user_inputs /\n")
+    with open(os.path.join(run_dir, "MFC.out"), "w") as f:
+        f.write("log\n")
+    os.makedirs(os.path.join(run_dir, "restart_data"))
+    with open(os.path.join(run_dir, "restart_data", "lustre_0.dat"), "w") as f:
+        f.write("data\n")
 
 
 class _StateSandbox(unittest.TestCase):
     def setUp(self):
         self._saved_gARG = dict(state.gARG)
-        state.gARG.update({"name": "MFC", "output_summary": None})
+        state.gARG.update({"name": "MFC", "output_summary": None, "input": None})
 
     def tearDown(self):
         state.gARG.clear()
         state.gARG.update(self._saved_gARG)
-
-
-class TestCollectSources(_StateSandbox):
-    def test_finds_case_namelist_and_artifacts(self):
-        collect = _collect_sources_fn()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            case = _make_fake_case(tmp)
-            sources = collect(case, _fake_targets())
-
-        names = {os.path.basename(s) for s in sources}
-        self.assertIn("case.py", names)
-        self.assertIn("simulation.inp", names)
-        self.assertIn("equations.dat", names)
-        self.assertIn("MFC.out", names)
-        self.assertIn("D", names)
-
-    def test_skips_missing_artifacts(self):
-        collect = _collect_sources_fn()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            case = _make_fake_case(tmp)
-            sources = collect(case, _fake_targets())
-
-        names = {os.path.basename(s) for s in sources}
-        self.assertNotIn("time_data.dat", names)
-        self.assertNotIn("restart_data", names)
-        self.assertNotIn("p_all", names)
 
 
 @contextmanager
@@ -99,36 +66,62 @@ def _run_archive(fmt: str):
         state.gARG["archive"] = dest_root
         state.gARG["archive_format"] = fmt
         case = _make_fake_case(src)
+
         plan = archive_mod.plan_archive(case)
-        archive_mod.archive(plan, case, _fake_targets())
+        archive_mod.prepare_run_dir(plan, case)
+        _simulate_run_outputs(case.dirpath)
+        archive_mod.finalize_archive(plan, case, _fake_targets())
+
         entries = sorted(os.listdir(dest_root))
         assert len(entries) == 1, f"expected one archive entry, got {entries}"
-        yield os.path.join(dest_root, entries[0])
+        yield plan, os.path.join(dest_root, entries[0])
     finally:
         shutil.rmtree(src, ignore_errors=True)
         shutil.rmtree(dest_root, ignore_errors=True)
 
 
+class TestPrepareRunDir(_StateSandbox):
+    def test_redirect_into_run_dir(self):
+        from . import archive as archive_mod
+
+        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as dest_root:
+            state.gARG["archive"] = dest_root
+            state.gARG["archive_format"] = "dir"
+            case = _make_fake_case(src)
+
+            plan = archive_mod.plan_archive(case)
+            archive_mod.prepare_run_dir(plan, case)
+
+            self.assertTrue(os.path.isdir(plan.run_dir))
+            self.assertEqual(case.dirpath, plan.run_dir)
+            self.assertEqual(case.filename, os.path.join(plan.run_dir, "case.py"))
+            self.assertEqual(state.gARG["input"], case.filename)
+            self.assertTrue(os.path.isfile(os.path.join(plan.run_dir, "case.py")))
+
+
 class TestArchiveFormats(_StateSandbox):
     def test_format_dir(self):
-        with _run_archive("dir") as path:
+        with _run_archive("dir") as (plan, path):
             self.assertTrue(os.path.isdir(path))
+            self.assertEqual(path, plan.run_dir)
             self.assertTrue(os.path.isfile(os.path.join(path, "manifest.yaml")))
             self.assertTrue(os.path.isfile(os.path.join(path, "case.py")))
             self.assertTrue(os.path.isfile(os.path.join(path, "simulation.inp")))
-            self.assertTrue(os.path.isdir(os.path.join(path, "D")))
-            self.assertTrue(os.path.isfile(os.path.join(path, "D", "output.dat")))
+            self.assertTrue(os.path.isdir(os.path.join(path, "restart_data")))
+            self.assertTrue(os.path.isfile(os.path.join(path, "restart_data", "lustre_0.dat")))
 
     def test_format_tar(self):
-        with _run_archive("tar") as path:
+        with _run_archive("tar") as (plan, path):
             self.assertTrue(path.endswith(".tar"))
             self.assertTrue(tarfile.is_tarfile(path))
+            # The working run directory is removed once packed.
+            self.assertFalse(os.path.isdir(plan.run_dir))
             with tarfile.open(path) as tf:
                 names = tf.getnames()
             base = os.path.basename(path)[: -len(".tar")]
             self.assertIn(f"{base}/manifest.yaml", names)
             self.assertIn(f"{base}/case.py", names)
-            self.assertIn(f"{base}/D/output.dat", names)
+            self.assertIn(f"{base}/restart_data/lustre_0.dat", names)
 
     def test_format_tar_zst(self):
         try:
@@ -138,9 +131,10 @@ class TestArchiveFormats(_StateSandbox):
         except (FileNotFoundError, subprocess.TimeoutExpired):
             self.skipTest("tar --zstd not available")
 
-        with _run_archive("tar.zst") as path:
+        with _run_archive("tar.zst") as (plan, path):
             self.assertTrue(path.endswith(".tar.zst"))
             self.assertGreater(os.path.getsize(path), 0)
+            self.assertFalse(os.path.isdir(plan.run_dir))
 
             listing = subprocess.run(["tar", "--zstd", "-tf", path], capture_output=True, text=True, check=True)
             base = os.path.basename(path)[: -len(".tar.zst")]
@@ -184,7 +178,8 @@ class TestArchiveBehavior(_StateSandbox):
             plan = archive_mod.plan_archive(case)
 
         self.assertEqual(plan.stem, "my_cool_case-20260101-120000")
-        self.assertTrue(plan.dest.endswith("my_cool_case-20260101-120000"))
+        self.assertTrue(plan.run_dir.endswith("my_cool_case-20260101-120000"))
+        self.assertEqual(plan.dest, plan.run_dir)
 
     def test_plan_collision_gets_tally_suffix(self):
         from . import archive as archive_mod
@@ -198,29 +193,15 @@ class TestArchiveBehavior(_StateSandbox):
             case = _make_fake_case(src)
 
             plan1 = archive_mod.plan_archive(case)
-            os.makedirs(plan1.dest)  # simulate an existing archive at that path
+            os.makedirs(plan1.run_dir)  # simulate an existing run at that path
             plan2 = archive_mod.plan_archive(case)
-            os.makedirs(plan2.dest)
+            os.makedirs(plan2.run_dir)
             plan3 = archive_mod.plan_archive(case)
 
-        self.assertTrue(plan2.dest.endswith("-2"))
-        self.assertTrue(plan3.dest.endswith("-3"))
-        self.assertNotEqual(plan1.dest, plan2.dest)
-        self.assertNotEqual(plan2.dest, plan3.dest)
-
-    def test_output_summary_outside_case_dir_is_skipped(self):
-        collect = _collect_sources_fn()
-
-        with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as elsewhere:
-            outside = os.path.join(elsewhere, "summary.yaml")
-            with open(outside, "w") as f:
-                f.write("k: v\n")
-
-            state.gARG["output_summary"] = outside
-            case = _make_fake_case(src)
-            sources = collect(case, _fake_targets())
-
-        self.assertNotIn(outside, sources)
+        self.assertTrue(plan2.run_dir.endswith("-2"))
+        self.assertTrue(plan3.run_dir.endswith("-3"))
+        self.assertNotEqual(plan1.run_dir, plan2.run_dir)
+        self.assertNotEqual(plan2.run_dir, plan3.run_dir)
 
 
 if __name__ == "__main__":
