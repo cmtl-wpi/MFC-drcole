@@ -1095,6 +1095,14 @@ VIZ_COMMAND = Command(
             metavar="DPI",
         ),
         Argument(
+            name="font-scale",
+            help="Scale all text (titles, axis labels, ticks, colorbars) by this factor (--png, --mp4 only). Default 1.0.",
+            type=float,
+            default=1.0,
+            dest="font_scale",
+            metavar="FACTOR",
+        ),
+        Argument(
             name="slice-axis",
             help="Axis for 3D slice (--png, --mp4 only).",
             type=str,
@@ -1208,6 +1216,7 @@ VIZ_COMMAND = Command(
         ("--vmin / --vmax", "Fix color-scale limits"),
         ("--log-scale", "Logarithmic color/y axis"),
         ("--dpi N", "Image resolution (default: 150)"),
+        ("--font-scale F", "Scale all text by F (default: 1.0)"),
         ("-o, --output DIR", "Output directory (default: case_dir/viz/)"),
         ("-- 3D slicing (--png, --mp4 only) --", ""),
         ("--slice-axis x|y|z", "Plane to slice (default: z midplane)"),

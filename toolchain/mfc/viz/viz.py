@@ -346,6 +346,7 @@ def viz():
         "cmap": ARG("cmap"),
         "dpi": ARG("dpi"),
         "slice_axis": ARG("slice_axis"),
+        "font_scale": ARG("font_scale"),
     }
     if ARG("vmin") is not None:
         render_opts["vmin"] = float(ARG("vmin"))

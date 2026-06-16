@@ -6,6 +6,7 @@ from assembled MFC data. Uses matplotlib with the Agg backend
 for headless rendering.
 """
 
+import functools
 import math
 import os
 import re
@@ -28,6 +29,31 @@ matplotlib.rcParams.update(
         "font.family": "serif",
     }
 )
+
+# Base matplotlib font size (pt). The --font-scale option multiplies this; because
+# titles/labels/ticks/colorbars inherit "font.size" by default, one bump scales them all.
+_FONT_BASE = 10.0
+
+
+def _font_scale(opts):
+    """Text-size multiplier from render opts (1.0 = matplotlib default; ignores non-positive)."""
+    scale = opts.get("font_scale", 1.0)
+    return scale if scale and scale > 0 else 1.0
+
+
+def _scaled(render_fn):
+    """Run a render inside an rc_context that scales all default-sized text by font_scale.
+
+    Tiled layouts set explicit per-panel sizes that do not inherit font.size, so those
+    functions additionally multiply their literals by _font_scale(opts).
+    """
+
+    @functools.wraps(render_fn)
+    def wrapper(*args, **kwargs):
+        with plt.rc_context({"font.size": _FONT_BASE * _font_scale(kwargs)}):
+            return render_fn(*args, **kwargs)
+
+    return wrapper
 
 # LaTeX-style labels for known MFC variable names
 _LABEL_MAP = {
@@ -103,6 +129,7 @@ def pretty_label(varname):
     return varname
 
 
+@_scaled
 def render_1d(x_cc, data, varname, step, output, **opts):
     """Render a 1D line plot and save as PNG."""
     fig, ax = plt.subplots(figsize=opts.get("figsize", (10, 6)))
@@ -127,8 +154,10 @@ def render_1d(x_cc, data, varname, step, output, **opts):
     plt.close(fig)
 
 
+@_scaled
 def render_1d_tiled(x_cc, variables, step, output, **opts):
     """Render all 1D variables in a tiled subplot grid and save as PNG."""
+    fs = _font_scale(opts)
     varnames = sorted(variables.keys())
     n = len(varnames)
     if n == 0:
@@ -148,8 +177,8 @@ def render_1d_tiled(x_cc, variables, step, output, **opts):
         row, col = divmod(idx, ncols)
         ax = axes[row][col]
         ax.plot(x_cc, variables[vn], linewidth=1.2)
-        ax.set_ylabel(pretty_label(vn), fontsize=9)
-        ax.tick_params(labelsize=8)
+        ax.set_ylabel(pretty_label(vn), fontsize=9 * fs)
+        ax.tick_params(labelsize=8 * fs)
         ax.grid(True, alpha=0.3)
         if log_scale:
             ax.set_yscale("log")
@@ -162,9 +191,9 @@ def render_1d_tiled(x_cc, variables, step, output, **opts):
     # X-label only on bottom row
     for col in range(ncols):
         bottom_row = min(nrows - 1, (n - 1) // ncols) if col < (n % ncols or ncols) else nrows - 2
-        axes[bottom_row][col].set_xlabel(r"$x$", fontsize=9)
+        axes[bottom_row][col].set_xlabel(r"$x$", fontsize=9 * fs)
 
-    fig.suptitle(f"step {step}", fontsize=11, y=0.99)
+    fig.suptitle(f"step {step}", fontsize=11 * fs, y=0.99)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     fig.savefig(output, dpi=opts.get("dpi", 150))
     plt.close(fig)
@@ -183,6 +212,7 @@ def _figsize_for_domain(x_cc, y_cc, base=10):
     return (fig_w, fig_h)
 
 
+@_scaled
 def render_2d(x_cc, y_cc, data, varname, step, output, **opts):
     """Render a 2D colormap via pcolormesh and save as PNG."""
     default_size = _figsize_for_domain(x_cc, y_cc)
@@ -221,8 +251,10 @@ def render_2d(x_cc, y_cc, data, varname, step, output, **opts):
     plt.close(fig)
 
 
+@_scaled
 def render_2d_tiled(assembled, step, output, **opts):
     """Render all 2D variables in a tiled subplot grid and save as PNG."""
+    fs = _font_scale(opts)
     varnames = sorted(assembled.variables.keys())
     n = len(varnames)
     if n == 0:
@@ -255,21 +287,22 @@ def render_2d_tiled(assembled, step, output, **opts):
         pcm = ax.pcolormesh(assembled.x_cc, assembled.y_cc, data.T, cmap=cmap, vmin=vmin, vmax=vmax, norm=norm, shading="auto")
         label = pretty_label(vn)
         fig.colorbar(pcm, ax=ax, label=label)
-        ax.set_title(label, fontsize=9)
+        ax.set_title(label, fontsize=9 * fs)
         ax.set_aspect("equal", adjustable="box")
-        ax.tick_params(labelsize=7)
+        ax.tick_params(labelsize=7 * fs)
         _overlay_bubbles(ax, opts.get("bubbles"), scale=opts.get("bubble_scale", 1.0))
 
     for idx in range(n, nrows * ncols):
         row, col = divmod(idx, ncols)
         axes[row][col].set_visible(False)
 
-    fig.suptitle(f"step {step}", fontsize=11, y=1.01)
+    fig.suptitle(f"step {step}", fontsize=11 * fs, y=1.01)
     fig.tight_layout()
     fig.savefig(output, dpi=opts.get("dpi", 150), bbox_inches="tight")
     plt.close(fig)
 
 
+@_scaled
 def render_3d_slice(assembled, varname, step, output, slice_axis="z", slice_index=None, slice_value=None, **opts):
     """Extract a 2D slice from 3D data and render as a colormap."""
     data_3d = assembled.variables[varname]
