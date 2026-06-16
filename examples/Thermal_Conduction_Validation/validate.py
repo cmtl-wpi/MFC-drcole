@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
 """Checks MFC's heat conduction against known textbook answers.
 
-For each test it runs MFC, reads the temperature MFC computed, compares it to
-the exact pen-and-paper solution of the heat equation, reports how big the
-error is, and saves a figure plus a line in summary.json.
+This script does NOT run MFC -- run the cases first, then run this to analyze
+the results. For each benchmark it reads back the temperature MFC saved (from
+runs/<label>/), compares it to the exact pen-and-paper solution of the heat
+equation, reports how big the error is, and saves a figure plus a line in
+summary.json.
 
-Run from the repo root (needs mpirun, so disable the command sandbox):
+Each benchmark reads an archived run under runs/<label>/, which must already hold
+that case's restart_data/ and simulation.inp. To produce one, run the matching
+case with MFC and copy its restart_data/ + simulation.inp into runs/<label>/:
+
+  benchmark    reads runs/<label>          from case
+  1d           1d_scalar, 1d_energy        case_1d.py, case_1d_energy.py
+  2d           2d_plate                    case_2d_plate.py
+  3d-mode      3d_mode                     case_3d_mode.py
+  3d-hotspot   3d_hotspot                  case_3d_hotspot.py
+  conv-x       convx_{32,64,128,256,512}   case_conv.py (one run per grid)
+  conv-t       convt_{50,100,...,800,3200} case_conv.py (one run per step count)
+
   python3 examples/Thermal_Conduction_Validation/validate.py 1d          # 1D bar, fixed-temperature ends
   python3 examples/Thermal_Conduction_Validation/validate.py 2d          # 2D plate, one hot edge
   python3 examples/Thermal_Conduction_Validation/validate.py 3d-mode     # 3D box, a sine wave cooling off
   python3 examples/Thermal_Conduction_Validation/validate.py 3d-hotspot  # 3D box, a hot blob spreading out
   python3 examples/Thermal_Conduction_Validation/validate.py conv-x      # grid convergence study (cell size)
   python3 examples/Thermal_Conduction_Validation/validate.py conv-t      # time-step convergence study
-
-Add --no-run to re-use the saved runs/ instead of simulating again.
 
 How error is reported: L1 = average error, L2 = typical (root-mean-square)
 error, Linf = the single worst cell.
@@ -24,8 +35,6 @@ import json
 import math
 import os
 import re
-import shutil
-import subprocess
 import sys
 
 import matplotlib
@@ -36,13 +45,9 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-CASES_REL = os.path.join("examples", "Thermal_Conduction_Validation", "cases")
-CASES = os.path.join(HERE, "cases")
 RUNS = os.path.join(HERE, "runs")
 FIG = os.path.join(HERE, "figures")
 SUMMARY = os.path.join(HERE, "summary.json")
-NO_RUN = "--no-run" in sys.argv
 
 # Physical constants -- mirror cases/case_*.py
 L, ALPHA = 1.0, 0.05
@@ -85,26 +90,18 @@ def exact_3d_hotspot(X, Y, Z, t):
     return TWALL + HS_A * (HS_SIG**2 / s2) ** 1.5 * np.exp(-r2 / (2.0 * s2))
 
 
-# Helpers: run a case, then read back what MFC saved
+# Helpers: locate an already-run case, then read back what MFC saved
 
 
-def run_case(case, env, ranks, label):
+def find_run(label, case):
+    """Return the archived run directory runs/<label>, erroring if MFC has not run it.
+
+    This script does not run MFC. Populate runs/<label>/ first by running the
+    matching case and copying its restart_data/ + simulation.inp there.
+    """
     rundir = os.path.join(RUNS, label)
-    if NO_RUN:
-        print(f"  [--no-run] {rundir}")
-        return rundir
-    os.makedirs(RUNS, exist_ok=True)
-    full_env = dict(os.environ, **{k: str(v) for k, v in env.items()})
-    cmd = ["./mfc.sh", "run", os.path.join(CASES_REL, case), "-n", str(ranks), "-t", "pre_process", "simulation"]
-    print(f"  running {case}  ranks={ranks}" + (f"  env={env}" if env else ""))
-    res = subprocess.run(cmd, cwd=REPO, env=full_env, capture_output=True, text=True, check=False)
-    if res.returncode != 0:
-        print(res.stdout[-3000:], res.stderr[-2000:])
-        raise RuntimeError(f"MFC run failed: {case} ({label})")
-    shutil.rmtree(rundir, ignore_errors=True)
-    os.makedirs(rundir)
-    shutil.copytree(os.path.join(CASES, "restart_data"), os.path.join(rundir, "restart_data"))
-    shutil.copy(os.path.join(CASES, "simulation.inp"), rundir)
+    if not os.path.isdir(os.path.join(rundir, "restart_data")):
+        raise SystemExit(f"missing {rundir}/restart_data\n  run cases/{case} with MFC, then copy its restart_data/ + simulation.inp into {rundir}/")
     return rundir
 
 
@@ -193,7 +190,7 @@ def bench_1d():
     modes = [("scalar", "case_1d.py", "C0", "o"), ("energy", "case_1d_energy.py", "C3", "s")]
     out, data = {}, {}
     for mode, case, color, marker in modes:
-        rundir = run_case(case, {}, 1, f"1d_{mode}")
+        rundir = find_run(f"1d_{mode}", case)
         dt, (m, _, _), (xc, _, _), steps, load = read_run(rundir)
         t = np.array([s * dt for s in steps])
         nums = [temperature(load(s), mode) for s in steps]
@@ -253,7 +250,7 @@ def bench_1d():
 
 
 def bench_2d():
-    rundir = run_case("case_2d_plate.py", {}, 8, "2d_plate")
+    rundir = find_run("2d_plate", "case_2d_plate.py")
     dt, (m, n, _), (xc, yc, _), steps, load = read_run(rundir)
     X, Y = np.meshgrid(xc, yc)  # [n,m]
     Tex = exact_2d_plate(X, Y)
@@ -307,7 +304,7 @@ def bench_2d():
 
 
 def bench_3d_mode():
-    rundir = run_case("case_3d_mode.py", {}, 8, "3d_mode")
+    rundir = find_run("3d_mode", "case_3d_mode.py")
     dt, (m, n, p), (xc, yc, zc), steps, load = read_run(rundir)
     X, Y, Z = np.meshgrid(xc, yc, zc, indexing="ij")
     t = np.array([s * dt for s in steps])
@@ -374,7 +371,7 @@ def bench_3d_mode():
 
 
 def bench_3d_hotspot():
-    rundir = run_case("case_3d_hotspot.py", {}, 8, "3d_hotspot")
+    rundir = find_run("3d_hotspot", "case_3d_hotspot.py")
     dt, (m, n, p), (xc, yc, zc), steps, load = read_run(rundir)
     X, Y, Z = np.meshgrid(xc, yc, zc, indexing="ij")
     R = np.sqrt((X - L / 2) ** 2 + (Y - L / 2) ** 2 + (Z - L / 2) ** 2)
@@ -427,19 +424,15 @@ def bench_3d_hotspot():
 def converge_spatial():
     grids = [32, 64, 128, 256, 512]
     tstar = 0.3 / (ALPHA * KW**2)
-    diffnum = 0.2
     dxs, L2s, Lis = [], [], []
     for N in grids:
-        dx = L / N
-        dt = diffnum * dx**2 / ALPHA
-        nsteps = int(round(tstar / dt))
-        rundir = run_case("case_conv.py", {"CONV_N": N, "CONV_DT": dt, "CONV_NSTEPS": nsteps}, 1, f"convx_{N}")
-        dtr, (m, _, _), (xc, _, _), steps, load = read_run(rundir)
+        rundir = find_run(f"convx_{N}", "case_conv.py")
+        dtr, _, (xc, _, _), steps, load = read_run(rundir)
         nr = norms(temperature(load(steps[-1]), "scalar"), exact_conv(xc, steps[-1] * dtr))
-        dxs.append(dx)
+        dxs.append(L / N)
         L2s.append(nr["L2"])
         Lis.append(nr["Linf"])
-        print(f"  N={N:4d}  dx={dx:.4e}  L2={nr['L2']:.4e}  L∞={nr['Linf']:.4e}")
+        print(f"  N={N:4d}  dx={L / N:.4e}  L2={nr['L2']:.4e}  L∞={nr['Linf']:.4e}")
     dxs, L2s, Lis = map(np.array, (dxs, L2s, Lis))
     s2 = slope(dxs, L2s)
     si = slope(dxs, Lis)
@@ -467,18 +460,18 @@ def converge_temporal():
     tstar = 0.3 / (ALPHA * KW**2)
     step_counts = [50, 100, 200, 400, 800]
     ref_steps = 3200
-    fields = {}
+    fields, dt_of = {}, {}
     for ns in step_counts + [ref_steps]:
-        dt = tstar / ns
-        rundir = run_case("case_conv.py", {"CONV_N": N, "CONV_DT": dt, "CONV_NSTEPS": ns}, 1, f"convt_{ns}")
+        rundir = find_run(f"convt_{ns}", "case_conv.py")
         dtr, _, (xc, _, _), steps, load = read_run(rundir)
         fields[ns] = temperature(load(steps[-1]), "scalar")
-        print(f"  steps={ns:5d}  dt={dt:.3e}")
+        dt_of[ns] = dtr
+        print(f"  steps={ns:5d}  dt={dtr:.3e}")
     ref = fields[ref_steps]
     dts, L2s = [], []
     for ns in step_counts:
         e = np.abs(fields[ns] - ref)
-        dts.append(tstar / ns)
+        dts.append(dt_of[ns])
         L2s.append(float(np.sqrt((e**2).mean())))
     dts, L2s = np.array(dts), np.array(L2s)
     st = slope(dts, L2s)
@@ -499,8 +492,8 @@ def converge_temporal():
 COMMANDS = {"1d": bench_1d, "2d": bench_2d, "3d-mode": bench_3d_mode, "3d-hotspot": bench_3d_hotspot, "conv-x": converge_spatial, "conv-t": converge_temporal}
 
 if __name__ == "__main__":
-    cmds = [a for a in sys.argv[1:] if not a.startswith("--")]
+    cmds = sys.argv[1:]
     if not cmds or cmds[0] not in COMMANDS:
-        print("usage: validate.py {" + "|".join(COMMANDS) + "} [--no-run]")
+        print("usage: validate.py {" + "|".join(COMMANDS) + "}  (run MFC first; this only analyzes runs/)")
         sys.exit(1)
     COMMANDS[cmds[0]]()
