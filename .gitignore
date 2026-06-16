@@ -11,6 +11,8 @@ src/*/autogen/
 
 *.swo
 *.swp
+*.png
+*.pdf
 
 *:Zone.Identifier
 
@@ -115,3 +117,12 @@ cce_*/
 cce_*.log
 run_cce_*.sh
 .ffmt_cache/
+
+# Generated run / analysis artifacts (logs, HDF5/XDMF viz output, render metadata)
+*.log
+*.h5
+*.xdmf
+/out
+examples/**/out/
+examples/**/metrics.json
+examples/**/.render_config.json
