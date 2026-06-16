@@ -1,5 +1,5 @@
 % 3D periodic Fourier mode -- case_3d_mode.py.
-% Triply-periodic cube, T_s = T0 + A sin(kx) sin(ky) sin(kz), k = 2 pi/L.
+% Triply-periodic cube, T = T0 + A sin(kx) sin(ky) sin(kz), k = 2 pi/L.
 % Alternating hot/cold lobes (a 3D checkerboard) decay isotropically:
 %   T0 + A sin sin sin * exp(-alpha * 3 k^2 t).
 %
@@ -51,9 +51,9 @@
   \node[inkc, anchor=west, align=left] at (\S+\dx+0.7,\S-0.4)
     {\textbf{3D periodic mode}\\[2pt]
      \texttt{case\_3d\_mode.py}\\[4pt]
-     $T_s=T_0+A\,\prod_i\sin(k x_i)$\\
+     $T=T_0+A\,\prod_i\sin(k x_i)$\\
      $k=2\pi/L$\\[4pt]
-     all faces periodic,\ $u\equiv 0$\\[4pt]
+     all faces periodic\\[4pt]
      isotropic decay\\
      $\propto e^{-\alpha\,3k^2\,t}$};
 \end{tikzpicture}

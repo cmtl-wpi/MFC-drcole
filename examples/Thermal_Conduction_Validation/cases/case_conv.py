@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # Convergence driver: 1D single Fourier mode on a periodic domain (no BC error).
-# T_s = T0 + A*sin(2*pi*x/L). The harness sets grid and time step via the
-# environment so it can hold the diffusion number fixed (spatial sweep) or vary
-# dt on a fixed grid (temporal sweep). thermal_scalar -> u stays 0.
+# T = T0 + A*sin(2*pi*x/L), imposed through the density at uniform pressure;
+# temperature is recovered from the stiffened-gas EOS. The harness sets grid and
+# time step via the environment so it can hold the diffusion number fixed
+# (spatial sweep) or vary dt on a fixed grid (temporal sweep).
 import json
 import math
 import os
@@ -17,7 +18,11 @@ kw = 2.0 * math.pi / L
 
 Nx = int(os.environ.get("CONV_N", "128")) - 1
 dx = L / (Nx + 1)
-dt = float(os.environ.get("CONV_DT", str(0.2 * dx**2 / alpha)))
+c0 = (gam * (p0 + p_inf)) ** 0.5
+# Default dt holds the diffusion number fixed, but cap it at the acoustic CFL:
+# the energy-coupled path carries real acoustics, so 0.2*dx^2/alpha alone blows
+# up on coarse grids. The temporal sweep overrides CONV_DT explicitly.
+dt = float(os.environ.get("CONV_DT", str(min(0.2 * dx**2 / alpha, 0.4 * dx / c0))))
 Nt = int(os.environ.get("CONV_NSTEPS", str(int(round(0.3 / (alpha * kw**2) / dt)))))
 
 print(
@@ -58,23 +63,21 @@ print(
             "prim_vars_wrt": "T",
             "cons_vars_wrt": "T",
             "parallel_io": "T",
-            # Thermal conduction
+            # Thermal conduction (EOS temperature)
             "thermal_conduction": "T",
-            "thermal_scalar": "T",
             # Fluids Physical Parameters
             "fluid_pp(1)%gamma": 1.0 / (gam - 1.0),
             "fluid_pp(1)%pi_inf": gam * p_inf / (gam - 1.0),
             "fluid_pp(1)%cv": cv,
             "fluid_pp(1)%k_therm": k_therm,
-            # Patch 1: full domain, periodic sine mode
+            # Patch 1: full domain, periodic sine mode imposed through density
             "patch_icpp(1)%geometry": 1,
             "patch_icpp(1)%x_centroid": L / 2,
             "patch_icpp(1)%length_x": L,
             "patch_icpp(1)%vel(1)": 0.0,
             "patch_icpp(1)%pres": p0,
-            "patch_icpp(1)%alpha_rho(1)": rho0,
+            "patch_icpp(1)%alpha_rho(1)": f"{rho0 * T0:.12f}/({T0} + {A}*sin({kw:.12f}*x))",
             "patch_icpp(1)%alpha(1)": 1.0,
-            "patch_icpp(1)%T_temp_val": f"{T0} + {A}*sin({kw:.12f}*x)",
         }
     )
 )

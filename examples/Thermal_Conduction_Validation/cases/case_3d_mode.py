@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # 3D heat equation, decaying Fourier mode on a triply-periodic cube.
-# T_s = T0 + A*sin(k*x)*sin(k*y)*sin(k*z), k = 2*pi/L (isotropic decay check).
+# T = T0 + A*sin(k*x)*sin(k*y)*sin(k*z), k = 2*pi/L (isotropic decay check).
+# Temperature is recovered from the stiffened-gas EOS: the mode is imposed
+# through the density at uniform pressure, rho = rho0*T0/T.
 import json
 import math
 
@@ -64,16 +66,16 @@ print(
             "precision": 2,
             "prim_vars_wrt": "T",
             "cons_vars_wrt": "T",
+            "T_wrt": "T",  # write temperature recovered from the EOS so post_process/viz can plot T
             "parallel_io": "T",
-            # Thermal conduction
+            # Thermal conduction (EOS temperature)
             "thermal_conduction": "T",
-            "thermal_scalar": "T",
             # Fluids Physical Parameters
             "fluid_pp(1)%gamma": 1.0 / (gam - 1.0),
             "fluid_pp(1)%pi_inf": gam * p_inf / (gam - 1.0),
             "fluid_pp(1)%cv": cv,
             "fluid_pp(1)%k_therm": k_therm,
-            # Patch 1: full cube, periodic sine mode
+            # Patch 1: full cube, periodic sine mode imposed through density
             "patch_icpp(1)%geometry": 9,
             "patch_icpp(1)%x_centroid": L / 2,
             "patch_icpp(1)%y_centroid": L / 2,
@@ -85,9 +87,8 @@ print(
             "patch_icpp(1)%vel(2)": 0.0,
             "patch_icpp(1)%vel(3)": 0.0,
             "patch_icpp(1)%pres": p0,
-            "patch_icpp(1)%alpha_rho(1)": rho0,
+            "patch_icpp(1)%alpha_rho(1)": f"{rho0 * T0:.12f}/({T0} + {A}*sin({kw:.12f}*x)*sin({kw:.12f}*y)*sin({kw:.12f}*z))",
             "patch_icpp(1)%alpha(1)": 1.0,
-            "patch_icpp(1)%T_temp_val": f"{T0} + {A}*sin({kw:.12f}*x)*sin({kw:.12f}*y)*sin({kw:.12f}*z)",
         }
     )
 )

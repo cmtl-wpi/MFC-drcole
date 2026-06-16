@@ -1,9 +1,8 @@
-% 1D Dirichlet sine decay, energy-coupled -- case_1d_energy.py.
-% Same physical benchmark as case_1d, but T is the EOS temperature: the sine
-% profile is imposed through the DENSITY at uniform pressure,
+% 1D Dirichlet sine decay -- case_1d.py (energy-coupled, EOS temperature).
+% The sine profile is imposed through the DENSITY at uniform pressure,
 %   rho(x) = rho0 Twall / (Twall + A sin(pi x/L)),   p = p0 = const.
 % T is then recovered from the stiffened-gas EOS; weak compressible acoustics
-% make u != 0 and set an error floor (vs the clean scalar operator).
+% make u != 0 and set a small physics-driven error floor.
 %
 % Compile:  pdflatex setup_1d_energy.tex
 \documentclass[border=6pt]{standalone}
@@ -52,9 +51,9 @@
 \end{axis}
 
 \node[font=\bfseries\small, anchor=south west] at (-0.9,4.7)
-  {1D sine decay, energy-coupled \ \footnotesize(\texttt{case\_1d\_energy.py})};
+  {1D Dirichlet sine decay \ \footnotesize(\texttt{case\_1d.py})};
 \node[anchor=north west, align=left, font=\footnotesize] at (-0.9,-1.05)
-  {$\rho(x)=\dfrac{\rho_0 T_{\text{wall}}}{T_{\text{wall}}+A\sin(\pi x/L)}$ imposes the same $T(x)$ as the scalar case;\;\;
+  {$\rho(x)=\dfrac{\rho_0 T_{\text{wall}}}{T_{\text{wall}}+A\sin(\pi x/L)}$ imposes the target $T(x)$;\;\;
    $T$ recovered from the stiffened-gas EOS $\Rightarrow$ weak acoustics, $u\neq 0$ (error floor).};
 \end{tikzpicture}
 \end{document}

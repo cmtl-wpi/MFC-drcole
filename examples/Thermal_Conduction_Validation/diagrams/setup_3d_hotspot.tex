@@ -1,6 +1,6 @@
 % 3D Gaussian hot spot -- case_3d_hotspot.py.
 % Cube with isothermal walls; a Gaussian blob at the center,
-%   T_s = T0 + A exp(-r^2 / 2 sigma0^2),  sigma0 = 0.08,
+%   T = T0 + A exp(-r^2 / 2 sigma0^2),  sigma0 = 0.08,
 % diffuses as the heat-kernel Green's function (spherical-symmetry check):
 %   sigma^2(t) = sigma0^2 + 2 alpha t,  peak ~ (sigma0/sigma)^3.
 % Run until sigma doubles.
@@ -56,11 +56,11 @@
   \node[inkc, anchor=west, align=left] at (\S+\dx+0.7,\S-0.3)
     {\textbf{3D Gaussian hot spot}\\[2pt]
      \texttt{case\_3d\_hotspot.py}\\[4pt]
-     $T_s=T_0+A\,e^{-r^2/2\sigma_0^2}$\\
+     $T=T_0+A\,e^{-r^2/2\sigma_0^2}$\\
      $\sigma_0=0.08,\ A=5$\\[4pt]
      spreads as a heat kernel:\\
      $\sigma^2=\sigma_0^2+2\alpha t$\\
      peak $\sim(\sigma_0/\sigma)^3$\\[4pt]
-     run until $\sigma$ doubles,\ $u\equiv 0$};
+     run until $\sigma$ doubles};
 \end{tikzpicture}
 \end{document}

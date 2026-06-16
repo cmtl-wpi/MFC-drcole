@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # 3D heat equation, Gaussian hot spot diffusing in a cube (spherical-symmetry
-# check). T_s = T0 + A*exp(-r^2/(2*sigma0^2)); spreads as a Gaussian Green's fn.
+# check). T = T0 + A*exp(-r^2/(2*sigma0^2)); spreads as a Gaussian Green's fn.
+# Temperature is recovered from the stiffened-gas EOS: the blob is imposed
+# through the density at uniform pressure, rho = rho0*T0/T.
 import json
 
 L = 1.0
@@ -65,16 +67,16 @@ print(
             "precision": 2,
             "prim_vars_wrt": "T",
             "cons_vars_wrt": "T",
+            "T_wrt": "T",  # write temperature recovered from the EOS so post_process/viz can plot T
             "parallel_io": "T",
-            # Thermal conduction
+            # Thermal conduction (EOS temperature)
             "thermal_conduction": "T",
-            "thermal_scalar": "T",
             # Fluids Physical Parameters
             "fluid_pp(1)%gamma": 1.0 / (gam - 1.0),
             "fluid_pp(1)%pi_inf": gam * p_inf / (gam - 1.0),
             "fluid_pp(1)%cv": cv,
             "fluid_pp(1)%k_therm": k_therm,
-            # Patch 1: full cube, Gaussian blob
+            # Patch 1: full cube, Gaussian blob imposed through density
             "patch_icpp(1)%geometry": 9,
             "patch_icpp(1)%x_centroid": L / 2,
             "patch_icpp(1)%y_centroid": L / 2,
@@ -86,9 +88,8 @@ print(
             "patch_icpp(1)%vel(2)": 0.0,
             "patch_icpp(1)%vel(3)": 0.0,
             "patch_icpp(1)%pres": p0,
-            "patch_icpp(1)%alpha_rho(1)": rho0,
+            "patch_icpp(1)%alpha_rho(1)": f"{rho0 * T0:.12f}/({T0} + {A}*exp(-{inv:.12f}*((x-{xc})*(x-{xc})+(y-{yc})*(y-{yc})+(z-{zc})*(z-{zc}))))",
             "patch_icpp(1)%alpha(1)": 1.0,
-            "patch_icpp(1)%T_temp_val": f"{T0} + {A}*exp(-{inv:.12f}*((x-{xc})*(x-{xc})+(y-{yc})*(y-{yc})+(z-{zc})*(z-{zc})))",
         }
     )
 )

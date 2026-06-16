@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# 1D heat equation, Dirichlet sine decay (thermal_scalar / pure operator).
-# T_s(x,0) = Twall + A*sin(pi*x/L), walls held at Twall.
+# 1D heat equation, Dirichlet sine decay. Temperature is recovered from the
+# stiffened-gas EOS: the sine profile is imposed through the density at uniform
+# pressure, rho(x) = (p0+p_inf)/((gam-1)*cv*T(x)), T(x) = Twall + A*sin(pi*x/L);
+# walls held at Twall.
 import json
 import math
 
@@ -60,24 +62,23 @@ print(
             "precision": 2,
             "prim_vars_wrt": "T",
             "cons_vars_wrt": "T",
+            "T_wrt": "T",  # write temperature recovered from the EOS so post_process/viz can plot T
             "parallel_io": "T",
-            # Thermal conduction
+            # Thermal conduction (EOS temperature)
             "thermal_conduction": "T",
-            "thermal_scalar": "T",
             # Fluids Physical Parameters
             "fluid_pp(1)%gamma": 1.0 / (gam - 1.0),
             "fluid_pp(1)%pi_inf": gam * p_inf / (gam - 1.0),
             "fluid_pp(1)%cv": cv,
             "fluid_pp(1)%k_therm": k_therm,
-            # Patch 1: full domain, uniform density, sine T_s
+            # Patch 1: full domain, sine T imposed through density
             "patch_icpp(1)%geometry": 1,
             "patch_icpp(1)%x_centroid": L / 2,
             "patch_icpp(1)%length_x": L,
             "patch_icpp(1)%vel(1)": 0.0,
             "patch_icpp(1)%pres": p0,
-            "patch_icpp(1)%alpha_rho(1)": rho0,
+            "patch_icpp(1)%alpha_rho(1)": f"{rho0 * Twall:.12f}/({Twall} + {A}*sin({kappa:.12f}*x))",
             "patch_icpp(1)%alpha(1)": 1.0,
-            "patch_icpp(1)%T_temp_val": f"{Twall} + {A}*sin({kappa:.12f}*x)",
         }
     )
 )

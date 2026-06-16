@@ -12,15 +12,15 @@ that case's restart_data/ and simulation.inp. To produce one, run the matching
 case with MFC and copy its restart_data/ + simulation.inp into runs/<label>/:
 
   benchmark    reads runs/<label>          from case
-  1d           1d_scalar, 1d_energy        case_1d.py, case_1d_energy.py
-  2d           2d_plate                    case_2d_plate.py
+  1d           1d                          case_1d.py
+  2d           2d_mode                     case_2d_mode.py
   3d-mode      3d_mode                     case_3d_mode.py
   3d-hotspot   3d_hotspot                  case_3d_hotspot.py
   conv-x       convx_{32,64,128,256,512}   case_conv.py (one run per grid)
   conv-t       convt_{50,100,...,800,3200} case_conv.py (one run per step count)
 
   python3 examples/Thermal_Conduction_Validation/validate.py 1d          # 1D bar, fixed-temperature ends
-  python3 examples/Thermal_Conduction_Validation/validate.py 2d          # 2D plate, one hot edge
+  python3 examples/Thermal_Conduction_Validation/validate.py 2d          # 2D box, a sine wave cooling off
   python3 examples/Thermal_Conduction_Validation/validate.py 3d-mode     # 3D box, a sine wave cooling off
   python3 examples/Thermal_Conduction_Validation/validate.py 3d-hotspot  # 3D box, a hot blob spreading out
   python3 examples/Thermal_Conduction_Validation/validate.py conv-x      # grid convergence study (cell size)
@@ -53,8 +53,7 @@ SUMMARY = os.path.join(HERE, "summary.json")
 L, ALPHA = 1.0, 0.05
 TWALL, AMP = 10.0, 3.0  # 1D Dirichlet sine: Twall + AMP*sin(pi x/L)
 KAPPA = math.pi / L
-KW = 2.0 * math.pi / L  # periodic single-mode wavenumber (conv, 3D mode)
-TCOLD, THOT = 10.0, 110.0  # 2D plate: cold edges / top edge (ΔT=100, MFC requires Twall>0)
+KW = 2.0 * math.pi / L  # periodic single-mode wavenumber (conv, 2D mode, 3D mode)
 HS_A, HS_SIG = 5.0, 0.08  # 3D hot spot amplitude, initial width
 
 
@@ -69,14 +68,9 @@ def exact_conv(x, t):
     return TWALL + AMP * np.sin(KW * x) * math.exp(-ALPHA * KW**2 * t)
 
 
-def exact_2d_plate(X, Y, n_terms=400):
-    T = np.zeros_like(X)
-    for n in range(1, 2 * n_terms, 2):  # odd n
-        kn = n * np.pi / L
-        # sinh(kn*Y)/sinh(kn*L) written so every exponent is <= 0 (sinh(kn*L) itself overflows for large n)
-        ratio = np.exp(kn * (Y - L)) * (1.0 - np.exp(-2.0 * kn * Y)) / (1.0 - np.exp(-2.0 * kn * L))
-        T += (4.0 * (THOT - TCOLD) / (n * np.pi)) * np.sin(kn * X) * ratio
-    return TCOLD + T
+def exact_2d_mode(X, Y, t):
+    rate = ALPHA * 2.0 * KW**2
+    return TWALL + AMP * np.sin(KW * X) * np.sin(KW * Y) * math.exp(-rate * t)
 
 
 def exact_3d_mode(X, Y, Z, t):
@@ -146,16 +140,12 @@ def ndims_of(fields):
     return sum(1 for d in fields.shape[1:] if d > 1)
 
 
-def temperature(fields, mode):
-    """Pull temperature out of MFC's raw field array.
-
-    'scalar' mode: MFC carried temperature directly, so just read it.
-    'energy' mode: MFC carried density and energy, so recover temperature from
-    the gas law (pressure and density).
+def temperature(fields):
+    """Recover temperature from MFC's raw conserved fields via the stiffened-gas
+    EOS. MFC carried density and energy, so back out the pressure and then
+    T = (p + p_inf) / ((gam - 1)*rho*cv).
     """
     nd = ndims_of(fields)
-    if mode == "scalar":
-        return fields[nd + 3].squeeze()
     gam, p_inf, cv = 2.0, 100.0, 12.5
     rho, E = fields[0], fields[1 + nd]
     ke = 0.5 * sum((fields[1 + i] / rho) ** 2 for i in range(nd))
@@ -164,8 +154,16 @@ def temperature(fields, mode):
 
 
 def velocity_mag(fields):
+    """Flow speed |u| in every cell. MFC stores momentum (rho*u), not velocity,
+    so divide each momentum component by density to recover the velocity, then
+    take the magnitude. In a pure-conduction run this should stay near zero.
+    """
     nd = ndims_of(fields)
-    return np.sqrt(sum((fields[1 + i] / fields[0]) ** 2 for i in range(nd))).squeeze()
+    rho = fields[0]
+    momentum = [fields[1 + i] for i in range(nd)]  # one component per spatial dim
+    vel = [mom / rho for mom in momentum]
+    speed_sq = sum(u**2 for u in vel)
+    return np.sqrt(speed_sq).squeeze()
 
 
 def norms(num, ex):
@@ -187,58 +185,50 @@ def slope(xs, ys):
 
 
 def bench_1d():
-    modes = [("scalar", "case_1d.py", "C0", "o"), ("energy", "case_1d_energy.py", "C3", "s")]
-    out, data = {}, {}
-    for mode, case, color, marker in modes:
-        rundir = find_run(f"1d_{mode}", case)
-        dt, (m, _, _), (xc, _, _), steps, load = read_run(rundir)
-        t = np.array([s * dt for s in steps])
-        nums = [temperature(load(s), mode) for s in steps]
-        umax = max(float(np.atleast_1d(velocity_mag(load(s))).max()) for s in steps)
-        nrm = [norms(nu, exact_1d(xc, ti)) for nu, ti in zip(nums, t)]
-        L1 = np.array([d["L1"] for d in nrm])
-        L2 = np.array([d["L2"] for d in nrm])
-        Li = np.array([d["Linf"] for d in nrm])
-        data[mode] = dict(t=t, xc=xc, nums=nums, L2=L2, Li=Li, color=color, marker=marker)
-        out[mode] = {
-            "N": int(m),
-            "max_u": umax,
-            "L1_final": float(L1[-1]),
-            "L2_final": float(L2[-1]),
-            "Linf_final": float(Li[-1]),
-            "Linf_peak": float(Li.max()),
-            "amplitude": AMP,
-            "n_outputs": len(steps),
-        }
-        print(f"  1D {mode}: peak L∞={Li.max():.3e}  final L2={L2[-1]:.3e}  max|u|={umax:.2e}")
+    rundir = find_run("1d", "case_1d.py")
+    dt, (m, _, _), (xc, _, _), steps, load = read_run(rundir)
+    t = np.array([s * dt for s in steps])
+    nums = [temperature(load(s)) for s in steps]
+    umax = max(float(np.atleast_1d(velocity_mag(load(s))).max()) for s in steps)
+    nrm = [norms(nu, exact_1d(xc, ti)) for nu, ti in zip(nums, t)]
+    L1 = np.array([d["L1"] for d in nrm])
+    L2 = np.array([d["L2"] for d in nrm])
+    Li = np.array([d["Linf"] for d in nrm])
+    out = {
+        "N": int(m),
+        "max_u": umax,
+        "L1_final": float(L1[-1]),
+        "L2_final": float(L2[-1]),
+        "Linf_final": float(Li[-1]),
+        "Linf_peak": float(Li.max()),
+        "amplitude": AMP,
+        "n_outputs": len(steps),
+    }
+    print(f"  1D: peak L∞={Li.max():.3e}  final L2={L2[-1]:.3e}  max|u|={umax:.2e}")
 
     fig, (axT, axE) = plt.subplots(1, 2, figsize=(12, 5))
-    # left: both modes' T(x) profiles on the shared analytic curves (marker distinguishes the mode)
-    t = data["scalar"]["t"]
+    # left: MFC T(x) profiles (markers) on the analytic curves (lines), colored by time
     idx = np.unique(np.linspace(0, len(t) - 1, 4).round().astype(int))
     tcol = plt.cm.viridis(np.linspace(0.12, 0.88, len(idx)))
     xf = np.linspace(0, L, 400)
     for c, j in zip(tcol, idx):
+        # plot analytical solution
         axT.plot(xf, exact_1d(xf, t[j]), "-", color=c, lw=1.6, zorder=1)
-    for mode, _, _, marker in modes:
-        d = data[mode]
-        for c, j in zip(tcol, idx):
-            axT.plot(d["xc"][::8], d["nums"][j][::8], marker, color=c, ms=4, mfc="none", mew=1.1, zorder=2)
+        # plot MFC results
+        axT.plot(xc[::8], nums[j][::8], "o", color=c, ms=4, mfc="none", mew=1.1, zorder=2)
     axT.legend(
-        [Line2D([], [], color="0.3", lw=1.6), Line2D([], [], color="0.3", marker="o", ls="none", mfc="none"), Line2D([], [], color="0.3", marker="s", ls="none", mfc="none")],
-        ["exact", "MFC (direct T)", "MFC (gas-law T)"],
+        [Line2D([], [], color="0.3", lw=1.6), Line2D([], [], color="0.3", marker="o", ls="none", mfc="none")],
+        ["exact", "MFC (EOS T)"],
         loc="upper right",
         fontsize=9,
     )
     axT.set(xlabel="x", ylabel="T", title="temperature T(x) at t = " + ", ".join(f"{t[j]:.2f}" for j in idx))
-    # right: error norms for both modes (color = mode, solid L2 / dashed L∞)
-    for mode, _, color, _ in modes:
-        d = data[mode]
-        axE.semilogy(d["t"], d["L2"], "-", color=color, lw=1.8, label=f"{mode} L2")
-        axE.semilogy(d["t"], d["Li"], "--", color=color, lw=1.3, label=f"{mode} L∞")
-    axE.set(xlabel="t", ylabel="error size", title=f"error over time: direct-T vs gas-law  (worst {data['scalar']['Li'].max():.1e} vs {data['energy']['Li'].max():.1e})")
-    axE.legend(fontsize=8, ncol=2)
-    fig.suptitle("1D heat: a sine bump cooling between fixed-temperature walls", fontweight="bold")
+    # right: error norms over time
+    axE.semilogy(t, L2, "C3-", lw=1.8, label="L2")
+    axE.semilogy(t, Li, "C3--", lw=1.3, label="L∞")
+    axE.set(xlabel="t", ylabel="error size", title=f"error over time  (worst L∞ {Li.max():.2e})")
+    axE.legend(fontsize=9)
+    fig.suptitle("1D heat: a sine bump cooling between fixed-temperature walls (EOS temperature)", fontweight="bold")
     fig.tight_layout()
     os.makedirs(FIG, exist_ok=True)
     fig.savefig(os.path.join(FIG, "heat_1d.png"), dpi=130)
@@ -246,58 +236,72 @@ def bench_1d():
     save_summary("heat_1d", out)
 
 
-# 2D test: a plate with one hot edge, settling to a steady (unchanging) state
+# 2D test: a sine wave in a periodic box that should cool off evenly in place
 
 
 def bench_2d():
-    rundir = find_run("2d_plate", "case_2d_plate.py")
+    rundir = find_run("2d_mode", "case_2d_mode.py")
     dt, (m, n, _), (xc, yc, _), steps, load = read_run(rundir)
-    X, Y = np.meshgrid(xc, yc)  # [n,m]
-    Tex = exact_2d_plate(X, Y)
-    Tnum = temperature(load(steps[-1]), "scalar")
-    drift = float(np.abs(Tnum - temperature(load(steps[-2]), "scalar")).max())
-    umax = float(velocity_mag(load(steps[-1])).max())
-    nrm = norms(Tnum, Tex)
-    interior = (Y > 0.05) & (Y < 0.95) & (X > 0.05) & (X < 0.95)
-    nrm_int = norms(Tnum[interior], Tex[interior])
+    X, Y = np.meshgrid(xc, yc, indexing="ij")  # [m,n]
+    t = np.array([s * dt for s in steps])
+    rate_an = ALPHA * 2.0 * KW**2
+    L1s, L2s, Lis, amp, umax = [], [], [], [], 0.0
+    field_last = ex_last = None
+    # per step: error norms vs analytic, plus the mode amplitude (projection of
+    # (T - T0) onto sin*sin) whose exponential decay gives the cooling rate.
+    for i, s in enumerate(steps):
+        fields = load(s)
+        T = np.transpose(temperature(fields), (1, 0))  # [y,x]->[x,y]
+        ex = exact_2d_mode(X, Y, t[i])
+        nr = norms(T, ex)
+        L1s.append(nr["L1"])
+        L2s.append(nr["L2"])
+        Lis.append(nr["Linf"])
+        amp.append(((T - TWALL) * np.sin(KW * X) * np.sin(KW * Y)).sum())
+        umax = max(umax, float(velocity_mag(fields).max()))
+        if i == len(steps) - 1:
+            field_last, ex_last = T, ex
+    L1s, L2s, Lis, amp = map(np.array, (L1s, L2s, Lis, amp))
+    rate = -np.polyfit(t, np.log(np.abs(amp / amp[0])), 1)[0]
+    rate_err = 100 * abs(rate / rate_an - 1)
 
     fig = plt.figure(figsize=(14, 8))
-    gs = fig.add_gridspec(2, 3, height_ratios=[1.25, 1.0])
-    lv = np.linspace(TCOLD, THOT, 21)
+    gs = fig.add_gridspec(2, 3, height_ratios=[1.2, 1.0])
+    vmin, vmax = float(ex_last.min()), float(ex_last.max())
     ax0 = fig.add_subplot(gs[0, 0])
-    cf = ax0.contourf(X, Y, Tnum, levels=lv, cmap="inferno")
-    ax0.set(title="MFC (steady)", xlabel="x", ylabel="y", aspect="equal")
+    ax0.pcolormesh(xc, yc, field_last.T, vmin=vmin, vmax=vmax, cmap="inferno", shading="auto")
+    ax0.set(title=f"MFC  T(x,y),  t={t[-1]:.3f}", xlabel="x", ylabel="y", aspect="equal")
     ax1 = fig.add_subplot(gs[0, 1])
-    ax1.contourf(X, Y, Tex, levels=lv, cmap="inferno")
-    ax1.set(title="exact (textbook series)", xlabel="x", ylabel="y", aspect="equal")
-    fig.colorbar(cf, ax=[ax0, ax1], shrink=0.8, label="T")
+    im = ax1.pcolormesh(xc, yc, ex_last.T, vmin=vmin, vmax=vmax, cmap="inferno", shading="auto")
+    ax1.set(title="analytic", xlabel="x", ylabel="y", aspect="equal")
+    fig.colorbar(im, ax=[ax0, ax1], shrink=0.8, label="T")
+    jy = n // 4  # probe the antinode (y=L/4); y=L/2 is a node of sin(ky)
     ax2 = fig.add_subplot(gs[0, 2])
-    d = Tnum - Tex
-    dm = float(np.abs(d).max()) or 1e-12
-    im = ax2.pcolormesh(X, Y, d, vmin=-dm, vmax=dm, cmap="coolwarm", shading="auto")
-    ax2.set(title=f"MFC − analytic (max {dm:.2f})", xlabel="x", ylabel="y", aspect="equal")
-    fig.colorbar(im, ax=ax2, shrink=0.8)
-    jmid = m // 2
-    ax3 = fig.add_subplot(gs[1, :2])
-    ax3.plot(yc, Tex[:, jmid], "k-", lw=2, label="analytic")
-    ax3.plot(yc[::3], Tnum[::3, jmid], "C3o", ms=4, mfc="none", label="MFC")
-    ax3.set(xlabel="y", ylabel="T", title="centerline probe at x = Lx/2")
-    ax3.legend()
-    ax4 = fig.add_subplot(gs[1, 2])
-    ax4.axis("off")
-    txt = (
-        f"grid {m}×{n}\nmax|u| = {umax:.1e}\nsteady drift = {drift:.1e}\n\n"
-        f"full-field:\n  L1 {nrm['L1']:.3f}\n  L2 {nrm['L2']:.3f}\n  L∞ {nrm['Linf']:.3f}\n\n"
-        f"interior 5–95%:\n  L1 {nrm_int['L1']:.4f}\n  L2 {nrm_int['L2']:.4f}\n  L∞ {nrm_int['Linf']:.4f}"
-    )
-    ax4.text(0.0, 0.95, txt, va="top", family="monospace", fontsize=10)
-    fig.suptitle("2D heat: steady plate (three edges held at 10, top edge at 110)", fontweight="bold")
+    ax2.plot(xc, ex_last[:, jy], "k-", lw=2, label="analytic")
+    ax2.plot(xc[::3], field_last[::3, jy], "C3o", ms=4, mfc="none", label="MFC")
+    ax2.set(title="line  y=L/4 (antinode)", xlabel="x", ylabel="T")
+    ax2.legend(fontsize=9)
+    ax3 = fig.add_subplot(gs[1, 0])
+    ax3.semilogy(t, L1s, "C0-o", ms=3, label="L1")
+    ax3.semilogy(t, L2s, "C1-s", ms=3, label="L2")
+    ax3.semilogy(t, Lis, "C3-^", ms=3, label="L∞")
+    ax3.set(xlabel="t", ylabel="error norm", title="L1/L2/L∞ vs t")
+    ax3.legend(fontsize=9)
+    ax4 = fig.add_subplot(gs[1, 1])
+    ax4.plot(t, amp / amp[0], "C0-", lw=2, label="MFC")
+    ax4.plot(t, np.exp(-rate_an * t), "k--", lw=1.5, label=f"e^(−{rate_an:.2f}t)")
+    ax4.set(xlabel="t", ylabel="mode amplitude", title=f"cooling rate: measured {rate:.3f} vs exact {rate_an:.3f} ({rate_err:.1f}%)")
+    ax4.legend(fontsize=9)
+    ax5 = fig.add_subplot(gs[1, 2])
+    ax5.axis("off")
+    ax5.text(0.0, 0.95, f"grid {m}×{n}\nmax|u| = {umax:.1e}\n\npeak L∞ = {Lis.max():.3e}\nfinal L2 = {L2s[-1]:.3e}\n\nrate err = {rate_err:.2f}%", va="top", family="monospace", fontsize=10)
+    fig.suptitle("2D heat: a sine wave in a periodic box, cooling in place", fontweight="bold")
     fig.tight_layout()
     os.makedirs(FIG, exist_ok=True)
-    fig.savefig(os.path.join(FIG, "heat_2d_plate.png"), dpi=130)
+    fig.savefig(os.path.join(FIG, "heat_2d_mode.png"), dpi=130)
     plt.close(fig)
-    print(f"  2D plate: full L2={nrm['L2']:.3f}  interior L2={nrm_int['L2']:.4f}  L∞(int)={nrm_int['Linf']:.4f}  drift={drift:.1e}  max|u|={umax:.1e}")
-    save_summary("heat_2d_plate", {"N": int(m), "TCOLD": TCOLD, "THOT": THOT, "max_u": umax, "steady_drift": drift, "norms_full": nrm, "norms_interior": nrm_int})
+    print(f"  2D mode: peak L∞={Lis.max():.3e}  final L2={L2s[-1]:.3e}  rate {rate:.3f} vs {rate_an:.3f} ({rate_err:.2f}%)  max|u|={umax:.1e}")
+    save_summary("heat_2d_mode", {"N": int(m), "max_u": umax, "measured_rate": rate, "analytic_rate": rate_an, "rate_error_pct": rate_err, "Linf_peak": float(Lis.max()), "L2_final": float(L2s[-1])})
 
 
 # 3D test: a sine wave in a box that should cool off evenly in every direction
@@ -311,9 +315,11 @@ def bench_3d_mode():
     rate_an = ALPHA * 3.0 * KW**2
     L1s, L2s, Lis, amp, umax = [], [], [], [], 0.0
     field_last = ex_last = None
+    # per step: error norms vs analytic, plus the mode amplitude (projection of
+    # (T - T0) onto sin*sin*sin) whose exponential decay gives the cooling rate.
     for i, s in enumerate(steps):
         fields = load(s)
-        T = np.transpose(fields[ndims_of(fields) + 3], (2, 1, 0))  # [z,y,x]->[x,y,z]
+        T = np.transpose(temperature(fields), (2, 1, 0))  # [z,y,x]->[x,y,z]
         ex = exact_3d_mode(X, Y, Z, t[i])
         nr = norms(T, ex)
         L1s.append(nr["L1"])
@@ -376,7 +382,7 @@ def bench_3d_hotspot():
     X, Y, Z = np.meshgrid(xc, yc, zc, indexing="ij")
     R = np.sqrt((X - L / 2) ** 2 + (Y - L / 2) ** 2 + (Z - L / 2) ** 2)
     t = np.array([s * dt for s in steps])
-    T_last = np.transpose(load(steps[-1])[ndims_of(load(steps[-1])) + 3], (2, 1, 0))
+    T_last = np.transpose(temperature(load(steps[-1])), (2, 1, 0))
     ex_last = exact_3d_hotspot(X, Y, Z, t[-1])
     umax = max(float(velocity_mag(load(s)).max()) for s in steps)
     nrm = norms(T_last, ex_last)
@@ -428,7 +434,7 @@ def converge_spatial():
     for N in grids:
         rundir = find_run(f"convx_{N}", "case_conv.py")
         dtr, _, (xc, _, _), steps, load = read_run(rundir)
-        nr = norms(temperature(load(steps[-1]), "scalar"), exact_conv(xc, steps[-1] * dtr))
+        nr = norms(temperature(load(steps[-1])), exact_conv(xc, steps[-1] * dtr))
         dxs.append(L / N)
         L2s.append(nr["L2"])
         Lis.append(nr["Linf"])
@@ -439,32 +445,34 @@ def converge_spatial():
     fig, ax = plt.subplots(figsize=(7.5, 6))
     ax.loglog(dxs, L2s, "C0-o", label=f"L2  (slope {s2:.2f})")
     ax.loglog(dxs, Lis, "C3-^", label=f"L∞  (slope {si:.2f})")
-    ax.loglog(dxs, L2s[-1] * (dxs / dxs[-1]) ** 2, "k--", lw=1.3, label="reference slope 2")
-    ax.set(xlabel="cell size Δx", ylabel="error at a fixed time", title="Grid convergence study: error vs cell size (should halve twice per halving)")
+    ax.loglog(dxs, L2s[0] * (dxs / dxs[0]) ** 2, "k--", lw=1.3, label="formal slope 2 (operator)")
+    ax.set(xlabel="cell size Δx", ylabel="error vs analytic", title=f"Spatial convergence: plateaus at the physics floor (slope {s2:.2f})")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend()
     fig.tight_layout()
     os.makedirs(FIG, exist_ok=True)
     fig.savefig(os.path.join(FIG, "convergence_spatial.png"), dpi=140)
     plt.close(fig)
-    print(f"  GRID convergence slope: L2={s2:.3f}  L∞={si:.3f}  (should be ~2)")
+    print(f"  GRID convergence slope: L2={s2:.3f}  L∞={si:.3f}  (plateaus at the physics floor; operator order is 2)")
     save_summary("convergence_spatial", {"grids": grids, "dx": dxs.tolist(), "L2": L2s.tolist(), "Linf": Lis.tolist(), "slope_L2": s2, "slope_Linf": si, "tstar": tstar})
 
 
 def converge_temporal():
-    # Use a coarse grid on purpose. On a fine grid the stable time step is so tiny
-    # that the time-stepping error vanishes into round-off and there's nothing to
-    # measure. We compare each run against a very-small-step reference run, so the
-    # cell-size error cancels out and only the time-step error is left.
+    # Use a coarse grid on purpose. We compare each run against a very-small-step
+    # reference run on the SAME grid, so the cell-size error AND the energy-path
+    # physics floor (variable diffusivity, acoustics) cancel out and only the
+    # time-step error is left -- which is why this still isolates RK3 order even
+    # though the spatial study plateaus. Step counts start at 256: on N=32 the
+    # acoustic CFL caps dt, so coarser sweeps would be unstable.
     N = 32
     tstar = 0.3 / (ALPHA * KW**2)
-    step_counts = [50, 100, 200, 400, 800]
-    ref_steps = 3200
+    step_counts = [256, 512, 1024, 2048]
+    ref_steps = 4096
     fields, dt_of = {}, {}
     for ns in step_counts + [ref_steps]:
         rundir = find_run(f"convt_{ns}", "case_conv.py")
         dtr, _, (xc, _, _), steps, load = read_run(rundir)
-        fields[ns] = temperature(load(steps[-1]), "scalar")
+        fields[ns] = temperature(load(steps[-1]))
         dt_of[ns] = dtr
         print(f"  steps={ns:5d}  dt={dtr:.3e}")
     ref = fields[ref_steps]

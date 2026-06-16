@@ -1,7 +1,7 @@
 % Convergence driver -- case_conv.py.
 % 1D single Fourier mode on a PERIODIC domain (no boundary error):
-%   T_s(x,0) = T0 + A sin(2 pi x/L).
-% The harness sweeps the grid (holding the diffusion number alpha*dt/dx^2 fixed)
+%   T(x,0) = T0 + A sin(2 pi x/L).
+% The harness sweeps the grid (dt capped at the acoustic CFL on coarse grids)
 % for the spatial order, and sweeps dt on a fixed grid for the temporal order.
 % Expected: 2-point central flux -> slope 2 in space; TVD-RK3 -> slope 3 in time.
 %
@@ -23,7 +23,7 @@
 % MAIN: the periodic mode, sampled on a coarse and a fine grid
 \begin{axis}[
   name=mode, width=8.4cm, height=6.2cm,
-  xlabel={$x$}, ylabel={$T_s$},
+  xlabel={$x$}, ylabel={$T$},
   xmin=0, xmax=1, ymin=6.2, ymax=13.8, axis lines=left, samples=200,
   xtick={0,0.5,1}, ytick={7,10,13}, enlargelimits=false, clip=false,
 ]
