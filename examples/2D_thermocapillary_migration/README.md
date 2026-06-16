@@ -230,9 +230,9 @@ less-viscous oil — the experiment's **non-monotonic** rise "loop" (Fig 8/13) t
 - **Regression coverage.** 18 new golden-file tests in `toolchain/mfc/test/cases.py`: single- and
   differing-property conduction, a viscous+conduction combination, 2-rank MPI cases (which would have
   caught the halo bug), and a `thermal_scalar + thermal_conduction` case.
-- **Analytic 1D checks.** `verify_1d_diffusion.py`, `verify_1d_conduction.py`,
-  `verify_1d_thermal_scalar.py` check the conduction/scalar implementation against closed-form
-  diffusion (the 1D thermal-scalar decay matches analytic to ~0% error).
+- **Analytic conduction validation.** The bulk-conduction operator is verified against
+  closed-form 1D/2D/3D heat-equation solutions — including formal grid (slope 2) and time
+  (slope 3) convergence — in the dedicated `examples/Thermal_Conduction_Validation/` example.
 
 ---
 
@@ -428,8 +428,6 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 | `run_validation.py` | `fig5_rise_velocity_2D.png`, `finite_ma_modes_2D.png` (+ `summary.json`) | TC1 Fig 5 grid sweep (64/128/256). |
 | `run_fig7.py` | `fig7_migration_2D.png` (+ `fig7_summary.json`) | TC2 Fig 7 grid sweep (`n_x` 64/128). |
 | `run_ringtest.py` | `ringtest.png` | Acoustic-ring before/after diagnostic for the balanced IC. |
-| `make_verify_artifacts.py` | `verify/{diffusion,scalar,conduction}.png` | Raw `T(x)` + extracted-scalar panels for the 1D verify runs. |
-| `verify_2d_conduction.py` | `verify/conduction_2d.png` | 2D Fourier-mode conduction vs the closed form. |
 | `diag_isobc.py` | `diag_isobc_compare.png` | Isothermal-BC diagnostic. |
 | `diag_standing_wave.py` | `diag_standing_wave.png` | Acoustic standing-wave (box-mode) diagnostic. |
 
@@ -438,7 +436,6 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 | Script | Role |
 |---|---|
 | `case.py`, `case_fig7.py`, `case_tc3.py` | TC1 / TC2 / TC3 case definitions (`./mfc.sh run` these). |
-| `verify_1d_diffusion.py`, `verify_1d_conduction.py`, `verify_1d_thermal_scalar.py` | 1D analytic conduction/scalar checks; print pass/fail. The figures come from `make_verify_artifacts.py`. |
 | `run_reproduce.py` | Re-runs the 5 production variants behind the curated figures, then calls `plot_curves.py`. |
 
 `animations/` holds the `./mfc.sh viz` MP4s (§4.5); `runs/` is gitignored simulation output.
