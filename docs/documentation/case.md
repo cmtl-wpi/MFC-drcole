@@ -665,6 +665,7 @@ To restart the simulation from $k$-th time step, see @ref running "Restarting Ca
 | `liutex_wrt`            | Logical | Add the Liutex to the database|
 | `cf_wrt`                | Logical | Write color function field |
 | `T_s_wrt`               | Logical | Write the independent temperature scalar field |
+| `T_wrt`                 | Logical | Write the temperature recovered from the stiffened-gas EOS |
 | `chem_wrt_T`            | Logical | Write temperature field for chemistry output |
 | `fft_wrt`               | Logical | Enable FFT output |
 | `sim_data`              | Logical | Write interface and energy data files (post_process) |

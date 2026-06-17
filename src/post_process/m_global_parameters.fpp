@@ -202,6 +202,7 @@ module m_global_parameters
     logical                            :: schlieren_wrt
     logical                            :: cf_wrt
     logical                            :: T_s_wrt
+    logical                            :: T_wrt  !< Write temperature recovered from the stiffened-gas EOS
     logical                            :: ib
     logical                            :: ib_state_wrt
     logical                            :: chem_wrt_Y(1:num_species)
@@ -423,6 +424,7 @@ contains
         sim_data = .false.
         cf_wrt = .false.
         T_s_wrt = .false.
+        T_wrt = .false.
         ib = .false.
         ib_state_wrt = .false.
         lag_txt_wrt = .false.

@@ -1896,6 +1896,14 @@ class CaseValidator:
 
         self.prohibit(cf_wrt and not surface_tension, "cf_wrt can only be enabled if surface_tension is enabled")
 
+    def check_temperature_post(self):
+        """Checks temperature output constraints (post-process)"""
+        T_wrt = self.get("T_wrt", "F") == "T"
+        chemistry = self.get("chemistry", "F") == "T"
+
+        # T_wrt writes the stiffened-gas EOS temperature; chemistry has its own temperature path.
+        self.prohibit(T_wrt and chemistry, "T_wrt writes the stiffened-gas EOS temperature; for chemistry use chem_wrt_T instead")
+
     def check_no_flow_variables(self):
         """Checks that at least one flow variable is selected (post-process)"""
         rho_wrt = self.get("rho_wrt", "F") == "T"
@@ -1909,6 +1917,7 @@ class CaseValidator:
         prim_vars_wrt = self.get("prim_vars_wrt", "F") == "T"
         c_wrt = self.get("c_wrt", "F") == "T"
         schlieren_wrt = self.get("schlieren_wrt", "F") == "T"
+        T_wrt = self.get("T_wrt", "F") == "T"
 
         # Check array variables
         num_fluids = self.get("num_fluids")
@@ -1933,6 +1942,7 @@ class CaseValidator:
             or prim_vars_wrt
             or c_wrt
             or schlieren_wrt
+            or T_wrt
             or alpha_rho_wrt_any
             or mom_wrt_any
             or vel_wrt_any
@@ -2310,6 +2320,7 @@ class CaseValidator:
         self.check_liutex_post()
         self.check_schlieren()
         self.check_surface_tension_post()
+        self.check_temperature_post()
         self.check_no_flow_variables()
         self.check_chemistry()
 

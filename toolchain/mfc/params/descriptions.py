@@ -131,6 +131,7 @@ DESCRIPTIONS = {
     "omega_wrt": "Write vorticity field",
     "cf_wrt": "Write color function field",
     "T_s_wrt": "Write independent temperature scalar field",
+    "T_wrt": "Write temperature recovered from the stiffened-gas EOS",
     # Immersed boundaries
     "ib": "Enable immersed boundary method",
     "num_ibs": "Number of immersed boundary patches",

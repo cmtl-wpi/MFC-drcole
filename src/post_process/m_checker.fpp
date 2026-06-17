@@ -21,6 +21,8 @@ contains
     !> Checks compatibility of parameters in the input file. Used by the post_process stage
     impure subroutine s_check_inputs
 
+        @:PROHIBIT(T_wrt .and. chemistry, "T_wrt writes the stiffened-gas EOS temperature; for chemistry use chem_wrt_T instead")
+
     end subroutine s_check_inputs
 
     !> Checks constraints on fft_wrt

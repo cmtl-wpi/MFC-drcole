@@ -298,6 +298,7 @@ _SIMPLE_DESCS = {
     "schlieren_wrt": "Write schlieren images",
     "cf_wrt": "Write color function",
     "T_s_wrt": "Write temperature scalar",
+    "T_wrt": "Write temperature recovered from the EOS",
     "omega_wrt": "Write vorticity",
     "qm_wrt": "Write Q-criterion",
     "liutex_wrt": "Write Liutex vortex field",
@@ -989,6 +990,7 @@ def _load():
         "liutex_wrt",
         "cf_wrt",
         "T_s_wrt",
+        "T_wrt",
         "sim_data",
         "output_partial_domain",
     ]:
