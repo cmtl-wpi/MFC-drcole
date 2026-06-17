@@ -33,8 +33,7 @@ def main():
         rel = os.path.relpath(os.path.join(wd, case), REPO)
         e = {**os.environ, **NOBIND, **env}
         print(f"\n>>> {name}: {case} ranks={ranks}", flush=True)
-        p = subprocess.run(PIN + ["./mfc.sh", "run", rel, "-n", str(ranks)],
-                           cwd=REPO, env=e, capture_output=True, text=True, check=False)
+        p = subprocess.run(PIN + ["./mfc.sh", "run", rel, "-n", str(ranks)], cwd=REPO, env=e, capture_output=True, text=True, check=False)
         if p.returncode != 0:
             print(f"FAILED {name} (exit {p.returncode}):")
             print("\n".join((p.stdout + p.stderr).splitlines()[-25:]))
