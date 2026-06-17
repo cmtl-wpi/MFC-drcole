@@ -373,8 +373,9 @@ EOS, `T = (p + p∞)/((γ−1)·ρ·c_v)` (§3.5). Two ways to impose Samareh's 
 python3 examples/2D_thermocapillary_migration/measure.py examples/2D_thermocapillary_migration
 
 # Full TC1 grid sweep + TC2 (launch MPI jobs):
-python3 examples/2D_thermocapillary_migration/run_validation.py   # TC1 Fig 5 grids
-python3 examples/2D_thermocapillary_migration/run_fig7.py         # TC2 Fig 7
+python3 examples/2D_thermocapillary_migration/run.py fig5   # TC1 Fig 5 grids
+python3 examples/2D_thermocapillary_migration/run.py fig7   # TC2 Fig 7
+# (run.py <fig5|fig7|tc3|all> [run|remeasure]; `remeasure` re-reads existing runs/ without simulating)
 
 # Rebuild the two embedded README figures from existing runs/ (no simulation):
 python3 examples/2D_thermocapillary_migration/plot_samareh_style.py
@@ -399,7 +400,28 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 | `../3D_thermocapillary_migration/viz/rise_velocity.png` | `../3D_thermocapillary_migration/measure.py` | §4.2 |
 | `figures/case2_fig7_samareh_style.png` | `plot_samareh_style.py` | §4.3 |
 
-**Every script here, what it writes, and what it shows** — grouped by where the output lands.
+**Every script here, what it writes, and what it shows** — grouped by role.
+
+*Cases (`./mfc.sh run` these; one per Samareh validation case):*
+
+| Script | Role |
+|---|---|
+| `case.py` | TC1 (Sec 4.1.1 / Fig 5), 2D zero-Marangoni rise. Parameterized by `SAMAREH_*` env knobs (grid, Ma, wall/open, frozen-T vs conduction). |
+| `case_fig7.py` | TC2 (Sec 4.1.2 / Fig 7), 2D finite-Ma migration (Nas & Tryggvason). `FIG7_*` env knobs. |
+| `case_tc3.py` | TC3 (Sec 4.2 / Figs 8,13), 3D large-Ma + `μ(T)`, matched to the LMS experiment. |
+
+*Run drivers → `results/<target>_summary.json` + figures:*
+
+| Script | Role |
+|---|---|
+| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/`, measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot_curves.py` + `plot_samareh_style.py`. `remeasure` re-reads existing runs without simulating. |
+
+*Per-run measurement → `<case_dir>/viz/` + a `RESULT_JSON` line:*
+
+| Script | Writes | Shows |
+|---|---|---|
+| `measure.py [case_dir] [fig5\|fig7\|tc3]` | `rise_velocity.png` / `fig7_migration.png` / `tc3_rise_velocity.png` | Migration velocity for one run; mode auto-detected from the domain (override with the 2nd arg). fig5: `v/v_YGB(t/t_r)`; fig7: `U*(t*)`; tc3: rise mm/s vs distance. |
+| `plot_fields.py [case_dir] [temperature\|sigma\|recirculation] [step]` | `temperature_<step>.png` / `sigma_interface_<step>.png` / (to `figures/`) `case1_zero_marangoni_2D_recirculation.png` | EOS-recovered `T` field + centerline / `σ(T)` around the interface / co-moving streamlines + vorticity. |
 
 *Curated overlays → `figures/`:*
 
@@ -407,35 +429,7 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 |---|---|---|
 | `plot_samareh_style.py` | `case1_fig5_samareh_style.png`, `case2_fig7_samareh_style.png` | The two headline overlays above: MFC vs Samareh's digitized Fig 5(d) / Fig 7, plain published style, raw points as markers (acoustic ring left visible). |
 | `plot_curves.py` | `case1_zero_marangoni_2D_fig5_rise_velocity.png`, `case2_low_marangoni_nas_tryggvason_fig7.png` | Alternate Fig 5 / Fig 7 overlays on the paper's full 0–10 / 0–20 window, straight from `runs/`. |
-| `digitize_fig5.py` | `case1_fig5_samareh_methods_overlay.png` | Samareh Fig 5's four methods (a–d) digitized onto one axes + MFC's `n_x=256` curve. |
+| `plot_ma_convergence.py` | `tc1_ma_convergence.png` | Conduction TC1 plateau vs the `SAMAREH_MA` sweep (Ma → 0 limit). |
 | `compare_tc3_visc.py` | `case3_large_marangoni_mu_of_T_validation.png` | TC3 `μ(T)=exp(C+D/T)` run vs a constant-`μ` control — the `μ(T)` acceleration signature. |
-| `plot_recirculation.py` | `tc1_recirculation_2D.png` / `.pdf` | Co-moving streamlines + vorticity of the internal recirculation (data analogue of the §2.2 schematic). |
-
-*Per-run figures → `<case_dir>/viz/`:*
-
-| Script | Writes | Shows |
-|---|---|---|
-| `measure.py` | `rise_velocity.png` + JSON | TC1 migration velocity `v/v_YGB(t/t_r)` for one run. |
-| `measure_fig7.py` | `fig7_migration.png` + JSON | TC2 `U*(t*)` for one run. |
-| `measure_tc3.py` | `tc3_rise_velocity.png` + JSON | TC3 rise velocity for one run. |
-| `plot_temperature.py` | `temperature_<step>.png` | EOS-recovered `T` field + centerline profile. |
-| `plot_sigma_interface.py` | `sigma_interface_<step>.png` | `σ(T)` around the interface — the Marangoni driver. |
-
-*Diagnostics → `results/`:*
-
-| Script | Writes | Shows |
-|---|---|---|
-| `run_validation.py` | `fig5_rise_velocity_2D.png`, `finite_ma_modes_2D.png` (+ `summary.json`) | TC1 Fig 5 grid sweep (64/128/256). |
-| `run_fig7.py` | `fig7_migration_2D.png` (+ `fig7_summary.json`) | TC2 Fig 7 grid sweep (`n_x` 64/128). |
-| `run_ringtest.py` | `ringtest.png` | Acoustic-ring before/after diagnostic for the balanced IC. |
-| `diag_isobc.py` | `diag_isobc_compare.png` | Isothermal-BC diagnostic. |
-| `diag_standing_wave.py` | `diag_standing_wave.png` | Acoustic standing-wave (box-mode) diagnostic. |
-
-*No figure of their own:*
-
-| Script | Role |
-|---|---|
-| `case.py`, `case_fig7.py`, `case_tc3.py` | TC1 / TC2 / TC3 case definitions (`./mfc.sh run` these). |
-| `run_reproduce.py` | Re-runs the 5 production variants behind the curated figures, then calls `plot_curves.py`. |
 
 `animations/` holds the `./mfc.sh viz` MP4s (§4.5); `runs/` is gitignored simulation output.
