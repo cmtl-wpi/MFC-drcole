@@ -17,7 +17,7 @@ rho0 = (p0 + p_inf) / ((gam - 1.0) * cv * T0)
 k_therm = alpha * rho0 * cv * gam
 kw = 2.0 * math.pi / L
 
-Nx = Ny = 127
+Nx = Ny = 499
 dx = L / (Nx + 1)
 c0 = (gam * (p0 + p_inf)) ** 0.5
 dt = min(0.4 * dx / c0, 0.35 * dx**2 / (4.0 * alpha))

@@ -15,7 +15,7 @@ k_therm = alpha * rho0 * cv * gam
 xc = yc = zc = L / 2
 inv = 1.0 / (2.0 * sigma0**2)
 
-Nx = Ny = Nz = 95
+Nx = Ny = Nz = 499
 dx = L / (Nx + 1)
 c0 = (gam * (p0 + p_inf)) ** 0.5
 dt = min(0.4 * dx / c0, 0.35 * dx**2 / (6.0 * alpha))

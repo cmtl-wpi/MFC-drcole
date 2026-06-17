@@ -19,6 +19,7 @@ case with MFC and copy its restart_data/ + simulation.inp into runs/<label>/:
   conv-x       convx_{32,64,128,256,512}   case_conv.py (one run per grid)
   conv-t       convt_{50,100,...,800,3200} case_conv.py (one run per step count)
 
+  python3 examples/Thermal_Conduction_Validation/validate.py             # run every benchmark below (skips any whose run is missing)
   python3 examples/Thermal_Conduction_Validation/validate.py 1d          # 1D bar, fixed-temperature ends
   python3 examples/Thermal_Conduction_Validation/validate.py 2d          # 2D box, a sine wave cooling off
   python3 examples/Thermal_Conduction_Validation/validate.py 3d-mode     # 3D box, a sine wave cooling off
@@ -190,10 +191,15 @@ def bench_1d():
     t = np.array([s * dt for s in steps])
     nums = [temperature(load(s)) for s in steps]
     umax = max(float(np.atleast_1d(velocity_mag(load(s))).max()) for s in steps)
-    nrm = [norms(nu, exact_1d(xc, ti)) for nu, ti in zip(nums, t)]
+    exs = [exact_1d(xc, ti) for ti in t]
+    nrm = [norms(nu, ex) for nu, ex in zip(nums, exs)]
     L1 = np.array([d["L1"] for d in nrm])
     L2 = np.array([d["L2"] for d in nrm])
     Li = np.array([d["Linf"] for d in nrm])
+    # relative error for the error-over-time panel: divide each absolute norm by
+    # the matching norm of the exact temperature (RMS for L2, peak for L∞)
+    relL2 = L2 / np.array([np.sqrt((ex**2).mean()) for ex in exs])
+    relLi = Li / np.array([np.abs(ex).max() for ex in exs])
     out = {
         "N": int(m),
         "max_u": umax,
@@ -208,7 +214,7 @@ def bench_1d():
 
     fig, (axT, axE) = plt.subplots(1, 2, figsize=(12, 5))
     # left: MFC T(x) profiles (markers) on the analytic curves (lines), colored by time
-    idx = np.unique(np.linspace(0, len(t) - 1, 4).round().astype(int))
+    idx = np.unique(np.linspace(0, len(t) - 1, 10).round().astype(int))
     tcol = plt.cm.viridis(np.linspace(0.12, 0.88, len(idx)))
     xf = np.linspace(0, L, 400)
     for c, j in zip(tcol, idx):
@@ -222,11 +228,11 @@ def bench_1d():
         loc="upper right",
         fontsize=9,
     )
-    axT.set(xlabel="x", ylabel="T", title="temperature T(x) at t = " + ", ".join(f"{t[j]:.2f}" for j in idx))
-    # right: error norms over time
-    axE.semilogy(t, L2, "C3-", lw=1.8, label="L2")
-    axE.semilogy(t, Li, "C3--", lw=1.3, label="L∞")
-    axE.set(xlabel="t", ylabel="error size", title=f"error over time  (worst L∞ {Li.max():.2e})")
+    axT.set(xlabel="x", ylabel="T", title=f"temperature T(x): {len(idx)} snapshots, t = {t[idx[0]]:.2f} to {t[idx[-1]]:.2f}")
+    # right: relative error norms over time (absolute error / exact temperature)
+    axE.semilogy(t, relL2, "C3-", lw=1.8, label="L2")
+    axE.semilogy(t, relLi, "C3--", lw=1.3, label="L∞")
+    axE.set(xlabel="t", ylabel="relative error", title=f"relative error over time  (worst L∞ {relLi.max():.2e})")
     axE.legend(fontsize=9)
     fig.suptitle("1D heat: a sine bump cooling between fixed-temperature walls (EOS temperature)", fontweight="bold")
     fig.tight_layout()
@@ -501,7 +507,17 @@ COMMANDS = {"1d": bench_1d, "2d": bench_2d, "3d-mode": bench_3d_mode, "3d-hotspo
 
 if __name__ == "__main__":
     cmds = sys.argv[1:]
-    if not cmds or cmds[0] not in COMMANDS:
-        print("usage: validate.py {" + "|".join(COMMANDS) + "}  (run MFC first; this only analyzes runs/)")
-        sys.exit(1)
-    COMMANDS[cmds[0]]()
+    if cmds:
+        # one named benchmark: run it, hard-erroring if its run is missing
+        if cmds[0] not in COMMANDS:
+            print("usage: validate.py [" + "|".join(COMMANDS) + "]  (no arg runs all; run MFC first, this only analyzes runs/)")
+            sys.exit(1)
+        COMMANDS[cmds[0]]()
+    else:
+        # no arg: run every benchmark, skipping any whose run has not been done
+        for name, fn in COMMANDS.items():
+            print(name)
+            try:
+                fn()
+            except SystemExit as missing:
+                print(f"  skipped: {missing}")

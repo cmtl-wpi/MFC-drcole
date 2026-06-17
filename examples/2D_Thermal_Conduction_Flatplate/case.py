@@ -32,40 +32,39 @@ Lx = 0.05  # m
 Ly = 0.05  # m
 
 # Air properties (ideal gas, gamma = 1.4)
-c_gamma = 1.4          # specific heat ratio
-R_air = 287.0          # J/(kg*K)
+c_gamma = 1.4  # specific heat ratio
+R_air = 287.0  # J/(kg*K)
 cv = R_air / (c_gamma - 1.0)  # ≈ 717.5 J/(kg*K)
-p0 = 101325.0          # Pa (1 atm)
-T0 = 1125.0            # K (free-stream temperature)
+p0 = 101325.0  # Pa (1 atm)
+T0 = 1125.0  # K (free-stream temperature)
 
 # Thermal conductivity of air near 1000 K
-k_air = 0.07           # W/(m*K)
+k_air = 0.07  # W/(m*K)
 
 # Grid: 499 x 499 cells (isotropic dx ~ 1.00e-4 m)
 m_cells = 499
 n_cells = 499
 
 # Acoustic CFL limit: c = sqrt(gamma*R*T) ~ 672 m/s
-c_sound = (c_gamma * R_air * T0) ** 0.5          # ~ 672 m/s
-dx = Lx / m_cells                                 # ~ 1.00e-4 m
-dt_acoustic = 0.3 * dx / c_sound                  # ~ 4.47e-8 s
+c_sound = (c_gamma * R_air * T0) ** 0.5  # ~ 672 m/s
+dx = Lx / m_cells  # ~ 1.00e-4 m
+dt_acoustic = 0.3 * dx / c_sound  # ~ 4.47e-8 s
 
 # Diffusion CFL limit: alpha = k/(rho*cp), rho = p/(R*T)
-rho0 = p0 / (R_air * T0)                          # ~ 0.314 kg/m^3
-cp = c_gamma * R_air / (c_gamma - 1.0)            # ~ 1004.5 J/(kg*K)
-alpha_T = k_air / (rho0 * cp)                     # ~ 2.22e-4 m^2/s
-dt_diff = 0.3 * dx**2 / (4.0 * alpha_T)           # ~ 3.39e-6 s  (not limiting)
+rho0 = p0 / (R_air * T0)  # ~ 0.314 kg/m^3
+cp = c_gamma * R_air / (c_gamma - 1.0)  # ~ 1004.5 J/(kg*K)
+alpha_T = k_air / (rho0 * cp)  # ~ 2.22e-4 m^2/s
+dt_diff = 0.3 * dx**2 / (4.0 * alpha_T)  # ~ 3.39e-6 s  (not limiting)
 
-dt = min(dt_acoustic, dt_diff)                    # acoustic-CFL limited
+dt = min(dt_acoustic, dt_diff)  # acoustic-CFL limited
 
-t_end = 5.0e-3    # 5 ms simulated time
+t_end = 5.0e-3  # 5 ms simulated time
 t_step_stop = int(round(t_end / dt))
-t_step_save = max(1, t_step_stop // 10)           # ~10 snapshots
+t_step_save = max(1, t_step_stop // 10)  # ~10 snapshots
 
 case = {
     # -- Run info --
     "run_time_info": "T",
-
     # -- Domain --
     "x_domain%beg": 0.0,
     "x_domain%end": Lx,
@@ -74,13 +73,11 @@ case = {
     "m": m_cells,
     "n": n_cells,
     "p": 0,
-
     # -- Time stepping --
     "dt": dt,
     "t_step_start": 0,
     "t_step_stop": t_step_stop,
     "t_step_save": t_step_save,
-
     # -- Model --
     "model_eqns": 2,
     "alt_soundspeed": "F",
@@ -88,7 +85,6 @@ case = {
     "mpp_lim": "F",
     "mixture_err": "T",
     "time_stepper": 3,
-
     # -- Spatial scheme --
     "mp_weno": "F",
     "weno_order": 5,
@@ -96,42 +92,36 @@ case = {
     "riemann_solver": 2,
     "wave_speeds": 1,
     "avg_state": 2,
-
     # -- Boundary conditions --
-    "bc_x%beg": -7,          # subsonic characteristic inflow
-    "bc_x%end": -3,          # ghost-cell extrapolation outflow
-    "bc_y%beg": -16,         # no-slip isothermal wall (flat plate)
-    "bc_y%end": -3,          # ghost-cell extrapolation outflow
+    "bc_x%beg": -7,  # subsonic characteristic inflow
+    "bc_x%end": -3,  # ghost-cell extrapolation outflow
+    "bc_y%beg": -16,  # no-slip isothermal wall (flat plate)
+    "bc_y%end": -3,  # ghost-cell extrapolation outflow
     "bc_y%isothermal_in": "T",
     "bc_y%Twall_in": 600.0,
-
     # -- Output --
     "format": 1,
     "precision": 2,
     "prim_vars_wrt": "T",
     "parallel_io": "T",
-
     # -- Physics: viscous --
     "viscous": "T",
     "fluid_pp(1)%Re(1)": 100000,
-
     # -- Physics: bulk thermal conduction (non-chemistry) --
     "thermal_conduction": "T",
     "chemistry": "F",
-
     # -- Fluid properties --
     # MFC stores gamma as 1/(gamma-1) in the stiffened-gas EOS
     "fluid_pp(1)%gamma": 1.0 / (c_gamma - 1.0),
     "fluid_pp(1)%pi_inf": 0.0,
     "fluid_pp(1)%cv": cv,
     "fluid_pp(1)%k_therm": k_air,
-
     # -- Initial condition: single uniform patch --
     # Quiescent, uniform free stream at T0 = 1125 K, 1 atm. The partial
     # density must be rho0 = p0/(R*T0) so the EOS-derived temperature is
     # actually 1125 K (T = (p + pi_inf)/((gamma-1)*rho*cv)).
     "num_patches": 1,
-    "patch_icpp(1)%geometry": 3,         # 2D rectangle
+    "patch_icpp(1)%geometry": 3,  # 2D rectangle
     "patch_icpp(1)%x_centroid": Lx / 2,
     "patch_icpp(1)%y_centroid": Ly / 2,
     "patch_icpp(1)%length_x": Lx,
