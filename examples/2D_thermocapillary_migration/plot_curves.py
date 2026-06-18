@@ -142,10 +142,10 @@ def fig5_rise_velocity():
         print("  fig5: no runs found")
         plt.close(fig)
         return
-    # Quasi-steady window where the frozen-T IC still matches Samareh's invariant-T field; beyond it the
+    # Pseudo-steady window where the frozen-T IC still matches Samareh's invariant-T field; beyond it the
     # advected density-proxy T distorts and MFC drifts away (Samareh holds T invariant, so theirs stays flat).
     ax.axvspan(0.5, 3.0, color="0.85", alpha=0.35, zorder=0)
-    ax.text(1.75, 0.06, "quasi-steady\ncomparison window", ha="center", va="bottom", fontsize=8.5, color="0.45")
+    ax.text(1.75, 0.06, "pseudo-steady\ncomparison window", ha="center", va="bottom", fontsize=8.5, color="0.45")
     ax.annotate("frozen-$T$ drift (Ma = 0;\nSamareh holds $T$ invariant)", xy=(6.2, 0.66), xytext=(3.2, 0.40),
                 fontsize=8.5, color="0.45", arrowprops=dict(arrowstyle="->", color="0.55", lw=1.0))
     ax.axhline(1.0, ls=":", color=INK, lw=1.5, label=r"$v_{\mathrm{YGB}}$ (Samareh Eq. 29, ratio = 1)")

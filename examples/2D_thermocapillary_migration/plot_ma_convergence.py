@@ -6,7 +6,7 @@ Samareh's Test Case 1 is the Ma = 0 (invariant-temperature) limit: infinite ther
 holds the imposed linear T field fixed, and the converged 2D cylinder ratio is v_t/v_YGB ~ 0.80
 (their Fig 5). We realise that limit physically by turning bulk Fourier conduction ON at a sequence
 of DECREASING thermal Marangoni numbers Ma (smaller Ma = larger conductivity = faster relaxation
-back to the imposed gradient = closer to invariant T). The test is whether the quasi-steady plateau
+back to the imposed gradient = closer to invariant T). The test is whether the terminal velocity
 v_t/v_YGB relaxes toward 0.80 as Ma -> 0.
 
 For each run dir this calls measure.py, reads its RESULT_JSON plateau, and plots v_t/v_YGB vs Ma
@@ -81,7 +81,7 @@ if len(ma) >= 2:
     ax.plot(0, intercept, "*", color="k", ms=15, zorder=5)
 
 ax.set_xlabel(r"thermal Marangoni number  $Ma$   (smaller $\to$ closer to invariant $T$)")
-ax.set_ylabel(r"quasi-steady  $v_t / v_{\mathrm{YGB}}$")
+ax.set_ylabel(r"terminal  $v_t / v_{\mathrm{YGB}}$")
 ax.set_xlim(left=-0.012)
 ax.set_title(r"TC1 (Samareh 4.1.1): conduction $Ma\to0$ convergence to the invariant-$T$ limit")
 ax.grid(alpha=0.3)

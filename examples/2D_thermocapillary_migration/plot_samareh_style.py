@@ -53,7 +53,7 @@ SAMAREH_STYLE = {
     "axes.edgecolor": "0.0", "axes.linewidth": 1.0, "font.size": 13,
     "xtick.direction": "out", "ytick.direction": "out",
 }
-RINGNOTE = "markers = raw snapshots joined by thin dashed lines (start at rest; MFC zig-zag = acoustic ring)"
+# RINGNOTE removed per request: do not annotate plots with the ring note.
 
 
 def fig5_tc1():
@@ -97,7 +97,7 @@ def fig5_tc1():
         ax.set_ylabel(r"Normalized Rise Velocity   $v/v_{\mathrm{YGB}}$")
         ax.set_title("Fig 5 — 2D thermocapillary rise in the $Ma=0$ limit", fontsize=12)
         ax.legend(loc="lower right", fontsize=10, frameon=False)
-        ax.text(0.5, -0.135, RINGNOTE, transform=ax.transAxes, ha="center", va="top", fontsize=8, color="0.45")
+        # note removed
         dst = os.path.join(FIGS, "case1_fig5_samareh_style.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)
@@ -147,7 +147,7 @@ def fig7_tc2():
         ax.set_ylabel(r"$U^* = U/U_r$")
         ax.set_title("Fig 7 — 2D migration at finite $Ma$ (Re=5, Ma=20, Ca=0.0167)", fontsize=12)
         ax.legend(loc="upper right", fontsize=10, frameon=False)
-        ax.text(0.5, -0.135, RINGNOTE, transform=ax.transAxes, ha="center", va="top", fontsize=8, color="0.45")
+        # note removed
         dst = os.path.join(FIGS, "case2_fig7_samareh_style.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)
