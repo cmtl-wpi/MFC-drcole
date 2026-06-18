@@ -285,7 +285,7 @@ for this case.
 
 ### 4.3 TC2 / Fig 7 — finite `Ma`, Nas & Tryggvason → 0.13  ✅
 
-**What MFC builds** (`case_fig7.py`): a `2D × 4D` box, `Re=5`, `Ma=20`, `Ca=0.0167`, a real two-fluid
+**What MFC builds** (`case_Ma_20.py`): a `2D × 4D` box, `Re=5`, `Ma=20`, `Ca=0.0167`, a real two-fluid
 drop (all properties 0.5× the bulk), **isothermal Dirichlet walls + bulk conduction of the independent
 `T` scalar** — i.e. this case exercises §3.2 and §3.3 together.
 
@@ -306,7 +306,7 @@ features — match; the late-time over-decline is a limitation of the compressib
 
 ### 4.4 TC3 / Fig 8 — large `Ma`, LMS experiment, `μ(T)`  🟡 *implemented; converged run pending*
 
-**What MFC builds** (`case_tc3.py`): the full LMS cell in SI units — a 3D Fluorinert FC-75 sphere
+**What MFC builds** (`../3D_thermocapillary_migration/case_Ma_1723.py`): the full LMS cell in SI units — a 3D Fluorinert FC-75 sphere
 (`D = 10.7 mm`) in silicone oil, `T_c = 283 K` / `T_h = 343 K`, `|∇T| = 1000 K/m`,
 `σ_0 = 0.007 N/m`, `σ_T = −3.6×10⁻⁵ N/m·K`, real per-fluid densities/conductivities/heat capacities,
 `σ(T)`, bulk conduction, the independent `T_s` (since the densities differ), **and the Arrhenius
@@ -368,8 +368,8 @@ EOS, `T = (p + p∞)/((γ−1)·ρ·c_v)` (§3.5). Two ways to impose Samareh's 
 ```bash
 # Run from the repo root; the python scripts need numpy, matplotlib, seaborn.
 
-# TC1 headline (slip-wall box, conduction):
-./mfc.sh run examples/2D_thermocapillary_migration/case.py -n 16
+# TC1 zero-Ma (slip-wall box, frozen T):
+./mfc.sh run examples/2D_thermocapillary_migration/case_Ma_0.py -n 16
 python3 examples/2D_thermocapillary_migration/measure.py examples/2D_thermocapillary_migration
 
 # Full TC1 grid sweep + TC2 (launch MPI jobs):
@@ -406,15 +406,15 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 
 | Script | Role |
 |---|---|
-| `case.py` | TC1 (Sec 4.1.1 / Fig 5), 2D zero-Marangoni rise. Parameterized by `SAMAREH_*` env knobs (grid, Ma, wall/open, frozen-T vs conduction). |
-| `case_fig7.py` | TC2 (Sec 4.1.2 / Fig 7), 2D finite-Ma migration (Nas & Tryggvason). `FIG7_*` env knobs. |
-| `case_tc3.py` | TC3 (Sec 4.2 / Figs 8,13), 3D large-Ma + `μ(T)`, matched to the LMS experiment. |
+| `case_Ma_0.py` | TC1 (Sec 4.1.1 / Fig 5), 2D zero-Marangoni frozen-`T` rise, slip-wall box. Hardcoded single configuration (no env knobs); change the grid by editing `Nx`. |
+| `case_Ma_20.py` | TC2 (Sec 4.1.2 / Fig 7), 2D low-Ma migration (Nas & Tryggvason), conduction + independent `T_s`. Hardcoded single configuration. |
+| `../3D_thermocapillary_migration/case_Ma_1723.py` | TC3 (Sec 4.2 / Figs 8,13), 3D large-Ma + `μ(T)`, matched to the LMS experiment. Hardcoded single configuration. |
 
 *Run drivers → `results/<target>_summary.json` + figures:*
 
 | Script | Role |
 |---|---|
-| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/`, measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot_curves.py` + `plot_samareh_style.py`. `remeasure` re-reads existing runs without simulating. |
+| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/` (the grid is set by rewriting the `Nx =` line in that run's copy of the hardcoded case; `fig5`→`case_Ma_0.py`, `fig7`→`case_Ma_20.py`, `tc3`→`../3D_thermocapillary_migration/case_Ma_1723.py`), measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot_curves.py` + `plot_samareh_style.py`. `remeasure` re-reads existing runs without simulating. |
 
 *Per-run measurement → `<case_dir>/viz/` + a `RESULT_JSON` line:*
 
@@ -429,7 +429,7 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 |---|---|---|
 | `plot_samareh_style.py` | `case1_fig5_samareh_style.png`, `case2_fig7_samareh_style.png` | The two headline overlays above: MFC vs Samareh's digitized Fig 5(d) / Fig 7, plain published style, raw points as markers (acoustic ring left visible). |
 | `plot_curves.py` | `case1_zero_marangoni_2D_fig5_rise_velocity.png`, `case2_low_marangoni_nas_tryggvason_fig7.png` | Alternate Fig 5 / Fig 7 overlays on the paper's full 0–10 / 0–20 window, straight from `runs/`. |
-| `plot_ma_convergence.py` | `tc1_ma_convergence.png` | Conduction TC1 plateau vs the `SAMAREH_MA` sweep (Ma → 0 limit). |
+| `plot_ma_convergence.py` | `tc1_ma_convergence.png` | Conduction TC1 plateau vs a Marangoni-number sweep (Ma → 0 limit). Plots existing `runs/`; regenerating the sweep now needs hand-edited conduction variants of `case_Ma_0.py` (the `SAMAREH_MA` env-knob sweep was removed when the cases were hardcoded). |
 | `compare_tc3_visc.py` | `case3_large_marangoni_mu_of_T_validation.png` | TC3 `μ(T)=exp(C+D/T)` run vs a constant-`μ` control — the `μ(T)` acceleration signature. |
 
 `animations/` holds the `./mfc.sh viz` MP4s (§4.5); `runs/` is gitignored simulation output.

@@ -3,16 +3,16 @@
 
 One tool, three reporting modes (auto-detected from the domain, or forced with a 2nd argument):
 
-  fig5  (case.py, Samareh Sec 4.1.1 / Fig 5) -- v/v_YGB vs t/t_r. The drop rises in +y and is
+  fig5  (case_Ma_0.py, Samareh Sec 4.1.1 / Fig 5) -- v/v_YGB vs t/t_r. The drop rises in +y and is
         tracked by its color function. In the slip-wall box (Samareh's geometry, default) the box is
         the rest frame, so the lab-frame rise velocity is the measure; in an open box we report the
-        drift-corrected U = u_drop - u_far. Reports the quasi-steady plateau (post-overshoot minimum
+        drift-corrected U = u_drop - u_far. Reports the terminal velocity (post-overshoot minimum
         of the smoothed curve), the overshoot peak, the endpoint, and the late-time drift slope.
         Compare against Samareh 2D ~ 0.80.
-  fig7  (case_fig7.py, Sec 4.1.2 / Fig 7, Nas & Tryggvason) -- U*=U/U_r vs t*=t/t_r, with
+  fig7  (case_Ma_20.py, Sec 4.1.2 / Fig 7, Nas & Tryggvason) -- U*=U/U_r vs t*=t/t_r, with
         U_r=|sigma_T gradT| r0/mu_b and t_r=mu_b/|sigma_T gradT|. Reports the overshoot peak and the
         terminal (final-t_r-window) value. Compare the peak against ~0.13.
-  tc3   (case_tc3.py, Sec 4.2 / Figs 8,13, LMS experiment) -- dimensional SI: rise velocity (mm/s)
+  tc3   (case_Ma_1723.py, Sec 4.2 / Figs 8,13, LMS experiment) -- dimensional SI: rise velocity (mm/s)
         vs distance from the cold wall (mm). Reports the peak rise speed.
 
 Mode auto-detection uses the rise-axis extent Ly: tc3 is SI (Ly ~ 0.045 m << 1), fig5 is Ly=7.5D,
@@ -157,8 +157,8 @@ if mode == "fig5":
     tau = rho_drop * R**2 / mu  # viscous time
     samareh_ratio = 0.80
 
-    # Quasi-steady plateau = post-overshoot minimum of the curve smoothed over ~one viscous time
-    # (the faithful comparison to Samareh's invariant-T plateau; the endpoint drifts as T distorts).
+    # Terminal velocity = post-overshoot minimum of the curve smoothed over ~one viscous time
+    # (the faithful comparison to Samareh's invariant-T terminal velocity; the endpoint drifts as T distorts).
     ratio_t = U / v_YGB
     dt_snap = times[1] - times[0] if len(times) > 1 else tau
     smooth_w = max(1, int(round(tau / dt_snap)))
@@ -180,7 +180,7 @@ if mode == "fig5":
     for i, t in enumerate(times):
         print(f"{steps[i]:>7} {t:>8.4f} {t / t_r:>6.2f} {y_centroid[i]:>9.5f} {u_lab[i]:>9.5f} {u_far[i]:>9.5f} {U[i]:>9.5f} {U[i] / v_YGB:>+8.2f}")
     print(f"\nrising (+y, toward hot top): {y_centroid[-1] > y_centroid[0]}")
-    print(f"quasi-steady plateau  v_t/v_YGB = {ratio_plateau:+.3f}  (at t/t_r = {t_plateau_tr:.2f})   [Samareh {dim}D ~ {samareh_ratio:.2f}]")
+    print(f"terminal velocity  v_t/v_YGB = {ratio_plateau:+.3f}  (at t/t_r = {t_plateau_tr:.2f})   [Samareh {dim}D ~ {samareh_ratio:.2f}]")
     print(f"overshoot peak = {overshoot:+.3f}   endpoint = {ratio_final:+.3f}   late-time drift = {slope_per_tr:+.3f}/t_r")
     if abs(slope_per_tr) > 0.05:
         print(f"  NOTE: endpoint is frozen-T-drift contaminated ({slope_per_tr:+.3f}/t_r) -- the plateau, not the endpoint, is the Samareh comparison")
@@ -190,7 +190,7 @@ if mode == "fig5":
     ax.axhline(1.0, ls=":", color="0.45", lw=1.3)
     ax.text(0.02, 1.0, r" $v_{\mathrm{YGB}}$ (zero-Ma Stokes, sphere)", va="bottom", ha="left", color="0.4", fontsize=9)
     ax.axhline(samareh_ratio, ls="--", color="C3", lw=1.3, label=rf"Samareh {dim}D $\approx$ {samareh_ratio:.2f}")
-    ax.plot(t_plateau_tr, ratio_plateau, "*", color="k", ms=14, zorder=5, label=rf"quasi-steady plateau = {ratio_plateau:.2f}")
+    ax.plot(t_plateau_tr, ratio_plateau, "*", color="k", ms=14, zorder=5, label=rf"terminal velocity = {ratio_plateau:.2f}")
     ax.set_xlabel(r"$t / t_r$  ($t_r = \mu / |\sigma_T \nabla T|$, Samareh time scale)")
     ax.set_ylabel(r"normalized rise velocity  $v / v_{\mathrm{YGB}}$")
     ax.set_xlim(left=0.0)
@@ -203,13 +203,32 @@ if mode == "fig5":
     fig.savefig(out_png, dpi=150)
     print(f"saved figure -> {out_png}")
     summary = {
-        "mode": "fig5", "dim": dim, "nx_width": nx, "cells_per_D": nx / 5.0, "cells": cells,
-        "mu": mu, "rho_drop": rho_drop, "dsigma_dT": dsigma_dT, "gradT": gradT, "r": R, "v_YGB": v_YGB,
-        "tau": tau, "t_r": t_r, "wall": wall, "drift_corrected": not wall, "samareh_ratio": samareh_ratio,
-        "ratio_plateau": ratio_plateau, "t_plateau_tr": t_plateau_tr, "overshoot": overshoot,
-        "ratio_final": ratio_final, "slope_per_tr": slope_per_tr, "u_lab_final": float(u_lab[-1]),
-        "u_far_final": float(u_far[-1]), "rises": bool(y_centroid[-1] > y_centroid[0]),
-        "t_end": float(times[-1]), "t_end_tr": float(times[-1] / t_r),
+        "mode": "fig5",
+        "dim": dim,
+        "nx_width": nx,
+        "cells_per_D": nx / 5.0,
+        "cells": cells,
+        "mu": mu,
+        "rho_drop": rho_drop,
+        "dsigma_dT": dsigma_dT,
+        "gradT": gradT,
+        "r": R,
+        "v_YGB": v_YGB,
+        "tau": tau,
+        "t_r": t_r,
+        "wall": wall,
+        "drift_corrected": not wall,
+        "samareh_ratio": samareh_ratio,
+        "ratio_plateau": ratio_plateau,
+        "t_plateau_tr": t_plateau_tr,
+        "overshoot": overshoot,
+        "ratio_final": ratio_final,
+        "slope_per_tr": slope_per_tr,
+        "u_lab_final": float(u_lab[-1]),
+        "u_far_final": float(u_far[-1]),
+        "rises": bool(y_centroid[-1] > y_centroid[0]),
+        "t_end": float(times[-1]),
+        "t_end_tr": float(times[-1] / t_r),
     }
 
 elif mode == "fig7":
@@ -244,10 +263,21 @@ elif mode == "fig7":
     fig.savefig(out_png, dpi=150)
     print(f"saved figure -> {out_png}")
     summary = {
-        "mode": "fig7", "nx_width": nx, "cells_per_D": nx / (Wx / 1.0), "cells": cells, "mu_b": mu_b,
-        "sigma_T": sigma_T, "gradT": gradT, "U_r": U_r, "t_r": t_r, "peak": peak, "t_peak_tr": t_peak,
-        "terminal": terminal, "nas_tryggvason_peak": NAS_TRYGGVASON_PEAK,
-        "rises": bool(y_centroid[-1] > y_centroid[0]), "t_end_tr": float(t_star[-1]),
+        "mode": "fig7",
+        "nx_width": nx,
+        "cells_per_D": nx / (Wx / 1.0),
+        "cells": cells,
+        "mu_b": mu_b,
+        "sigma_T": sigma_T,
+        "gradT": gradT,
+        "U_r": U_r,
+        "t_r": t_r,
+        "peak": peak,
+        "t_peak_tr": t_peak,
+        "terminal": terminal,
+        "nas_tryggvason_peak": NAS_TRYGGVASON_PEAK,
+        "rises": bool(y_centroid[-1] > y_centroid[0]),
+        "t_end_tr": float(t_star[-1]),
     }
 
 else:  # tc3 -- dimensional SI: rise velocity (mm/s) vs distance from the cold wall (mm)
@@ -271,9 +301,17 @@ else:  # tc3 -- dimensional SI: rise velocity (mm/s) vs distance from the cold w
     fig.savefig(out_png, dpi=150)
     print(f"saved figure -> {out_png}")
     summary = {
-        "mode": "tc3", "nx": nx, "ny": ny, "nz": nz, "cells": cells, "snapshots": len(steps),
-        "t_end_ms": float(t_ms[-1]), "dist_start_mm": float(dist_mm[0]), "dist_end_mm": float(dist_mm[-1]),
-        "peak_rise_velocity_mms": peak, "experiment_peak_mms": "2-3 (Fig 8)",
+        "mode": "tc3",
+        "nx": nx,
+        "ny": ny,
+        "nz": nz,
+        "cells": cells,
+        "snapshots": len(steps),
+        "t_end_ms": float(t_ms[-1]),
+        "dist_start_mm": float(dist_mm[0]),
+        "dist_end_mm": float(dist_mm[-1]),
+        "peak_rise_velocity_mms": peak,
+        "experiment_peak_mms": "2-3 (Fig 8)",
     }
 
 print("RESULT_JSON " + json.dumps(summary))

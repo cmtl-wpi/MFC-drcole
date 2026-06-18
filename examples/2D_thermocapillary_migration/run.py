@@ -2,18 +2,22 @@
 """Run the thermocapillary validation cases and aggregate the results -- one driver for all three.
 
 Each variant runs a COPY of its case in its own runs/<name>/ directory (MFC writes output next to the
-case file) via `./mfc.sh run`, is measured with measure.py (auto-detected mode passed explicitly), and
-its RESULT_JSON is aggregated into results/<target>_summary.json. The curated overlay figures are
+case file) via `./mfc.sh run`, is measured with measure.py (mode passed explicitly), and its
+RESULT_JSON is aggregated into results/<target>_summary.json. The curated overlay figures are
 regenerated at the end via plot_curves.py and plot_samareh_style.py.
 
-  fig5  case.py       Sec 4.1.1 / Fig 5   -- 2D zero-Ma rise, grid convergence (v/v_YGB -> ~0.80)
-  fig7  case_fig7.py  Sec 4.1.2 / Fig 7   -- 2D finite-Ma migration (U*/U_r, peak ~0.13)
-  tc3   case_tc3.py   Sec 4.2 / Figs 8,13 -- 3D large-Ma + mu(T) (rise mm/s vs distance from wall)
+  fig5  case_Ma_0.py                          Sec 4.1.1 / Fig 5   -- 2D zero-Ma rise, grid convergence (v/v_YGB -> ~0.80)
+  fig7  case_Ma_20.py                         Sec 4.1.2 / Fig 7   -- 2D low-Ma migration (U*/U_r, peak ~0.13)
+  tc3   ../3D_thermocapillary_migration/case_Ma_1723.py   Sec 4.2 / Figs 8,13 -- 3D large-Ma + mu(T)
   all   fig5 + fig7
 
-Runs launch pinned to cores 16-255 with MPI binding off (the safe pattern on a shared box; harmless
-on an idle one), sequentially, so the per-case pre_process builds don't collide and same-case variants
-reuse the build. Rank counts respect MFC's decomposition rule (>= 25 cells per split dim).
+The case files are hardcoded canonical examples (no env knobs), so a grid variant is produced by
+rewriting the `Nx = <n>` line in that run's COPY of the case before launching; the committed case
+files are never touched. The target/mode/summary names stay fig5/fig7/tc3 to match results/*.json and
+the plot scripts. Runs launch pinned to cores 16-255 with MPI binding off (the safe pattern on a
+shared box; harmless on an idle one), sequentially, so the per-case pre_process builds don't collide
+and same-case variants reuse the build. Rank counts respect MFC's decomposition rule (>= 25 cells per
+split dim).
 
 Usage (invokes mpirun, so run from a normal shell):
     python3 run.py <fig5|fig7|tc3|all> [run|remeasure]   (default: fig5 run)
@@ -23,6 +27,7 @@ Usage (invokes mpirun, so run from a normal shell):
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -34,21 +39,36 @@ RESULTS = os.path.join(HERE, "results")
 PIN = ["taskset", "-c", "16-255"]  # keep off cores 0-15 (a neighbour's job may live there)
 NOBIND = {"OMPI_MCA_hwloc_base_binding_policy": "none"}  # don't let prterun pin to specific cores
 
-# Per-target config. variants are (run-dir name, MPI ranks, env overrides for the case). The summary
-# filenames preserve the historical names so plot scripts / notes that read them still resolve.
+# Per-target config. variants are (run-dir name, MPI ranks, Nx override or None for the case default).
+# The summary filenames preserve the historical names so plot scripts / notes that read them resolve.
 TARGETS = {
-    "fig5": dict(case="case.py", mode="fig5", summary="summary.json", variants=[
-        ("fig5_2D_w064", 6, {"SAMAREH_NX": "64", "SAMAREH_WALL": "1", "SAMAREH_TR": "2.0"}),
-        ("fig5_2D_w128", 16, {"SAMAREH_NX": "128", "SAMAREH_WALL": "1", "SAMAREH_TR": "2.0"}),
-        ("fig5_2D_w256", 64, {"SAMAREH_NX": "256", "SAMAREH_WALL": "1", "SAMAREH_TR": "2.0"}),
-    ]),
-    "fig7": dict(case="case_fig7.py", mode="fig7", summary="fig7_summary.json", variants=[
-        ("fig7_w064", 8, {"FIG7_NX": "64"}),
-        ("fig7_w128", 16, {"FIG7_NX": "128"}),
-    ]),
-    "tc3": dict(case="case_tc3.py", mode="tc3", summary="tc3_summary.json", variants=[
-        ("tc3_run", 16, {}),  # 3D large-Ma + mu(T); set ranks/env to match your grid before running
-    ]),
+    "fig5": dict(
+        case="case_Ma_0.py",
+        mode="fig5",
+        summary="summary.json",
+        variants=[
+            ("fig5_2D_w064", 6, 64),
+            ("fig5_2D_w128", 16, 128),
+            ("fig5_2D_w256", 64, 256),
+        ],
+    ),
+    "fig7": dict(
+        case="case_Ma_20.py",
+        mode="fig7",
+        summary="fig7_summary.json",
+        variants=[
+            ("fig7_w064", 8, 64),
+            ("fig7_w128", 16, 128),
+        ],
+    ),
+    "tc3": dict(
+        case="../3D_thermocapillary_migration/case_Ma_1723.py",
+        mode="tc3",
+        summary="tc3_summary.json",
+        variants=[
+            ("tc3_run", 16, None),  # 3D large-Ma + mu(T); set ranks/Nx to match your grid before running
+        ],
+    ),
 }
 
 # Headline-number keys to show per mode in the end-of-run table.
@@ -59,16 +79,27 @@ TABLE_KEYS = {
 }
 
 
-def run_variant(case_file, name, ranks, env):
-    """Run one case variant in its own runs/<name>/ directory. Returns True on success."""
+def run_variant(case_file, name, ranks, nx):
+    """Run one case variant in its own runs/<name>/ directory. Returns True on success.
+
+    The case is copied in (basename only, so a ../ source path lands flat in runs/<name>/); if nx is
+    given, the copy's `Nx = <n>` line is rewritten to set the grid (the committed case is untouched).
+    """
     wd = os.path.join(RUNS, name)
     if os.path.isdir(wd):
         shutil.rmtree(wd)
     os.makedirs(wd)
-    shutil.copy(os.path.join(HERE, case_file), os.path.join(wd, case_file))
-    rel = os.path.relpath(os.path.join(wd, case_file), REPO)
-    e = {**os.environ, **NOBIND, **env}
-    print(f"\n>>> {name}: {case_file} ranks={ranks} {env}", flush=True)
+    dst = os.path.join(wd, os.path.basename(case_file))
+    shutil.copy(os.path.join(HERE, case_file), dst)
+    if nx is not None:
+        text = open(dst).read()
+        text, n = re.subn(r"(?m)^Nx = \d+", f"Nx = {nx}", text, count=1)
+        if n != 1:
+            print(f"  WARNING: could not set Nx={nx} in {name} (no `Nx = <int>` line) -- using case default")
+        open(dst, "w").write(text)
+    rel = os.path.relpath(dst, REPO)
+    e = {**os.environ, **NOBIND}
+    print(f"\n>>> {name}: {os.path.basename(case_file)} ranks={ranks} Nx={nx or 'default'}", flush=True)
     p = subprocess.run(PIN + ["./mfc.sh", "run", rel, "-n", str(ranks)], cwd=REPO, env=e, capture_output=True, text=True, check=False)
     if p.returncode != 0:
         print(f"  RUN FAILED (exit {p.returncode}):")
@@ -112,10 +143,10 @@ def main():
         cfg = TARGETS[t]
         spath = os.path.join(RESULTS, cfg["summary"])
         summary = json.load(open(spath)) if os.path.isfile(spath) else {}
-        for name, ranks, env in cfg["variants"]:
+        for name, ranks, nx in cfg["variants"]:
             wd = os.path.join(RUNS, name)
             if run_mode == "run":
-                if not run_variant(cfg["case"], name, ranks, env):
+                if not run_variant(cfg["case"], name, ranks, nx):
                     continue
             elif not os.path.isfile(os.path.join(wd, "simulation.inp")):
                 continue  # remeasure: skip variants that haven't been run

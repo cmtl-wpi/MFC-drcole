@@ -89,7 +89,7 @@ def eos_temperature(cols):
 
 def plot_temperature(step):
     """EOS temperature field + centerline profile vs the frozen initial linear T."""
-    T0, gradT = 10.0, 1.0  # IC T(x)=T0+gradT*x lives in case.py's density string, set here for the reference line
+    T0, gradT = 10.0, 1.0  # IC T(x)=T0+gradT*x lives in case_Ma_0.py's density string, set here for the reference line
     T, c = eos_temperature(columns_of(step))
     T_initial, _ = eos_temperature(columns_of(steps[0]))
     if not np.all(np.isfinite(T)) or T.min() <= 0.0:
@@ -178,11 +178,20 @@ def plot_recirculation(target_ttau):
     cz, oz = c[np.ix_(my, mx)], omega[np.ix_(my, mx)]
     speed = np.hypot(uz, vz)
 
-    plt.rcParams.update({
-        "font.family": "serif", "mathtext.fontset": "cm", "font.size": 9, "axes.titlesize": 9.5,
-        "axes.labelsize": 10, "xtick.labelsize": 8, "ytick.labelsize": 8,
-        "xtick.direction": "in", "ytick.direction": "in", "axes.linewidth": 0.8,
-    })
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "mathtext.fontset": "cm",
+            "font.size": 9,
+            "axes.titlesize": 9.5,
+            "axes.labelsize": 10,
+            "xtick.labelsize": 8,
+            "ytick.labelsize": 8,
+            "xtick.direction": "in",
+            "ytick.direction": "in",
+            "axes.linewidth": 0.8,
+        }
+    )
     coldc, hotc, inkc = (46 / 255, 86 / 255, 149 / 255), (171 / 255, 57 / 255, 52 / 255), (0.12, 0.12, 0.12)
     halo = [pe.withStroke(linewidth=2.4, foreground="white")]
     fig, (axa, axb) = plt.subplots(1, 2, figsize=(7.2, 3.9), sharey=True, constrained_layout=True)
