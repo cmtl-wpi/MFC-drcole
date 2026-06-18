@@ -47,8 +47,8 @@ TARGETS = {
         ("fig5_2D_w256", 64, 256),
     ]),
     "fig7": dict(case="case_Ma_20.py", mode="fig7", summary="fig7_summary.json", variants=[
-        ("fig7_w064", 8, 64),
-        ("fig7_w128", 16, 128),
+        ("tc2_w064", 8, 64),
+        ("tc2_w128", 16, 128),
     ]),
     "tc3": dict(case="../3D_thermocapillary_migration/case_Ma_1723.py", mode="tc3", summary="tc3_summary.json", variants=[
         ("tc3_run", 16, None),  # set ranks/Nx to match your grid before running

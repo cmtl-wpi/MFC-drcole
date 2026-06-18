@@ -125,16 +125,17 @@ SAMAREH_STYLE = {
 
 
 def samareh_fig5():
-    """TC1, Fig 5 (Ma=0 limit): MFC bulk-conduction runs at two grids vs Samareh's VOF curve.
+    """TC1, Fig 5 (Ma=0 limit): MFC bulk-conduction runs across grids vs Samareh's VOF curve.
 
-    Both grids overshoot to a peak that climbs with refinement (toward/over Samareh's
+    The grids overshoot to a peak that climbs with refinement (toward/over Samareh's
     ~0.80) and then drift back down -- they do NOT hold Samareh's flat plateau, so the
     refinement trend in the peak is the honest comparison.
     """
-    # (run dir, color). box width = 5D, so cells/D = (m+1)/5 -- computed per run, not hardcoded.
+    # (run dir, color); missing grids are skipped. box width = 5D, so cells/D = (m+1)/5, read per run.
     runs = [
-        ("tc1_cond_ma01_w64", "#C44E52"),    # ~12.8 cells/D
-        ("fig5_cond_w128_tr10", "#4C72B0"),  # ~25.6 cells/D
+        ("tc1_w064", "#C44E52"),
+        ("tc1_w128", "#4C72B0"),
+        ("tc1_w256", "#55A868"),
     ]
     series = []
     for name, color in runs:
@@ -178,7 +179,7 @@ def samareh_fig7():
         ax.plot(NAS_TRYGGVASON[:, 0], NAS_TRYGGVASON[:, 1], "^--", color="0.0", ms=6.5, mfc="none", mew=1.3, lw=1.0,
                 zorder=5, label="Nas & Tryggvason (digitized)")
         plotted = False
-        for name, nx, color in [("fig7_w064", 64, "#4C72B0"), ("fig7_w128", 128, "#DD8452")]:
+        for name, nx, color in [("tc2_w064", 64, "#4C72B0"), ("tc2_w128", 128, "#DD8452")]:
             out = color_weighted_vy(os.path.join(RUNS, name))
             if out is None or len(out[0]) < 10:  # skip absent or depleted runs (need a real curve)
                 if out is not None:
@@ -231,10 +232,10 @@ SAMAREH_RATIO = 0.80  # Samareh's converged 2D cylinder ratio (Fig 5)
 
 # (Ma, run dir) -- the conduction Ma -> 0 convergence sweep (all w128, slip-wall, tr=2.0)
 MA_SWEEP = [
-    (0.30, "tc1_cond_w128"),
-    (0.10, "tc1_cond_w128_Ma010"),
-    (0.05, "tc1_cond_w128_Ma005"),
-    (0.03, "tc1_cond_w128_Ma003"),
+    (0.30, "tc1_w128_ma030"),
+    (0.10, "tc1_w128_ma010"),
+    (0.05, "tc1_w128_ma005"),
+    (0.03, "tc1_w128_ma003"),
 ]
 
 
@@ -337,8 +338,7 @@ def eos_temperature(c, cols):
 
 
 def field_temperature(c, step):
-    """EOS temperature field + centerline profile vs the frozen initial linear T."""
-    T0, gradT = 10.0, 1.0  # IC T(x)=T0+gradT*x lives in case_Ma_0.py's density string, set here for the reference line
+    """EOS temperature field + centerline profile along the droplet rise direction (y)."""
     T, color = eos_temperature(c, columns_of(c, step))
     T_initial, _ = eos_temperature(c, columns_of(c, c.steps[0]))
     if not np.all(np.isfinite(T)) or T.min() <= 0.0:
@@ -346,24 +346,24 @@ def field_temperature(c, step):
     print(f"step {step}  (t = {step * c.dt:.4f})   T range: [{T.min():.4f}, {T.max():.4f}]")
     x, y = c.x, c.y
     fig, (ax_field, ax_line) = plt.subplots(1, 2, figsize=(12.0, 5.0), gridspec_kw={"width_ratios": [1.05, 1.0]})
-    vmin = min(T0 + gradT * x[0], T.min())
-    vmax = max(T0 + gradT * x[-1], T.max())
+    vmin, vmax = min(T_initial.min(), T.min()), max(T_initial.max(), T.max())
     mesh = ax_field.pcolormesh(x, y, T, cmap="coolwarm", vmin=vmin, vmax=vmax, shading="auto")
     fig.colorbar(mesh, ax=ax_field, label="temperature $T$")
     ax_field.contour(x, y, color, levels=[0.5], colors="k", linewidths=1.2)
     xc = (color * x[None, :]).sum() / color.sum()
     yc = (color * y[:, None]).sum() / color.sum()
     ax_field.plot(xc, yc, "k+", ms=10, mew=2)
-    ax_field.set(aspect="equal", xlabel="$x$", ylabel="$y$", title=f"Temperature field (step {step}, $t={step * c.dt:.3f}$)\ndroplet centroid $x={xc:+.4f}$")
-    mid = c.ny // 2
-    ax_line.plot(x, T0 + gradT * x, "--", color="0.5", label=r"initial $T(x)=T_0+\nabla T\,x$ (frozen IC)")
-    ax_line.plot(x, T_initial[mid], ":", color="C0", alpha=0.7, label=f"centerline, step {c.steps[0]}")
-    ax_line.plot(x, T[mid], "-", color="C3", label=f"centerline, step {step}")
-    ax_line.set(xlabel="$x$", ylabel=r"temperature $T$ (at $y \approx 0$)", title="Centerline temperature profile")
-    ax_line.legend(loc="upper left", fontsize=8)
+    ax_field.set(aspect="equal", xlabel="$x$", ylabel="$y$", title=f"Temperature field (step {step}, $t={step * c.dt:.3f}$)\ndroplet centroid $x={xc:+.4f}$, $y={yc:+.4f}$")
+    # Centerline along the rise direction (y): T vs y at x ≈ 0 (domain center)
+    mid = c.nx // 2
+    ax_line.plot(T_initial[:, mid], y, ":", color="C0", alpha=0.7, label=f"centerline $x\\approx 0$, step {c.steps[0]}")
+    ax_line.plot(T[:, mid], y, "-", color="C3", label=f"centerline $x\\approx 0$, step {step}")
+    ax_line.set(xlabel=r"temperature $T$", ylabel="$y$ (rise direction)", title="Centerline temperature profile\n(along rise direction at $x \\approx 0$)")
+    ax_line.legend(loc="best", fontsize=8)
     ax_line.grid(alpha=0.3)
     fig.tight_layout()
-    out = os.path.join(c.viz_dir, f"temperature_{step}.png")
+    os.makedirs(FIGS, exist_ok=True)
+    out = os.path.join(FIGS, f"temperature_{step}.png")
     fig.savefig(out, dpi=150)
     print(f"saved figure -> {out}")
 
