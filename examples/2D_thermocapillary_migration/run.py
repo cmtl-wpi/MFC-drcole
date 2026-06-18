@@ -41,10 +41,10 @@ NOBIND = {"OMPI_MCA_hwloc_base_binding_policy": "none"}  # don't let prterun pin
 # Each variant is (run-dir name, MPI ranks, Nx override or None for the case default). Summary
 # filenames keep their historical names so the plot scripts and notes that read them resolve.
 TARGETS = {
-    "fig5": dict(case="case_Ma_0.py", mode="fig5", summary="summary.json", variants=[
-        ("fig5_2D_w064", 6, 64),
-        ("fig5_2D_w128", 16, 128),
-        ("fig5_2D_w256", 64, 256),
+    "fig5": dict(case="case_Ma_0p001.py", mode="fig5", summary="summary.json", variants=[
+        ("tc1_w064", 6, 64),
+        ("tc1_w128", 16, 128),
+        ("tc1_w256", 64, 256),  # Ma=0.001 is conduction-dt-limited; w256 is very expensive
     ]),
     "fig7": dict(case="case_Ma_20.py", mode="fig7", summary="fig7_summary.json", variants=[
         ("tc2_w064", 8, 64),

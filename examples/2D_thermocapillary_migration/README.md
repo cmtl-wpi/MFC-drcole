@@ -261,7 +261,7 @@ frozen-`T` (`Ma = 0`) grid sweep brackets the same value:
 **Why a cylinder cannot reach 1.0.** The unbounded-cylinder analytic limit is `15/16 = 0.938`, and the
 finite slip-wall box costs the rest → `≈ 0.80`. This is *not* an MFC defect — Samareh's own Fig 5 is
 the same cylinder-in-a-box, and 0.80 is the value their four 2D methods agree on. *(Run directories:
-`runs/fig5_2D_w064/128/256`; the bulk-conduction overlay run is the headline.)*
+`runs/tc1_w064/128/256`, bulk-conduction at `Ma = 0.001` — the deep invariant-`T` limit.)*
 
 ### 4.2 TC1 / Fig 6 — 3D sphere, `Ma = 0` → 0.95  🟡 *preliminary*
 
@@ -385,7 +385,7 @@ python3 examples/2D_thermocapillary_migration/plot.py   # (samareh overlays; `ma
 python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapillary_migration
 
 # Animations:
-./mfc.sh viz examples/2D_thermocapillary_migration/runs/fig5_2D_w256/ --var color_function --step all --mp4
+./mfc.sh viz examples/2D_thermocapillary_migration/runs/tc1_w128/ --var color_function --step all --mp4
 ```
 
 ## 8. Scripts → figures (what produces what)
@@ -405,7 +405,8 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 
 | Script | Role |
 |---|---|
-| `case_Ma_0.py` | TC1 (Sec 4.1.1 / Fig 5), 2D zero-Marangoni frozen-`T` rise, slip-wall box. Hardcoded single configuration (no env knobs); change the grid by editing `Nx`. |
+| `case_Ma_0.py` | TC1 (Sec 4.1.1 / Fig 5), 2D zero-Marangoni frozen-`T` rise, slip-wall box. The literal `Ma=0` reference (fast); drifts above 0.80 at late `t/t_r`. Hardcoded; change the grid by editing `Nx`. |
+| `case_Ma_0p001.py` | TC1 conduction companion: same geometry, but `T` is evolved as an independent scalar `T_s` with large conductivity (`Ma=0.001`) so it holds Samareh's invariant-`T` 0.80 plateau. This is the canonical Fig 5 run (`tc1_w<grid>`); conduction-`dt`-limited, so coarse grids only. |
 | `case_Ma_20.py` | TC2 (Sec 4.1.2 / Fig 7), 2D low-Ma migration (Nas & Tryggvason), conduction + independent `T_s`. Hardcoded single configuration. |
 | `../3D_thermocapillary_migration/case_Ma_1723.py` | TC3 (Sec 4.2 / Figs 8,13), 3D large-Ma + `μ(T)`, matched to the LMS experiment. Hardcoded single configuration. |
 
@@ -413,7 +414,7 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 
 | Script | Role |
 |---|---|
-| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/` (the grid is set by rewriting the `Nx =` line in that run's copy of the hardcoded case; `fig5`→`case_Ma_0.py`, `fig7`→`case_Ma_20.py`, `tc3`→`../3D_thermocapillary_migration/case_Ma_1723.py`), measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot.py samareh`. `remeasure` re-reads existing runs without simulating. |
+| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/` (the grid is set by rewriting the `Nx =` line in that run's copy of the hardcoded case; `fig5`→`case_Ma_0p001.py`→`tc1_w<grid>`, `fig7`→`case_Ma_20.py`→`tc2_w<grid>`, `tc3`→`../3D_thermocapillary_migration/case_Ma_1723.py`), measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot.py samareh`. `remeasure` re-reads existing runs without simulating. |
 
 *Per-run measurement → `<case_dir>/viz/` + a `RESULT_JSON` line:*
 
@@ -427,7 +428,7 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 | Script | Writes | Shows |
 |---|---|---|
 | `plot.py samareh` | `case1_fig5_samareh_style.png`, `case2_fig7_samareh_style.png` | The two headline overlays above: MFC vs Samareh's digitized Fig 5(d) / Fig 7, plain published style, raw points as markers (acoustic ring left visible). |
-| `plot.py ma` | `tc1_ma_convergence.png` | Conduction TC1 plateau vs a Marangoni-number sweep (Ma → 0 limit). Plots existing `runs/`; regenerating the sweep now needs hand-edited conduction variants of `case_Ma_0.py` (the `SAMAREH_MA` env-knob sweep was removed when the cases were hardcoded). |
+| `plot.py ma` | `tc1_ma_convergence.png` | Conduction TC1 plateau vs a Marangoni-number sweep (Ma → 0 limit), reading `runs/tc1_w128_ma0XX`. Regenerating the sweep means running `case_Ma_0p001.py` with `Ma` edited to each sweep value. |
 | `compare_tc3_visc.py` | `case3_large_marangoni_mu_of_T_validation.png` | TC3 `μ(T)=exp(C+D/T)` run vs a constant-`μ` control — the `μ(T)` acceleration signature. |
 
 `animations/` holds the `./mfc.sh viz` MP4s (§4.5); `runs/` is gitignored simulation output.
