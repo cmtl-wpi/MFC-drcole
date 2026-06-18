@@ -379,7 +379,6 @@ python3 examples/2D_thermocapillary_migration/run.py fig7   # TC2 Fig 7
 
 # Rebuild the two embedded README figures from existing runs/ (no simulation):
 python3 examples/2D_thermocapillary_migration/plot_samareh_style.py
-# (plot_curves.py builds the alternate full-window overlays — see §8 for the full script→figure map)
 
 # TC1 Fig 6 (3D sphere) — sibling example:
 ./mfc.sh run examples/3D_thermocapillary_migration/case.py -n 8
@@ -414,7 +413,7 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 
 | Script | Role |
 |---|---|
-| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/` (the grid is set by rewriting the `Nx =` line in that run's copy of the hardcoded case; `fig5`→`case_Ma_0.py`, `fig7`→`case_Ma_20.py`, `tc3`→`../3D_thermocapillary_migration/case_Ma_1723.py`), measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot_curves.py` + `plot_samareh_style.py`. `remeasure` re-reads existing runs without simulating. |
+| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/` (the grid is set by rewriting the `Nx =` line in that run's copy of the hardcoded case; `fig5`→`case_Ma_0.py`, `fig7`→`case_Ma_20.py`, `tc3`→`../3D_thermocapillary_migration/case_Ma_1723.py`), measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot_samareh_style.py`. `remeasure` re-reads existing runs without simulating. |
 
 *Per-run measurement → `<case_dir>/viz/` + a `RESULT_JSON` line:*
 
@@ -428,7 +427,6 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 | Script | Writes | Shows |
 |---|---|---|
 | `plot_samareh_style.py` | `case1_fig5_samareh_style.png`, `case2_fig7_samareh_style.png` | The two headline overlays above: MFC vs Samareh's digitized Fig 5(d) / Fig 7, plain published style, raw points as markers (acoustic ring left visible). |
-| `plot_curves.py` | `case1_zero_marangoni_2D_fig5_rise_velocity.png`, `case2_low_marangoni_nas_tryggvason_fig7.png` | Alternate Fig 5 / Fig 7 overlays on the paper's full 0–10 / 0–20 window, straight from `runs/`. |
 | `plot_ma_convergence.py` | `tc1_ma_convergence.png` | Conduction TC1 plateau vs a Marangoni-number sweep (Ma → 0 limit). Plots existing `runs/`; regenerating the sweep now needs hand-edited conduction variants of `case_Ma_0.py` (the `SAMAREH_MA` env-knob sweep was removed when the cases were hardcoded). |
 | `compare_tc3_visc.py` | `case3_large_marangoni_mu_of_T_validation.png` | TC3 `μ(T)=exp(C+D/T)` run vs a constant-`μ` control — the `μ(T)` acceleration signature. |
 

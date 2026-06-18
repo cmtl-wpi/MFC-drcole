@@ -1,31 +1,29 @@
 #!/usr/bin/env python3
-"""Direct, Samareh-style comparison figures for TC1 (Fig 5) and TC2 (Fig 7).
+"""The validation overlay figures for TC1 (Fig 5) and TC2 (Fig 7), in Samareh's published style.
 
-Unlike plot_curves.py (which fades the acoustic ring with a running mean), these
-figures plot each trace's raw per-snapshot points as MARKERS joined by a THIN
-DASHED line, with NO smoothing. MFC is compressible, so the closed box rings
-acoustically (an aliased acoustic standing wave, not migration -- Samareh's
-incompressible solver has no acoustics); here that ring shows up directly as the
-line's small zig-zag. Everything is drawn in Samareh's plain published style
-(white plate, full box frame, no grid) over his digitized reference curves.
+Each trace is drawn as raw per-snapshot MARKERS joined by a THIN DASHED line, with NO smoothing.
+MFC is compressible, so the closed box rings acoustically (an aliased acoustic standing wave, not
+migration -- Samareh's incompressible solver has no acoustics); that ring shows up directly as the
+line's small zig-zag, and we leave it visible. Everything is drawn in Samareh's plain published
+style (white plate, full box frame, outward ticks, no grid) over his digitized reference curves.
 
   figures/case1_fig5_samareh_style.png  (TC1)
-      v/v_YGB vs t/t_r on [0,10]. MFC with bulk conduction (Ma=0.1, which holds T
-      near-linear so the curve sits at a FLAT plateau like Samareh's Ma=0
-      invariant-T limit) vs Samareh Fig 5(d) VOF.
+      v/v_YGB vs t/t_r on [0,10]. MFC with bulk conduction (Ma=0.1, which holds T near-linear so the
+      curve sits at a FLAT plateau like Samareh's Ma=0 invariant-T limit) vs Samareh Fig 5(d) VOF.
   figures/case2_fig7_samareh_style.png  (TC2)
-      U*=U/U_r vs t*=t/t_r on [0,20]. MFC (64, 128 cells/width) vs the digitized
-      Nas & Tryggvason transient.
+      U*=U/U_r vs t*=t/t_r on [0,20]. MFC (64, 128 cells/width) vs the digitized Nas & Tryggvason
+      transient.
 
-Run-dependent constants are read from each run's simulation.inp via
-plot_curves.color_weighted_vy, so the figures can't silently disagree with the
-data. This script reuses color_weighted_vy / _v_ygb_ratio / NAS_TRYGGVASON from
-plot_curves rather than duplicating them.
+Every run-dependent constant is read from each run's simulation.inp (via color_weighted_vy), so the
+figures can't silently disagree with the data. Conserved layout (model_eqns=3, num_fluids=2): 0,1 =
+partial densities, 3 = y-momentum, color c last (second-to-last when a thermal_scalar T_s is appended).
 
 Usage:  python3 plot_samareh_style.py
 """
 
+import glob
 import os
+import re
 
 import matplotlib
 import numpy as np
@@ -33,12 +31,68 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import plot_curves as pc  # reuses color_weighted_vy / _v_ygb_ratio / NAS_TRYGGVASON
-
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIGS = os.path.join(HERE, "figures")
 RUNS = os.path.join(HERE, "runs")
 R = 0.5  # drop radius (D = 1)
+GRADT = 2.0 / 15.0  # imposed |dT/dy|, common to TC1/TC2
+
+
+def read_namelist(path):
+    """Parse a Fortran namelist file's plain "name = value" lines into a dict (lowercase keys)."""
+    out = {}
+    for line in open(path):
+        if "=" in line:
+            name, value = line.split("=", 1)
+            out[name.strip().lower()] = value.strip().rstrip(",")
+    return out
+
+
+def color_weighted_vy(run_dir):
+    """Per-snapshot color-weighted lab-frame y-velocity history of a slip-wall run.
+    Returns (t, u_lab, params) or None. The drop migrates in +y, so u_lab IS the rise velocity."""
+    inp = os.path.join(run_dir, "simulation.inp")
+    rd = os.path.join(run_dir, "restart_data")
+    if not (os.path.isfile(inp) and os.path.isdir(rd)):
+        return None
+    P = read_namelist(inp)
+    f = lambda k: float(P[k.lower()])  # noqa: E731
+    nx, ny, nz = int(f("m")) + 1, int(f("n")) + 1, int(f("p")) + 1
+    ts = str(P.get("thermal_scalar", "F")).strip(". ").upper().startswith("T")
+    cells = nx * ny * nz
+    steps = sorted(int(m.group(1)) for ff in glob.glob(os.path.join(rd, "lustre_*.dat")) if (m := re.search(r"lustre_(\d+)\.dat$", ff)))
+    if not steps:
+        return None
+    nvars = np.fromfile(os.path.join(rd, f"lustre_{steps[0]}.dat"), np.float64).size // cells
+    c_idx = nvars - 2 if ts else nvars - 1  # color function (T_s appended after it in ts mode)
+    t, u_lab = [], []
+    for s in steps:
+        snap = np.fromfile(os.path.join(rd, f"lustre_{s}.dat"), np.float64)
+        fld = lambda i: snap[i * cells : (i + 1) * cells].reshape(nz, ny, nx)  # noqa: E731
+        vy = fld(3) / (fld(0) + fld(1))
+        c = np.clip(fld(c_idx), 0.0, None)
+        t.append(s * f("dt"))
+        u_lab.append((c * vy).sum() / c.sum())
+    return np.array(t), np.array(u_lab), P
+
+
+def v_ygb_ratio(out):
+    """(t/t_r, v/v_YGB) from a color_weighted_vy result, using each run's own constants."""
+    t, u_lab, P = out
+    mu = 1.0 / float(P["fluid_pp(1)%re(1)"])
+    dsdt = float(P["sigma_dtdt"])
+    t_r = mu / abs(dsdt * GRADT)
+    v_YGB = (2.0 / 15.0) * (-dsdt) * GRADT * R / mu
+    return t / t_r, u_lab / v_YGB
+
+
+# Nas & Tryggvason U*(t*) transient, digitized BY EYE from Samareh Fig 7 (the red open triangles; the
+# two Samareh grids nearly coincide with it). Accuracy ~ +/-0.005 in U*. Anchors match the paper text:
+# broad peak ~0.131 at t*~4-5, terminal ~0.10 at t*=20 (the fine grid is within 1.7% of N&T).
+NAS_TRYGGVASON = np.array([
+    (0.0, 0.0), (1.0, 0.055), (2.0, 0.100), (3.0, 0.122), (4.0, 0.130), (5.0, 0.131), (6.0, 0.128),
+    (7.0, 0.124), (8.0, 0.120), (10.0, 0.114), (12.0, 0.110), (14.0, 0.106), (16.0, 0.103),
+    (18.0, 0.101), (20.0, 0.0995)])
 
 # Samareh Fig 5(d) VOF curve (sharp-interface analogue of MFC), digitized by eye from the published
 # raster (~ +/-0.02 in v/v_YGB); his invariant-T plateau holds flat ~0.82-0.84 out to t/t_r = 10.
@@ -53,7 +107,6 @@ SAMAREH_STYLE = {
     "axes.edgecolor": "0.0", "axes.linewidth": 1.0, "font.size": 13,
     "xtick.direction": "out", "ytick.direction": "out",
 }
-# RINGNOTE removed per request: do not annotate plots with the ring note.
 
 
 def fig5_tc1():
@@ -74,11 +127,11 @@ def fig5_tc1():
         if not os.path.isdir(os.path.join(run, "restart_data")):
             print(f"  fig5: {name} not found, skipping")
             continue
-        out = pc.color_weighted_vy(run)
+        out = color_weighted_vy(run)
         if out is None:
             print(f"  fig5: {name} unreadable, skipping")
             continue
-        x, y = pc._v_ygb_ratio(out)
+        x, y = v_ygb_ratio(out)
         cells_per_D = (int(out[2]["m"]) + 1) / 5.0
         series.append((x, y, color, cells_per_D))
     if not series:
@@ -97,7 +150,6 @@ def fig5_tc1():
         ax.set_ylabel(r"Normalized Rise Velocity   $v/v_{\mathrm{YGB}}$")
         ax.set_title("Fig 5 — 2D thermocapillary rise in the $Ma=0$ limit", fontsize=12)
         ax.legend(loc="lower right", fontsize=10, frameon=False)
-        # note removed
         dst = os.path.join(FIGS, "case1_fig5_samareh_style.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)
@@ -106,14 +158,13 @@ def fig5_tc1():
 
 def fig7_tc2():
     """TC2, Fig 7 (Re=5, Ma=20, Ca=0.01666): MFC migration vs the digitized Nas & Tryggvason transient."""
-    nt = pc.NAS_TRYGGVASON
     with plt.rc_context(SAMAREH_STYLE):
         fig, ax = plt.subplots(figsize=(7.0, 5.0), constrained_layout=True)
-        ax.plot(nt[:, 0], nt[:, 1], "^--", color="0.0", ms=6.5, mfc="none", mew=1.3, lw=1.0,
+        ax.plot(NAS_TRYGGVASON[:, 0], NAS_TRYGGVASON[:, 1], "^--", color="0.0", ms=6.5, mfc="none", mew=1.3, lw=1.0,
                 zorder=5, label="Nas & Tryggvason (digitized)")
         plotted = False
         for name, nx, color in [("fig7_w064", 64, "#4C72B0"), ("fig7_w128", 128, "#DD8452")]:
-            out = pc.color_weighted_vy(os.path.join(RUNS, name))
+            out = color_weighted_vy(os.path.join(RUNS, name))
             if out is None or len(out[0]) < 10:  # skip absent or depleted runs (need a real curve)
                 if out is not None:
                     print(f"  fig7: skipping {name} -- only {len(out[0])} snapshots on disk (data depleted)")
@@ -147,7 +198,6 @@ def fig7_tc2():
         ax.set_ylabel(r"$U^* = U/U_r$")
         ax.set_title("Fig 7 — 2D migration at finite $Ma$ (Re=5, Ma=20, Ca=0.0167)", fontsize=12)
         ax.legend(loc="upper right", fontsize=10, frameon=False)
-        # note removed
         dst = os.path.join(FIGS, "case2_fig7_samareh_style.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)

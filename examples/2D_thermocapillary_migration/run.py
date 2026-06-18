@@ -110,7 +110,7 @@ def measure(wd, mode):
 
 def regenerate_figures():
     """Rebuild the curated overlay figures from whatever runs are on disk."""
-    for script in ("plot_curves.py", "plot_samareh_style.py"):
+    for script in ("plot_samareh_style.py",):
         path = os.path.join(HERE, script)
         if not os.path.isfile(path):
             continue
