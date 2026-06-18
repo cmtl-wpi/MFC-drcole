@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """All thermocapillary plotting in one tool. Pick a subcommand:
 
-  samareh   The two headline validation overlays, in Samareh's published style:
-              figures/case1_fig5_samareh_style.png  -- TC1 Fig 5 (Ma=0), v/v_YGB vs t/t_r vs Samareh VOF
-              figures/case2_fig7_samareh_style.png  -- TC2 Fig 7, U* vs t* vs the Nas & Tryggvason transient
+  samareh   The two headline validation overlays:
+              figures/case1_fig5.png  -- TC1 Fig 5 (Ma=0), v/v_YGB vs t/t_r vs Samareh VOF
+              figures/case2_fig7.png  -- TC2 Fig 7, U* vs t* vs the Nas & Tryggvason transient
             Raw per-snapshot markers, no smoothing (the compressible box's acoustic ring is left visible).
 
   ma        figures/tc1_ma_convergence.png -- TC1 terminal v_t/v_YGB vs a conduction Marangoni-number
@@ -27,6 +27,8 @@ Usage (no subcommand runs `samareh`, the headline overlays -- the usual rebuild)
     python3 plot.py ma
     python3 plot.py fields [case_dir] [temperature|sigma|recirculation] [step]
         (fields' step defaults to the last snapshot; recirculation's 3rd arg is a t/tau target.)
+    python3 plot.py clean [--force]
+        (remove orphaned figures/ images no current script produces; dry-run unless --force)
 """
 
 import glob
@@ -116,8 +118,8 @@ SAMAREH_VOF = np.array([
     (3.0, 0.83), (4.0, 0.83), (5.0, 0.835), (6.0, 0.83), (7.0, 0.835), (8.0, 0.838), (9.0, 0.835),
     (10.0, 0.84)])
 
-# Samareh's plain plate style: white background, full box frame, outward ticks, no gridlines.
-SAMAREH_STYLE = {
+# Plain plate style: white background, full box frame, outward ticks, no gridlines.
+PLATE_STYLE = {
     "axes.grid": False, "axes.facecolor": "white", "figure.facecolor": "white",
     "axes.edgecolor": "0.0", "axes.linewidth": 1.0, "font.size": 13,
     "xtick.direction": "out", "ytick.direction": "out",
@@ -153,7 +155,7 @@ def samareh_fig5():
     if not series:
         print("  fig5: no conduction runs found")
         return
-    with plt.rc_context(SAMAREH_STYLE):
+    with plt.rc_context(PLATE_STYLE):
         fig, ax = plt.subplots(figsize=(7.0, 5.0), constrained_layout=True)
         ax.plot(SAMAREH_VOF[:, 0], SAMAREH_VOF[:, 1], "s--", color="0.0", ms=5.0, mfc="none", mew=1.3,
                 lw=1.0, label=r"Samareh Fig 5(d), VOF ($Ma=0$, digitized)")
@@ -166,7 +168,7 @@ def samareh_fig5():
         ax.set_ylabel(r"Normalized Rise Velocity   $v/v_{\mathrm{YGB}}$")
         ax.set_title("Fig 5 — 2D thermocapillary rise in the $Ma=0$ limit", fontsize=12)
         ax.legend(loc="lower right", fontsize=10, frameon=False)
-        dst = os.path.join(FIGS, "case1_fig5_samareh_style.png")
+        dst = os.path.join(FIGS, "case1_fig5.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)
         print(f"  wrote {dst}  ({len(series)} grids: " + ", ".join(f"{c:.1f}/D" for *_, c in series) + ")")
@@ -174,7 +176,7 @@ def samareh_fig5():
 
 def samareh_fig7():
     """TC2, Fig 7 (Re=5, Ma=20, Ca=0.01666): MFC migration vs the digitized Nas & Tryggvason transient."""
-    with plt.rc_context(SAMAREH_STYLE):
+    with plt.rc_context(PLATE_STYLE):
         fig, ax = plt.subplots(figsize=(7.0, 5.0), constrained_layout=True)
         ax.plot(NAS_TRYGGVASON[:, 0], NAS_TRYGGVASON[:, 1], "^--", color="0.0", ms=6.5, mfc="none", mew=1.3, lw=1.0,
                 zorder=5, label="Nas & Tryggvason (digitized)")
@@ -214,7 +216,7 @@ def samareh_fig7():
         ax.set_ylabel(r"$U^* = U/U_r$")
         ax.set_title("Fig 7 — 2D migration at finite $Ma$ (Re=5, Ma=20, Ca=0.0167)", fontsize=12)
         ax.legend(loc="upper right", fontsize=10, frameon=False)
-        dst = os.path.join(FIGS, "case2_fig7_samareh_style.png")
+        dst = os.path.join(FIGS, "case2_fig7.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)
         print(f"  wrote {dst}")
@@ -224,6 +226,23 @@ def cmd_samareh(argv):
     os.makedirs(FIGS, exist_ok=True)
     samareh_fig5()
     samareh_fig7()
+    # Also produce the temperature centerline figure for any available run
+    for name in sorted(os.listdir(RUNS)):
+        run_dir = os.path.join(RUNS, name)
+        if not os.path.isdir(run_dir):
+            continue
+        if not os.path.isfile(os.path.join(run_dir, "simulation.inp")):
+            continue
+        rd = os.path.join(run_dir, "restart_data")
+        if not os.path.isdir(rd):
+            continue
+        steps = sorted(int(m.group(1)) for f in glob.glob(os.path.join(rd, "lustre_*.dat")) if (m := re.search(r"lustre_(\d+)\.dat$", f)))
+        if len(steps) < 2:
+            continue
+        print(f"\n--- temperature field: {name} ---")
+        c = load_field_case(run_dir)
+        field_temperature(c, steps[-1])
+        break  # only the first available run
 
 
 # ----- ma: TC1 conduction Ma -> 0 convergence sweep --------------------------------------------------
@@ -497,7 +516,46 @@ def cmd_fields(argv):
     (field_temperature if field == "temperature" else field_sigma)(c, step)
 
 
-COMMANDS = {"samareh": cmd_samareh, "ma": cmd_ma, "fields": cmd_fields}
+# ----- clean: remove orphaned figures (figures no current script produces) ---------------------------
+
+# Figures the scripts here legitimately produce -- KEEP IN SYNC with the savefig calls above and with
+# compare_tc3_visc.py. `clean` deletes any other .png/.pdf in figures/ as a stale orphan; source files
+# (.tex, etc.) and PRECIOUS run data (restart_data/case.py/*.inp) are never touched.
+KEEP_FIGURES = {
+    "case1_fig5.png",                                # samareh
+    "case2_fig7.png",                                # samareh
+    "tc1_ma_convergence.png",                        # ma
+    "case1_zero_marangoni_2D_recirculation.png",     # fields recirculation
+    "case1_zero_marangoni_2D_recirculation.pdf",
+    "case3_large_marangoni_mu_of_T_validation.png",  # compare_tc3_visc.py
+    "mechanism_schematic.png", "mechanism_schematic.pdf",  # TikZ schematic (source: mechanism_schematic.tex)
+}
+KEEP_FIGURE_PATTERNS = [re.compile(r"^temperature_\d+\.png$")]  # fields temperature, one per step
+
+
+def cmd_clean(argv):
+    """Remove orphaned figures from figures/ -- ones no current script produces. Dry-run unless --force.
+    Only .png/.pdf are candidates; source files and run data are out of scope."""
+    force = "--force" in argv
+    if not os.path.isdir(FIGS):
+        print("figures/: nothing to clean (directory absent)")
+        return
+    orphans = [
+        f for f in sorted(os.listdir(FIGS))
+        if os.path.isfile(os.path.join(FIGS, f)) and f.endswith((".png", ".pdf"))
+        and f not in KEEP_FIGURES and not any(p.match(f) for p in KEEP_FIGURE_PATTERNS)
+    ]
+    if not orphans:
+        print("figures/: no orphaned figures")
+        return
+    for f in orphans:
+        if force:
+            os.remove(os.path.join(FIGS, f))
+        print(f"  {'removed' if force else 'would remove'}  figures/{f}")
+    print(f"\n{len(orphans)} orphaned figure(s) " + ("removed" if force else "-- re-run with `plot.py clean --force` to delete"))
+
+
+COMMANDS = {"samareh": cmd_samareh, "ma": cmd_ma, "fields": cmd_fields, "clean": cmd_clean}
 
 
 def main():
