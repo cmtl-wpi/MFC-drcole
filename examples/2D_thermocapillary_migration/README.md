@@ -246,7 +246,7 @@ less-viscous oil — the experiment's **non-monotonic** rise "loop" (Fig 8/13) t
 `τ = 0.5`, `t_r = 7.5`.
 
 ![Fig 5 — 2D thermocapillary rise, Ma=0](figures/case1_fig5_samareh_style.png)
-*Produced by `plot_samareh_style.py` (§8).*
+*Produced by `plot.py samareh` (§8).*
 
 The figure overlays MFC (bulk conduction, `Ma = 0.1`, 64 cells/`D`) on Samareh's digitised Fig 5(d)
 VOF curve: the two **track each other to `t/t_r = 4.1`**, both plateauing at `v_t/v_YGB ≈ 0.80`. The
@@ -290,7 +290,7 @@ drop (all properties 0.5× the bulk), **isothermal Dirichlet walls + bulk conduc
 `T` scalar** — i.e. this case exercises §3.2 and §3.3 together.
 
 ![Fig 7 — finite-Ma migration vs Nas & Tryggvason](figures/case2_fig7_samareh_style.png)
-*Produced by `plot_samareh_style.py` (§8).*
+*Produced by `plot.py samareh` (§8).*
 
 `U* = U/U_r` ramps from rest and overshoots; MFC follows Nas & Tryggvason closely through the rise and
 **brackets the published peak of `U* ≈ 0.13`**:
@@ -378,7 +378,7 @@ python3 examples/2D_thermocapillary_migration/run.py fig7   # TC2 Fig 7
 # (run.py <fig5|fig7|tc3|all> [run|remeasure]; `remeasure` re-reads existing runs/ without simulating)
 
 # Rebuild the two embedded README figures from existing runs/ (no simulation):
-python3 examples/2D_thermocapillary_migration/plot_samareh_style.py
+python3 examples/2D_thermocapillary_migration/plot.py samareh
 
 # TC1 Fig 6 (3D sphere) — sibling example:
 ./mfc.sh run examples/3D_thermocapillary_migration/case.py -n 8
@@ -395,9 +395,9 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 | Figure shown above | Produced by | In |
 |---|---|---|
 | `figures/mechanism_schematic.png` | `figures/mechanism_schematic.tex` (TikZ → `pdflatex`) | §2.2 |
-| `figures/case1_fig5_samareh_style.png` | `plot_samareh_style.py` | §4.1 |
+| `figures/case1_fig5_samareh_style.png` | `plot.py samareh` | §4.1 |
 | `../3D_thermocapillary_migration/viz/rise_velocity.png` | `../3D_thermocapillary_migration/measure.py` | §4.2 |
-| `figures/case2_fig7_samareh_style.png` | `plot_samareh_style.py` | §4.3 |
+| `figures/case2_fig7_samareh_style.png` | `plot.py samareh` | §4.3 |
 
 **Every script here, what it writes, and what it shows** — grouped by role.
 
@@ -413,21 +413,21 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 
 | Script | Role |
 |---|---|
-| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/` (the grid is set by rewriting the `Nx =` line in that run's copy of the hardcoded case; `fig5`→`case_Ma_0.py`, `fig7`→`case_Ma_20.py`, `tc3`→`../3D_thermocapillary_migration/case_Ma_1723.py`), measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot_samareh_style.py`. `remeasure` re-reads existing runs without simulating. |
+| `run.py <fig5\|fig7\|tc3\|all> [run\|remeasure]` | Runs each target's grid variants in its own `runs/<name>/` (the grid is set by rewriting the `Nx =` line in that run's copy of the hardcoded case; `fig5`→`case_Ma_0.py`, `fig7`→`case_Ma_20.py`, `tc3`→`../3D_thermocapillary_migration/case_Ma_1723.py`), measures with `measure.py`, aggregates `<target>_summary.json`, and regenerates the curated figures via `plot.py samareh`. `remeasure` re-reads existing runs without simulating. |
 
 *Per-run measurement → `<case_dir>/viz/` + a `RESULT_JSON` line:*
 
 | Script | Writes | Shows |
 |---|---|---|
 | `measure.py [case_dir] [fig5\|fig7\|tc3]` | `rise_velocity.png` / `fig7_migration.png` / `tc3_rise_velocity.png` | Migration velocity for one run; mode auto-detected from the domain (override with the 2nd arg). fig5: `v/v_YGB(t/t_r)`; fig7: `U*(t*)`; tc3: rise mm/s vs distance. |
-| `plot_fields.py [case_dir] [temperature\|sigma\|recirculation] [step]` | `temperature_<step>.png` / `sigma_interface_<step>.png` / (to `figures/`) `case1_zero_marangoni_2D_recirculation.png` | EOS-recovered `T` field + centerline / `σ(T)` around the interface / co-moving streamlines + vorticity. |
+| `plot.py fields [case_dir] [temperature\|sigma\|recirculation] [step]` | `temperature_<step>.png` / `sigma_interface_<step>.png` / (to `figures/`) `case1_zero_marangoni_2D_recirculation.png` | EOS-recovered `T` field + centerline / `σ(T)` around the interface / co-moving streamlines + vorticity. |
 
-*Curated overlays → `figures/`:*
+*Curated overlays → `figures/` (all via the one `plot.py` tool; subcommands `samareh` / `ma` / `fields`):*
 
 | Script | Writes | Shows |
 |---|---|---|
-| `plot_samareh_style.py` | `case1_fig5_samareh_style.png`, `case2_fig7_samareh_style.png` | The two headline overlays above: MFC vs Samareh's digitized Fig 5(d) / Fig 7, plain published style, raw points as markers (acoustic ring left visible). |
-| `plot_ma_convergence.py` | `tc1_ma_convergence.png` | Conduction TC1 plateau vs a Marangoni-number sweep (Ma → 0 limit). Plots existing `runs/`; regenerating the sweep now needs hand-edited conduction variants of `case_Ma_0.py` (the `SAMAREH_MA` env-knob sweep was removed when the cases were hardcoded). |
+| `plot.py samareh` | `case1_fig5_samareh_style.png`, `case2_fig7_samareh_style.png` | The two headline overlays above: MFC vs Samareh's digitized Fig 5(d) / Fig 7, plain published style, raw points as markers (acoustic ring left visible). |
+| `plot.py ma` | `tc1_ma_convergence.png` | Conduction TC1 plateau vs a Marangoni-number sweep (Ma → 0 limit). Plots existing `runs/`; regenerating the sweep now needs hand-edited conduction variants of `case_Ma_0.py` (the `SAMAREH_MA` env-knob sweep was removed when the cases were hardcoded). |
 | `compare_tc3_visc.py` | `case3_large_marangoni_mu_of_T_validation.png` | TC3 `μ(T)=exp(C+D/T)` run vs a constant-`μ` control — the `μ(T)` acceleration signature. |
 
 `animations/` holds the `./mfc.sh viz` MP4s (§4.5); `runs/` is gitignored simulation output.

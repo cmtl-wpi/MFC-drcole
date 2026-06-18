@@ -110,12 +110,11 @@ def measure(wd, mode):
 
 def regenerate_figures():
     """Rebuild the curated overlay figures from whatever runs are on disk."""
-    for script in ("plot_samareh_style.py",):
-        path = os.path.join(HERE, script)
-        if not os.path.isfile(path):
-            continue
-        r = subprocess.run([sys.executable, path], cwd=HERE, capture_output=True, text=True, check=False)
-        print(f"  {script}: {'ok' if r.returncode == 0 else 'FAILED -- ' + r.stderr[-300:]}")
+    path = os.path.join(HERE, "plot.py")
+    if not os.path.isfile(path):
+        return
+    r = subprocess.run([sys.executable, path, "samareh"], cwd=HERE, capture_output=True, text=True, check=False)
+    print(f"  plot.py samareh: {'ok' if r.returncode == 0 else 'FAILED -- ' + r.stderr[-300:]}")
 
 
 def process_target(target, run_mode):
