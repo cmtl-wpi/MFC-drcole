@@ -378,7 +378,7 @@ python3 examples/2D_thermocapillary_migration/run.py fig7   # TC2 Fig 7
 # (run.py <fig5|fig7|tc3|all> [run|remeasure]; `remeasure` re-reads existing runs/ without simulating)
 
 # Rebuild the two embedded README figures from existing runs/ (no simulation):
-python3 examples/2D_thermocapillary_migration/plot.py samareh
+python3 examples/2D_thermocapillary_migration/plot.py   # (samareh overlays; `ma` / `fields` are the other subcommands)
 
 # TC1 Fig 6 (3D sphere) — sibling example:
 ./mfc.sh run examples/3D_thermocapillary_migration/case.py -n 8

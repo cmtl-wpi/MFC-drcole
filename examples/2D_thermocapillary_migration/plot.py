@@ -22,8 +22,8 @@ disagree with the data. Conserved layout (model_eqns=3, num_fluids=2): 0,1 = par
 2 = x-momentum, 3 = y-momentum, 7,8 = phasic internal energies, color c last (second-to-last when a
 thermal_scalar T_s is appended).
 
-Usage:
-    python3 plot.py samareh
+Usage (no subcommand runs `samareh`, the headline overlays -- the usual rebuild):
+    python3 plot.py [samareh]
     python3 plot.py ma
     python3 plot.py fields [case_dir] [temperature|sigma|recirculation] [step]
         (fields' step defaults to the last snapshot; recirculation's 3rd arg is a t/tau target.)
@@ -501,9 +501,9 @@ COMMANDS = {"samareh": cmd_samareh, "ma": cmd_ma, "fields": cmd_fields}
 
 
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else None
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "samareh"  # bare `plot.py` rebuilds the headline overlays
     if cmd not in COMMANDS:
-        sys.exit(f"usage: python3 plot.py <{'|'.join(COMMANDS)}> [args]   (see the module docstring)")
+        sys.exit(f"usage: python3 plot.py [{'|'.join(COMMANDS)}] [args]   (default: samareh; see the module docstring)")
     COMMANDS[cmd](sys.argv[2:])
 
 
