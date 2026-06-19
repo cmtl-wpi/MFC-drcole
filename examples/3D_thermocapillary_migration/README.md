@@ -56,3 +56,46 @@ lab-frame color-weighted rise velocity and the quasi-steady plateau against `v_t
 A *converged* Fig-6 number is a heavy run: a 3D plateau needs ~1–2 `t_r` of wall-clock at a real grid
 (64/128 per width), plus a grid-convergence pair — multi-day, not interactive. `case.py` validates and
 smoke-runs immediately; the headline `0.95` comparison is a follow-up production run.
+
+# `case_ygb.py` — recovering `u_YGB` as a validation of variable surface tension
+
+`case.py` (above) reproduces Samareh's *confined* `0.95` using the **density-proxy** temperature.
+`case_ygb.py` is a stronger, cleaner test: it recovers the **analytic** Young–Goldstein–Block
+terminal velocity `u_YGB` (`v_t/u_YGB → 1.0`) as a proper validation of MFC's σ(T) Marangoni stress.
+
+## Why it differs from `case.py`
+
+- **Decoupled temperature.** `thermal_scalar = T`: temperature is an independent advected+diffused
+  scalar `T_s`, and σ(T) reads `T_s` directly (not the density-coupled EOS temperature). Density is
+  uniform; both fluids identical (μ\*=k\*=1). The only driver is the σ(T) gradient — the clean YGB
+  setup. The density proxy of `case.py` instead advects with the drop's own flow and reverses the
+  gradient, so it is not a faithful invariant-`T` realization (see `memory/why-thermal-scalar.md`).
+
+## Recovering `u_YGB` is a convergence claim, not one number
+
+`u_YGB` is the *unbounded, zero-Ma, Stokes* sphere result. MFC falls below `1.0` by three
+*vanishable* deficits; the validation is showing each → 0 drives the ratio → `1.0`:
+
+| deficit | knob | sweep | reduction |
+|---|---|---|---|
+| confinement | `YGB_W` (cube box width) | 6, 8, 10, 12 | fit ratio vs `1/W`, extrapolate `W→∞` (**headline**) |
+| finite Ma | `YGB_MA` | 1.0, 0.5, 0.25, 0.1 | extrapolate `Ma→0` (perfectly invariant `T`) |
+| grid | `YGB_NX` | 64, 96, 128 | Richardson in `dx` |
+
+`Re_M = ρ v_YGB D/μ ≈ 0.018` is already deep Stokes — no Reynolds sweep. Geometry modes via
+`YGB_GEOM`: `cube` (centered drop, the sweep) and `samareh` (offset 5D×7.5D box, the ≈0.95 anchor).
+
+## Pipeline
+
+```bash
+python3 run_ygb.py smoke               # tiny machinery check (serial; minutes)
+python3 run_ygb.py anchor              # reproduce Samareh ~0.95 in the confined box
+python3 run_ygb.py confinement         # the headline cube sweep (multi-hour each; run under nohup)
+python3 run_ygb.py grid ma             # grid + Ma refinement of the converged corner
+python3 validate_ygb.py all            # convergence fits -> figures/ygb_vs_{confinement,dx,Ma}.png
+python3 fields_ygb.py <run_dir>        # T_s / color midplane sanity field
+```
+
+`run_ygb.py` runs into `runs/ygb/<geom>/<W>/<grid>/<Ma>/` and **skips** populated leaves (pass
+`--force` to rerun) — a partial sweep is safe to re-invoke. The heavy selectors are a multi-day
+background/batch campaign. See `CLAUDE.md` for run-organization rules.

@@ -77,7 +77,8 @@ nx = int(param("m")) + 1  # short-axis cells (x)
 ny = int(param("n")) + 1  # rise-axis cells (y)
 nz = int(param("p")) + 1  # short-axis cells (z); 1 in 2D
 dt = param("dt")
-Ly = param("y_domain%end") - param("y_domain%beg")  # rise-axis extent (7.5*D)
+Ly = param("y_domain%end") - param("y_domain%beg")  # rise-axis extent (7.5*D for Samareh, W for cube)
+W = param("x_domain%end") - param("x_domain%beg")  # box width (lateral); D = 1 so cells_per_D = nx/W
 mu = 1.0 / param("fluid_pp(1)%re(1)")  # MFC takes Re = 1/mu
 dsigma_dT = param("sigma_dtdt")  # sigma(T) slope
 dim = 3 if int(param("p")) > 0 else 2
@@ -86,7 +87,12 @@ y_drop0 = param("patch_icpp(2)%y_centroid", patches)  # initial drop position
 
 # Not in the namelists -- analysis choices. MUST match case.py.
 r = 0.5  # droplet radius (D = 1)
-gradT = 2.0 / 15.0  # imposed |dT/dy| (paper text rounds to 0.13; 1/(7.5D) = 2/15)
+# Imposed |dT/dy|: read it from the isothermal-wall temperatures when present (robust to box size --
+# the cube sweep holds gradT fixed and scales the wall delta-T with Ly), else the Samareh default.
+if "bc_y%twall_in" in params and "bc_y%twall_out" in params:
+    gradT = abs(param("bc_y%twall_out") - param("bc_y%twall_in")) / Ly
+else:
+    gradT = 2.0 / 15.0  # 1/(7.5D) = 2/15 (paper text rounds to 0.13)
 far_y = 0.75 * (Ly / 2.0)  # a cell is "far field" once |y| exceeds this (open mode)
 
 t_r = mu / abs(dsigma_dT * gradT)  # capillary-thermal time mu/|sigma_T*gradT| (Samareh's time scale)
@@ -162,6 +168,7 @@ assert abs(y_centroid[0] - y_drop0) < 0.1 * r, f"drop not at patch centroid at t
 ratio_t = U / v_YGB
 dt_snap = times[1] - times[0] if len(times) > 1 else tau
 smooth_w = max(1, int(round(tau / dt_snap)))  # rolling mean over ~ one viscous time
+smooth_w = min(smooth_w, len(ratio_t))  # can't average over a window longer than the data (short runs)
 if smooth_w > 1:  # edge-corrected boxcar: divide by the window's actual coverage so the ends aren't
     k = np.ones(smooth_w)  # depressed by zero-padding (which would put a spurious minimum at t_end)
     sm = np.convolve(ratio_t, k, mode="same") / np.convolve(np.ones_like(ratio_t), k, mode="same")
@@ -234,7 +241,9 @@ print(f"saved figure -> {out_png}")
 summary = {
     "dim": dim,
     "nx_width": nx,
-    "cells_per_D": nx / 5.0,  # box width = 5D
+    "W": W,  # box width in D (confinement knob); cube sweep varies this
+    "confinement": 1.0 / W,  # 1/W -> 0 is the unbounded (YGB) limit
+    "cells_per_D": nx / W,  # D = 1, so cells across one drop diameter = nx / W
     "cells": cells,
     "mu": mu,
     "rho_drop": rho_drop,
