@@ -70,9 +70,10 @@ def near(a, b):
 
 def converge_confinement(rows):
     """ratio_plateau vs 1/W at fixed (cube, Nx, Ma); linear-extrapolate to 1/W -> 0 (unbounded)."""
-    pts = sorted((r["W"], r["ratio_plateau"]) for r in rows if r["geom"] == "cube" and r["Nx"] == CORNER["Nx"] and near(r["Ma"], CORNER["Ma"]))
+    # The confinement line holds drop resolution fixed (cells_per_D = Nx/W ~ 8), so vary only W.
+    pts = sorted((r["W"], r["ratio_plateau"]) for r in rows if r["geom"] == "cube" and near(r["Ma"], CORNER["Ma"]) and abs(r["Nx"] / r["W"] - 8.0) < 0.5)
     if len(pts) < 2:
-        print(f"  confinement: need >=2 cube/Nx{CORNER['Nx']}/Ma{CORNER['Ma']} runs, have {len(pts)} -- skipping")
+        print(f"  confinement: need >=2 cube/cells_per_D~8/Ma{CORNER['Ma']} runs, have {len(pts)} -- skipping")
         return
     W = np.array([p[0] for p in pts])
     ratio = np.array([p[1] for p in pts])

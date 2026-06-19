@@ -28,6 +28,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -39,11 +40,14 @@ PIN = ["taskset", "-c", "16-255"]  # keep off cores 0-15 (a neighbour's job may 
 NOBIND = {"OMPI_MCA_hwloc_base_binding_policy": "none"}  # don't let prterun pin to cores
 
 # Each run is (geom, W_in_D, Nx, Ma, n_tr). The leaf path is derived from (geom, W, Nx, Ma).
+# The confinement sweep holds the DROP RESOLUTION fixed (cells_per_D = Nx/W = 8) by scaling Nx with
+# the box width, so it isolates confinement instead of confounding it with grid coarsening. The grid
+# sweep then refines cells_per_D at the fixed W=10 corner; the ma sweep varies Ma there.
 SWEEPS = {
     "smoke": [("cube", 5, 40, 1.0, 0.3)],
     "anchor": [("samareh", 5, 64, 1.0, 2.0)],
-    "confinement": [("cube", w, 80, 0.5, 3.0) for w in (6, 8, 10, 12)],
-    "grid": [("cube", 10, nx, 0.5, 3.0) for nx in (64, 96, 128)],
+    "confinement": [("cube", w, 8 * w, 0.5, 3.0) for w in (8, 10, 12, 14)],  # Nx = 8*W -> 8 cells/D
+    "grid": [("cube", 10, nx, 0.5, 3.0) for nx in (64, 96, 128)],  # + the W10/Nx80 corner = 4 grids
     "ma": [("cube", 10, 80, ma, 3.0) for ma in (1.0, 0.5, 0.25, 0.1)],
 }
 SWEEPS["all"] = SWEEPS["anchor"] + SWEEPS["confinement"] + SWEEPS["grid"] + SWEEPS["ma"]
@@ -60,22 +64,28 @@ def leaf_dir(geom, W, Nx, Ma):
 
 
 def ranks_for(Nx):
-    """MPI ranks for an Nx-per-width grid: cube the per-dim split that keeps blocks >= 32 cells.
+    """MPI ranks for an Nx-per-width grid: cube the per-dim split that keeps blocks >= ~26 cells.
 
-    weno5 needs a comfortable rank-block (>= ~25 cells) in every split dimension; >=32 leaves margin.
-    Nx=40 -> 1, 64 -> 8, 80 -> 8, 96 -> 27, 128 -> 64. MFC factors -n into a valid decomposition or
-    aborts, so passing a cube whose factorization exists guarantees a legal split.
+    weno5 needs >= ~25 cells per rank-block in every split dimension (verified: Nx=80 -> 27 ranks,
+    ~26.7 cells/block, decomposes fine). Nx=40 -> 1, 64 -> 8, 80 -> 27, 96 -> 27, 128 -> 64. MFC
+    factors -n into a valid decomposition or aborts, so a cube whose factorization exists is legal.
     """
-    per_dim = max(1, Nx // 32)
+    per_dim = max(1, Nx // 26)
     return per_dim**3
 
 
-def run_one(geom, W, Nx, Ma, n_tr, force):
-    """Run one variant into its leaf dir. Skip a populated leaf unless force. Returns True on success."""
+def launch(geom, W, Nx, Ma, n_tr, force):
+    """Start one variant as a background process. Return (popen, wd, ranks, key), or None if skipped.
+
+    Skips a populated leaf unless force. Uses --no-build: the binary is content-addressed and the
+    analytic IC is identical across the whole sweep, so one build serves every run (run `smoke` once
+    on a fresh checkout to build it). Per-leaf stdout -> <leaf>/run.log so concurrent runs don't mix.
+    """
     wd = leaf_dir(geom, W, Nx, Ma)
+    key = os.path.relpath(wd, RUNS)
     if os.path.isdir(os.path.join(wd, "restart_data")) and not force:
-        print(f">>> SKIP (already populated): {os.path.relpath(wd, HERE)}  -- pass --force to rerun", flush=True)
-        return True
+        print(f">>> SKIP (already populated): {key}  -- pass --force to rerun", flush=True)
+        return None
     if force and os.path.isdir(wd):
         shutil.rmtree(wd)
     os.makedirs(wd, exist_ok=True)
@@ -84,12 +94,10 @@ def run_one(geom, W, Nx, Ma, n_tr, force):
     ranks = ranks_for(Nx)
     env = {**os.environ, **NOBIND, "YGB_GEOM": geom, "YGB_W": str(W), "YGB_NX": str(Nx), "YGB_MA": str(Ma), "YGB_TR": str(n_tr)}
     rel = os.path.relpath(os.path.join(wd, CASE), REPO)
-    print(f"\n>>> {os.path.relpath(wd, HERE)}  geom={geom} W={W} Nx={Nx} Ma={Ma} t_r={n_tr} ranks={ranks}", flush=True)
-    p = subprocess.run(PIN + ["./mfc.sh", "run", rel, "-n", str(ranks)], cwd=REPO, env=env, check=False)
-    if p.returncode != 0:
-        print(f"  RUN FAILED (exit {p.returncode}) -- see {os.path.join(wd, 'MFC.out')}")
-        return False
-    return True
+    log = open(os.path.join(wd, "run.log"), "w")
+    print(f">>> LAUNCH {key}  Nx={Nx} Ma={Ma} t_r={n_tr} ranks={ranks}", flush=True)
+    p = subprocess.Popen(PIN + ["./mfc.sh", "run", rel, "-n", str(ranks), "--no-build"], cwd=REPO, env=env, stdout=log, stderr=subprocess.STDOUT)
+    return p, wd, ranks, key
 
 
 def measure(wd):
@@ -110,23 +118,47 @@ def main():
     sel = next((a for a in args if not a.startswith("-")), "smoke")
     if sel not in SWEEPS:
         sys.exit(f"unknown selector {sel!r}; choose from {', '.join(SWEEPS)}")
+    # Run several leaves at once up to a total-rank (core) budget so the sweep saturates the box
+    # instead of idling cores. Each run's ranks come from ranks_for(Nx). Default leaves headroom on
+    # a 256-core host (cores 0-15 are pinned off via PIN).
+    maxcores = int(os.environ.get("YGB_MAXCORES", "192"))
 
     os.makedirs(RESULTS, exist_ok=True)
     spath = os.path.join(RESULTS, "ygb_summary.json")
     summary = json.load(open(spath)) if os.path.isfile(spath) else {}
 
-    for geom, W, Nx, Ma, n_tr in SWEEPS[sel]:
-        wd = leaf_dir(geom, W, Nx, Ma)
-        if not run_one(geom, W, Nx, Ma, n_tr, force):
+    queue = list(SWEEPS[sel])
+    inflight = {}  # popen -> (wd, ranks, key)
+    used = 0
+    while queue or inflight:
+        # Fill the core budget. Always allow one run if the box is idle (a single run < maxcores).
+        while queue and (not inflight or used + ranks_for(queue[0][2]) <= maxcores):
+            handle = launch(*queue.pop(0), force=force)
+            if handle is None:
+                continue  # skipped (already populated)
+            p, wd, ranks, key = handle
+            inflight[p] = (wd, ranks, key)
+            used += ranks
+        if not inflight:
             continue
-        res = measure(wd)
-        if res is not None:
-            key = os.path.relpath(wd, RUNS)  # e.g. cube/w8/nx080/ma0p5
-            summary[key] = res
-            json.dump(summary, open(spath, "w"), indent=2)  # checkpoint after each run
-            print(f"  {key}: v_t/v_YGB plateau={res['ratio_plateau']:+.3f}  W={res['W']:g}  cells/D={res['cells_per_D']:.1f}  rises={res['rises']}")
+        # Wait for at least one in-flight run to finish, then measure it and free its cores.
+        done = []
+        while not done:
+            time.sleep(5)
+            done = [p for p in inflight if p.poll() is not None]
+        for p in done:
+            wd, ranks, key = inflight.pop(p)
+            used -= ranks
+            if p.returncode != 0:
+                print(f"  RUN FAILED ({key}, exit {p.returncode}) -- see {os.path.join(wd, 'run.log')}", flush=True)
+                continue
+            res = measure(wd)
+            if res is not None:
+                summary[key] = res
+                json.dump(summary, open(spath, "w"), indent=2)  # checkpoint after each run
+                print(f"  DONE {key}: v_t/v_YGB plateau={res['ratio_plateau']:+.3f}  W={res['W']:g}  cells/D={res['cells_per_D']:.1f}  rises={res['rises']}  ({res['t_end_tr']:.1f} t_r)", flush=True)
 
-    print(f"\n=== {sel}: {len(summary)} runs in {spath} ===")
+    print(f"\n=== {sel}: {len(summary)} runs in {spath} ===", flush=True)
 
 
 if __name__ == "__main__":
