@@ -126,18 +126,34 @@ PLATE_STYLE = {
 }
 
 
-def samareh_fig5():
-    """TC1, Fig 5 (Ma=0 limit): MFC bulk-conduction runs across grids vs Samareh's VOF curve.
+def read_case_Ma(run_dir):
+    """Read the `Ma = <float>` line from the case copy in a run dir. Returns None when there is
+    no such line (the frozen-T case has no Marangoni number), so the label can say Ma=0."""
+    for f in sorted(glob.glob(os.path.join(run_dir, "case_*.py"))):
+        for line in open(f):
+            if line.strip().startswith("Ma ="):
+                try:
+                    return float(line.split("=", 1)[1].split("#")[0])
+                except ValueError:
+                    return None
+    return None
 
-    The grids overshoot to a peak that climbs with refinement (toward/over Samareh's
-    ~0.80) and then drift back down -- they do NOT hold Samareh's flat plateau, so the
-    refinement trend in the peak is the honest comparison.
+
+def samareh_fig5():
+    """TC1, Fig 5 (Ma->0 limit): the frozen-T anchor and a finite-Ma bulk-conduction run plotted
+    against each other and Samareh's VOF curve.
+
+    Frozen-T pins the imposed linear T field through density (no energy transport) and holds a flat
+    plateau near Samareh's converged 0.80. The conduction run evolves an independent T scalar at
+    finite Ma and only *approaches* that limit -- it overshoots, then drifts. Showing both together
+    is the honest frozen-T-vs-conduction comparison; each labels its own Ma read from its case copy.
     """
-    # (run dir, color); missing grids are skipped. box width = 5D, so cells/D = (m+1)/5, read per run.
+    # (run dir, color); missing runs are skipped. box width = 5D, so cells/D = (m+1)/5, read per run.
     runs = [
-        ("tc1_w064", "#C44E52"),
-        ("tc1_w128", "#4C72B0"),
-        ("tc1_w256", "#55A868"),
+        ("tc1/frozen/w064", "#C44E52"),            # frozen-T anchor (Ma=0)
+        ("tc1/ma0p1/w064/sc050", "#9ecae1"),       # conduction Ma sweep: light -> dark as Ma -> 0
+        ("tc1/ma0p01/w064/sc050", "#4292c6"),
+        ("tc1/ma0p001/w064/sc050", "#084594"),
     ]
     series = []
     for name, color in runs:
@@ -146,32 +162,37 @@ def samareh_fig5():
             print(f"  fig5: {name} not found, skipping")
             continue
         out = color_weighted_vy(run)
-        if out is None:
-            print(f"  fig5: {name} unreadable, skipping")
+        if out is None or len(out[0]) < 5:
+            print(f"  fig5: {name} not ready ({0 if out is None else len(out[0])} snapshots), skipping")
             continue
         x, y = v_ygb_ratio(out)
         cells_per_D = (int(out[2]["m"]) + 1) / 5.0
-        series.append((x, y, color, cells_per_D))
+        Ma = read_case_Ma(run)
+        kind = "frozen-T" if Ma is None else "conduction"
+        ma_txt = r"$Ma=0$" if Ma is None else rf"$Ma={Ma:g}$"
+        label = rf"MFC {kind} ({ma_txt}), {cells_per_D:.0f}/$D$ — to $t/t_r={x.max():.1f}$"
+        series.append((x, y, color, label))
     if not series:
-        print("  fig5: no conduction runs found")
+        print("  fig5: no runs found")
         return
     with plt.rc_context(PLATE_STYLE):
         fig, ax = plt.subplots(figsize=(7.0, 5.0), constrained_layout=True)
         ax.plot(SAMAREH_VOF[:, 0], SAMAREH_VOF[:, 1], "s--", color="0.0", ms=5.0, mfc="none", mew=1.3,
                 lw=1.0, label=r"Samareh Fig 5(d), VOF ($Ma=0$, digitized)")
-        for x, y, color, cpd in series:
-            ax.plot(x, y, "o--", color=color, ms=4.0, mew=0, lw=0.9, alpha=0.8,
-                    label=rf"MFC bulk conduction ($Ma=0.1$), {cpd:.1f}/$D$ — to $t/t_r={x.max():.1f}$")
+        ax.axhline(1.0, color="0.3", lw=1.1, ls="--", zorder=1,
+                   label=r"$u_{\mathrm{YGB}}$ (analytic terminal, $\approx 8.89{\times}10^{-3}$)")
+        for x, y, color, label in series:
+            ax.plot(x, y, "o--", color=color, ms=4.0, mew=0, lw=0.9, alpha=0.85, label=label)
         ax.set_xlim(0.0, 10.0)
-        ax.set_ylim(0.0, 1.0)
+        ax.set_ylim(0.0, 1.1)
         ax.set_xlabel(r"Time   $t/t_r$")
-        ax.set_ylabel(r"Normalized Rise Velocity   $v/v_{\mathrm{YGB}}$")
-        ax.set_title("Fig 5 — 2D thermocapillary rise in the $Ma=0$ limit", fontsize=12)
+        ax.set_ylabel(r"Normalized Rise Velocity   $u/u_{\mathrm{YGB}}$")
+        ax.set_title(r"Fig 5 — 2D thermocapillary rise: frozen-T vs conduction ($Ma\to0$)", fontsize=12)
         ax.legend(loc="lower right", fontsize=10, frameon=False)
         dst = os.path.join(FIGS, "case1_fig5.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)
-        print(f"  wrote {dst}  ({len(series)} grids: " + ", ".join(f"{c:.1f}/D" for *_, c in series) + ")")
+        print(f"  wrote {dst}  ({len(series)} runs)")
 
 
 def samareh_fig7():
@@ -181,7 +202,7 @@ def samareh_fig7():
         ax.plot(NAS_TRYGGVASON[:, 0], NAS_TRYGGVASON[:, 1], "^--", color="0.0", ms=6.5, mfc="none", mew=1.3, lw=1.0,
                 zorder=5, label="Nas & Tryggvason (digitized)")
         plotted = False
-        for name, nx, color in [("tc2_w064", 64, "#4C72B0"), ("tc2_w128", 128, "#DD8452")]:
+        for name, nx, color in [("tc2/w064", 64, "#4C72B0"), ("tc2/w128", 128, "#DD8452")]:
             out = color_weighted_vy(os.path.join(RUNS, name))
             if out is None or len(out[0]) < 10:  # skip absent or depleted runs (need a real curve)
                 if out is not None:
@@ -226,13 +247,11 @@ def cmd_samareh(argv):
     os.makedirs(FIGS, exist_ok=True)
     samareh_fig5()
     samareh_fig7()
-    # Also produce the temperature centerline figure for any available run
-    for name in sorted(os.listdir(RUNS)):
-        run_dir = os.path.join(RUNS, name)
-        if not os.path.isdir(run_dir):
-            continue
-        if not os.path.isfile(os.path.join(run_dir, "simulation.inp")):
-            continue
+    # Also produce the temperature centerline figure for any available run.
+    # Runs nest under runs/ by axis (case/Ma/grid/smoothing), so walk for leaf dirs.
+    leaf_runs = sorted(d for d, _, files in os.walk(RUNS) if "simulation.inp" in files)
+    for run_dir in leaf_runs:
+        name = os.path.relpath(run_dir, RUNS)
         rd = os.path.join(run_dir, "restart_data")
         if not os.path.isdir(rd):
             continue
@@ -249,12 +268,13 @@ def cmd_samareh(argv):
 
 SAMAREH_RATIO = 0.80  # Samareh's converged 2D cylinder ratio (Fig 5)
 
-# (Ma, run dir) -- the conduction Ma -> 0 convergence sweep (all w128, slip-wall, tr=2.0)
+# (Ma, run dir) -- the conduction Ma -> 0 convergence sweep (all w128, slip-wall, tr=2.0).
+# Nested-tree paths; these w128 Ma points are not yet on disk (aspirational sweep).
 MA_SWEEP = [
-    (0.30, "tc1_w128_ma030"),
-    (0.10, "tc1_w128_ma010"),
-    (0.05, "tc1_w128_ma005"),
-    (0.03, "tc1_w128_ma003"),
+    (0.30, "tc1/ma0p30/w128/sc050"),
+    (0.10, "tc1/ma0p10/w128/sc050"),
+    (0.05, "tc1/ma0p05/w128/sc050"),
+    (0.03, "tc1/ma0p03/w128/sc050"),
 ]
 
 

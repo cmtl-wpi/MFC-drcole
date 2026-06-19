@@ -42,16 +42,16 @@ NOBIND = {"OMPI_MCA_hwloc_base_binding_policy": "none"}  # don't let prterun pin
 # filenames keep their historical names so the plot scripts and notes that read them resolve.
 TARGETS = {
     "fig5": dict(case="case_Ma_0p001.py", mode="fig5", summary="summary.json", variants=[
-        ("tc1_w064", 6, 64),
-        ("tc1_w128", 16, 128),
-        ("tc1_w256", 64, 256),  # Ma=0.001 is conduction-dt-limited; w256 is very expensive
+        ("tc1/ma0p001/w064/sc050", 6, 64),
+        ("tc1/ma0p001/w128/sc050", 16, 128),
+        ("tc1/ma0p001/w256/sc050", 64, 256),  # Ma=0.001 is conduction-dt-limited; w256 is very expensive
     ]),
     "fig7": dict(case="case_Ma_20.py", mode="fig7", summary="fig7_summary.json", variants=[
-        ("tc2_w064", 8, 64),
-        ("tc2_w128", 16, 128),
+        ("tc2/w064", 8, 64),
+        ("tc2/w128", 16, 128),
     ]),
     "tc3": dict(case="../3D_thermocapillary_migration/case_Ma_1723.py", mode="tc3", summary="tc3_summary.json", variants=[
-        ("tc3_run", 16, None),  # set ranks/Nx to match your grid before running
+        ("tc3/run", 16, None),  # set ranks/Nx to match your grid before running
     ]),
 }
 

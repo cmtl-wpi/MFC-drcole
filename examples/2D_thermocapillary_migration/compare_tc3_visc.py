@@ -5,8 +5,8 @@ the silicon oil's viscosity falls as the drop rises into warmer oil, so the drag
 *accelerates* with height -- the experiment's non-monotonic rise-velocity behaviour that a constant-mu
 run (TC1/TC2 physics) structurally cannot reproduce.
 
-We run the SAME 2D TC3 case twice -- mu(T) = exp(C+D/T) on (runs/tc3_2d_muT) vs a constant-mu control
-frozen at the drop's start temperature (runs/tc3_2d_const). The two are identical at t=0 (the drop sits
+We run the SAME 2D TC3 case twice -- mu(T) = exp(C+D/T) on (runs/tc3/muT) vs a constant-mu control
+frozen at the drop's start temperature (runs/tc3/const). The two are identical at t=0 (the drop sits
 at one temperature) and may only diverge because mu(T) lets the local viscosity change as the drop moves.
 
 The 2D cylinder is the tractable analogue of Samareh's 3D sphere, exactly as TC1's Fig 5 (2D plane) is
@@ -33,8 +33,8 @@ import numpy as np
 matplotlib.use("Agg")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MU_DIR = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "runs/tc3_2d_muT")
-CONST_DIR = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "runs/tc3_2d_const")
+MU_DIR = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "runs/tc3/muT")
+CONST_DIR = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "runs/tc3/const")
 
 
 def read_namelist(path):

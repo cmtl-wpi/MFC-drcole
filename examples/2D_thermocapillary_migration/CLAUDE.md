@@ -18,25 +18,38 @@ directly in the example root.** The root holds source only: `case_*.py`, the hel
 
 ## Run-dir naming
 
-General grammar: `tc<N>_<descriptor>_w<grid>[_ma<value>][_sc<pct>]`
-- `tc<N>` — Samareh case: tc1 (Ma→0 rise), tc2 (low-Ma), tc3 (3D large-Ma, in the 3D dir)
-- `w<grid>` — cells per drop diameter (`w064`, `w128`, `w256`)
-- `_ma<value>` — Marangoni number when swept (`ma0p1`, `ma0p01`, `ma0p001`)
-- `_sc<pct>` — interface smoothing `smooth_coeff` when studied (`sc050`, `sc099`)
-- `<descriptor>` — `cond` (bulk conduction + independent T_s) or `frozen` (frozen-T density proxy)
+Runs are nested **one subdir per axis**, in this order:
 
-⚠️ **Two naming schemes currently coexist — reconcile before adding runs:**
-- `run.py` emits short names with Ma implied by the case file: `tc1_w064/128/256` (fig5,
-  from `case_Ma_0p001.py`), `tc2_w064/128` (fig7, from `case_Ma_20.py`).
-- The runs actually on disk and the names `plot.py`/`plot_sc099.py` read use the long form:
-  `tc1_frozen_w064`, `tc1_cond_w064_ma0p1`, `tc1_cond_w128_ma0p1`, `tc1_cond_w064_ma0p1_sc099`, …
+```
+runs/<case>/<Ma>/<grid>/<smoothing>/
+            tc1   ma0p1  w064   sc050
+            tc2   ma0p01 w128   sc099
+            tc3   ma0p001 w256
+```
 
-These do **not** match. A run only feeds a figure if its dir name matches what the plot
-script hardcodes — grep the script (`grep tc1_ plot.py`) before naming a new run, or you'll
-produce output the plotter can't find. When in doubt, follow the long form (it encodes Ma
-and smoothing explicitly) and make `run.py`'s variant table agree with it.
+- `<case>` — Samareh case: `tc1` (Ma→0 rise), `tc2` (low-Ma), `tc3` (3D large-Ma; in the 3D dir)
+- `<Ma>` — Marangoni number: `ma0p1`, `ma0p01`, `ma0p001` (`p` = decimal point)
+- `<grid>` — cells per drop diameter: `w064`, `w128`, `w256`
+- `<smoothing>` — interface `smooth_coeff`: `sc050` (=0.5, the **default/baseline**), `sc099` (=0.99, ~2× sharper)
 
-`2D_thermocapillary_migration-<timestamp>` is an `--archive` snapshot — leave those alone.
+Current tree:
+```
+runs/tc1/
+  frozen/w064/                 frozen-T density proxy (Ma=0; no Ma/smoothing axis — the one asymmetry)
+  ma0p1/   w064/{sc050,sc099}   w128/sc050
+  ma0p01/  w064/{sc050,sc099}
+  ma0p001/ w064/{sc050,sc099}
+```
+
+A leaf dir IS a single run (contains `restart_data/`, `*.inp`, the `case_*.py` copy). A run
+only feeds a figure if its path matches what the plot scripts expect — `plot.py` (fig5/fig7)
+and `plot_sc099.py` hardcode these leaf paths; `plot.py samareh`'s field loop walks the tree
+for any dir with `simulation.inp`. Grep before adding a run (`grep -r tc1/ plot*.py run*.py`).
+
+`smooth_coeff=0.5` is the default, so a baseline run with no explicit smoothing **is** the
+`sc050` leaf — don't create a separate unsuffixed sibling.
+
+`runs/2D_thermocapillary_migration-<timestamp>` is an `--archive` snapshot — leave it alone.
 
 ## Pipeline
 
