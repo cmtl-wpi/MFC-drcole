@@ -110,6 +110,25 @@ YOU MUST run tests relevant to your changes before claiming work is done.
 NEVER commit code that does not compile or fails tests.
 NEVER use heredocs for git commit messages. Use simple `git commit -m "message"` instead.
 
+## Memory
+
+This project keeps a file-based memory system in `memory/`, co-located with this CLAUDE.md.
+Wherever a CLAUDE.md exists, a sibling `memory/` exists with it (e.g.
+`examples/2D_thermocapillary_migration/memory/`).
+
+IMPORTANT: Read `memory/MEMORY.md` (the index) at the start of work for context, and keep it
+current as work progresses — record non-obvious decisions, run/validation state, and gotchas
+that the code, README, and git history do not already capture.
+
+- One fact per file, kebab-case name, with frontmatter (`name`, `description`,
+  `metadata.type`). `type` is `project` | `reference` | `decision` | `feedback`.
+- After adding a file, add a one-line pointer to `memory/MEMORY.md`: `- [Title](file.md) — hook`.
+- Link related memories with `[[their-name]]`.
+- Scope: put project-wide facts in the root `memory/`; put facts specific to a subdirectory in
+  that subdirectory's `memory/` (the nearest one to the work).
+- Don't save what the repo already records (code structure, fixed bugs, git history, CLAUDE.md).
+  Before adding, check for an existing file that already covers it and update that instead.
+
 ## Architecture
 
 ```

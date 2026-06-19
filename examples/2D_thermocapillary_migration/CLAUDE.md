@@ -75,3 +75,10 @@ plot.py {samareh|ma|fields|clean}            # overlays / Ma sweep / field maps 
 If a case ever gets run in-place here, remove the leftovers afterward (all gitignored, none
 tracked): `restart_data/`, `D/`, `silo_hdf5/`, `viz/`, `out/`, `*.inp`, `*.dat`, `MFC.out`,
 `MFC.sh`, `run_time.inf`, `indices.dat`, `__pycache__/`. Don't commit them; don't leave them.
+
+## Memory
+
+This example has its own memory system in `memory/`, co-located with this CLAUDE.md. Read
+`memory/MEMORY.md` (the index) before working in this directory, and keep it current as work
+progresses. Put facts specific to this example here; project-wide facts go in the root
+`../../memory/`. Format and conventions are in `../../CLAUDE.md` (Memory section).
