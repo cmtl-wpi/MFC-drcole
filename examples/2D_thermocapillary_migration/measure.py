@@ -3,7 +3,7 @@
 
 One tool, three reporting modes (auto-detected from the domain, or forced with a 2nd argument):
 
-  fig5  (case_Ma_0.py, Samareh Sec 4.1.1 / Fig 5) -- v/v_YGB vs t/t_r. The drop rises in +y and is
+  fig5  (case_Ma_0p001.py, Samareh Sec 4.1.1 / Fig 5) -- v/v_YGB vs t/t_r. The drop rises in +y and is
         tracked by its color function. In the slip-wall box (Samareh's geometry, default) the box is
         the rest frame, so the lab-frame rise velocity is the measure; in an open box we report the
         drift-corrected U = u_drop - u_far. Reports the terminal velocity (post-overshoot minimum

@@ -15,6 +15,12 @@ landing in `runs/tc1/` is non-obvious. Verified from `run.py` (2026-06-19):
 | `fig7` | `tc2` | `case_Ma_20.py` | 2D low-Ma migration (U*/U_r, peak ~0.13) |
 | `tc3` | `tc3` | `../3D_thermocapillary_migration/case_Ma_1723.py` | 3D large-Ma + mu(T) |
 
-Gotcha: `run.py`'s header docstring says `fig5  case_Ma_0.py`, but the config dict actually
-uses `case_Ma_0p001.py`. So `case_Ma_0.py` looks orphaned (present on disk, not the live fig5
-case). The docstring is stale — trust the dict.
+Gotcha (fixed 2026-06-19): the `run.py` and `measure.py` header docstrings used to say
+`fig5 (case_Ma_0.py)`, but the live fig5 target is `case_Ma_0p001.py` (Ma=0.001, conduction
+TC1). Docstrings now corrected.
+
+`case_Ma_0.py` is NOT orphaned — it is a distinct, README-documented case: the literal
+**exactly Ma=0 frozen-T** reference (temperature frozen at the imposed linear profile, no
+conduction; fast). It is run manually (`./mfc.sh run case_Ma_0.py`), not via run.py's automated
+TARGETS, and feeds `runs/tc1/frozen/`. README case-file table + frozen-T grid-sweep section
+cover it. Do not delete.
