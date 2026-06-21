@@ -47,6 +47,11 @@ def collect():
         wd = os.path.dirname(inp)
         if not os.path.isdir(os.path.join(wd, "restart_data")):
             continue
+        # Only analyze FINISHED runs -- an in-progress run's partial data measures as an early-ramp
+        # value (the rise hasn't plateaued), which would silently pollute the convergence fits.
+        log = os.path.join(wd, "run.log")
+        if not (os.path.isfile(log) and "Finished MFC" in open(log).read()):
+            continue
         geom, wtok, nxtok, matok = os.path.relpath(wd, RUNS).split(os.sep)
         m = subprocess.run([sys.executable, os.path.join(HERE, "measure.py"), wd], capture_output=True, text=True, check=False)
         res = next((json.loads(l[len("RESULT_JSON ") :]) for l in m.stdout.splitlines() if l.startswith("RESULT_JSON ")), None)
