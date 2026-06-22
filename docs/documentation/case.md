@@ -505,6 +505,7 @@ See @ref equations "Equations" for the mathematical models these parameters cont
 | `t_save`                   | Real    | Time duration between data output |
 | `t_stop`                   | Real    | Simulation stop time |
 | `surface_tension`          | Logical | Activate surface tension |
+| `thermal_conduction`       | Logical | Activate bulk thermal conduction |
 | `viscous`                  | Logical | Activate viscosity |
 | `hypoelasticity`           | Logical | Activate hypoelasticity* |
 | `pre_stress`               | Logical | Enable pre-stress initialization for hypoelasticity |

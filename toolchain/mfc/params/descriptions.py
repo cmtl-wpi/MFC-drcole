@@ -103,6 +103,7 @@ DESCRIPTIONS = {
     "hypoelasticity": "Enable hypoelastic model",
     "hyperelasticity": "Enable hyperelastic model",
     "surface_tension": "Enable surface tension effects",
+    "thermal_conduction": "Enable bulk thermal conduction",
     "chemistry": "Enable chemical reactions",
     "mhd": "Enable magnetohydrodynamics",
     "hyper_cleaning": "Enable hyperbolic divergence cleaning for MHD",

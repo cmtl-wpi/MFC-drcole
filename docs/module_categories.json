@@ -22,6 +22,7 @@
             "m_viscous",
             "m_hb_function",
             "m_surface_tension",
+            "m_thermal_conduction",
             "m_bubbles",
             "m_bubbles_EE",
             "m_bubbles_EL",

@@ -435,6 +435,7 @@ contains
         poly_sigma = dflt_real
         qbmm = .false.
         surface_tension = .false.
+        thermal_conduction = .false.
         adv_n = .false.
         sigma = dflt_real
         bubbles_lagrange = .false.

@@ -311,16 +311,22 @@ contains
 
             call MPI_REDUCE(icfl_max_loc, icfl_max_glb, 1, mpi_p, MPI_MAX, 0, MPI_COMM_WORLD, ierr)
 
-            if (viscous) then
+            ! The VCFL field also carries the thermal-conduction diffusion number;
+            ! Rc is meaningful (and written) only on the viscous path
+            if (viscous .or. thermal_conduction) then
                 call MPI_REDUCE(vcfl_max_loc, vcfl_max_glb, 1, mpi_p, MPI_MAX, 0, MPI_COMM_WORLD, ierr)
+            end if
+            if (viscous) then
                 call MPI_REDUCE(Rc_min_loc, Rc_min_glb, 1, mpi_p, MPI_MIN, 0, MPI_COMM_WORLD, ierr)
             end if
         end block
 #else
         icfl_max_glb = icfl_max_loc
 
-        if (viscous) then
+        if (viscous .or. thermal_conduction) then
             vcfl_max_glb = vcfl_max_loc
+        end if
+        if (viscous) then
             Rc_min_glb = Rc_min_loc
         end if
 #endif
