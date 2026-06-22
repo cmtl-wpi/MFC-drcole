@@ -28,7 +28,7 @@ RUNS = os.path.join(HERE, "runs")
 CASE = "case_Ma_0p001.py"
 NX = 64
 
-PIN = ["taskset", "-c", "16-255"]
+PIN = ["taskset", "-c", "180-255"]  # off cores 0-165, where the concurrent ygb sweep is pinned
 NOBIND = {"OMPI_MCA_hwloc_base_binding_policy": "none"}
 
 MAS = {"ma0p1": "0.1", "ma0p01": "0.01", "ma0p001": "0.001"}
@@ -63,8 +63,7 @@ def prepare(ma_lbl, sc_lbl):
     text = open(os.path.join(HERE, CASE)).read()
     text, a = re.subn(r"(?m)^Ma = [0-9.]+", f"Ma = {MAS[ma_lbl]}", text, count=1)
     text, b = re.subn(r"(?m)^Nx = \d+", f"Nx = {NX}", text, count=1)
-    text, c = re.subn(r'"patch_icpp\(2\)%smooth_coeff": [0-9.]+',
-                      f'"patch_icpp(2)%smooth_coeff": {SCS[sc_lbl]}', text, count=1)
+    text, c = re.subn(r'"patch_icpp\(2\)%smooth_coeff": [0-9.]+', f'"patch_icpp(2)%smooth_coeff": {SCS[sc_lbl]}', text, count=1)
     assert a == 1 and b == 1 and c == 1, f"{name}: rewrite miss Ma={a} Nx={b} sc={c}"
     open(dst, "w").write(text)
     return name, wd, os.path.relpath(dst, REPO)
@@ -83,7 +82,10 @@ def main():
             log = open(os.path.join(wd, "run.log"), "w")
             p = subprocess.Popen(
                 PIN + ["./mfc.sh", "run", rel, "-n", str(ranks)],
-                cwd=REPO, env={**os.environ, **NOBIND}, stdout=log, stderr=subprocess.STDOUT,
+                cwd=REPO,
+                env={**os.environ, **NOBIND},
+                stdout=log,
+                stderr=subprocess.STDOUT,
             )
             jobs.append((n, p, log))
             print(f"launched {n} (pid {p.pid})", flush=True)
