@@ -166,16 +166,17 @@ def main(grids):
     ny0 = nys[0]
     fig3, (axe, axs) = plt.subplots(1, 2, figsize=(11, 4.6))
     for r in results:
-        rel = (r["u"] - r["u_ex"]) / cfg.U
+        rel = 1e4 * (r["u"] - r["u_ex"]) / cfg.U  # in units of 1e-4 for readable ticks
         axe.plot(rel, r["yc"], "-o", ms=3, label=f"Ny={r['ny']}")
         axs.plot(rel * (r["ny"] / ny0) ** 2, r["yc"], "-o", ms=3, label=f"Ny={r['ny']}")
     for a in (axe, axs):
         a.axvline(0.0, color="k", lw=0.6)
         a.set_ylabel("y / H")
         a.legend(fontsize=8)
-    axe.set_xlabel(r"$(u_{\rm MFC} - u_{\rm exact})\,/\,U$")
+        a.xaxis.set_major_locator(plt.MaxNLocator(5))
+    axe.set_xlabel(r"$(u_{\rm MFC} - u_{\rm exact})\,/\,U\quad[\times 10^{-4}]$")
     axe.set_title("relative velocity error")
-    axs.set_xlabel(r"$(u_{\rm MFC} - u_{\rm exact})/U \times (N_y/N_{y,0})^2$")
+    axs.set_xlabel(r"$(u_{\rm MFC} - u_{\rm exact})/U \times (N_y/N_{y,0})^2\quad[\times 10^{-4}]$")
     axs.set_title("grid-scaled error (collapse = 2nd order in space)")
     fig3.tight_layout()
     fig3.savefig(os.path.join(FIG, "couette_error.png"), dpi=130)
