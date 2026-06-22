@@ -19,13 +19,13 @@ $T = (p + p_\infty)/((\gamma-1)\rho c_v)$. The mode is imposed through the
 full **production setting** (temperature coupled to the flow). The resulting
 **few-percent physics floor** — spatially varying $\alpha = k/(\rho c_p)$ and weak
 $p\,\mathrm dV$ acoustics — is real physics, not a discretization defect; the formal
-order is isolated in `1D_Thermal_Conduction_Convergence`.
+order (2nd in space, 3rd in time) is masked by this floor.
 
 ## Run
 
 ```bash
-./mfc.sh run examples/3D_Thermal_Conduction_mode/case.py -n 16
-python3 examples/3D_Thermal_Conduction_mode/validate.py
+./mfc.sh run examples/3D_thermal_conduction_mode/case.py -n 16
+python3 examples/3D_thermal_conduction_mode/validate.py
 ```
 
 `validate.py` reads the in-place `restart_data/`, recovers $T$, compares to the

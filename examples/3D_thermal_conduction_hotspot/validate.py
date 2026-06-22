@@ -6,8 +6,8 @@ function, T0 + A (sigma0^2/sigma^2)^{3/2} exp(-r^2/2 sigma^2), sigma^2 =
 sigma0^2 + 2 alpha t. It must stay spherically symmetric (no directional bias).
 This script does NOT run MFC -- run the case first, then run this to analyze it:
 
-  ./mfc.sh run examples/3D_Thermal_Conduction_hotspot/case.py -n 16
-  python3 examples/3D_Thermal_Conduction_hotspot/validate.py
+  ./mfc.sh run examples/3D_thermal_conduction_hotspot/case.py -n 16
+  python3 examples/3D_thermal_conduction_hotspot/validate.py
 
 It recovers temperature from the EOS, compares to the exact Gaussian, checks the
 x/y/z center lines collapse, and writes figures/heat_3d_hotspot.png + summary.json.
@@ -112,7 +112,7 @@ def norms(num, ex):
 def main():
     rd = os.path.join(HERE, "restart_data")
     if not os.path.isdir(rd):
-        raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/3D_Thermal_Conduction_hotspot/case.py -n 16")
+        raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/3D_thermal_conduction_hotspot/case.py -n 16")
     dt, (m, n, p), (xc, yc, zc), steps, load = read_run(HERE)
     X, Y, Z = np.meshgrid(xc, yc, zc, indexing="ij")
     R = np.sqrt((X - L / 2) ** 2 + (Y - L / 2) ** 2 + (Z - L / 2) ** 2)

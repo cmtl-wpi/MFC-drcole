@@ -21,13 +21,13 @@ discretization defect): the local diffusivity $\alpha = k/(\rho c_p)$ varies in
 space ($\rho \propto 1/T$) while the closed form assumes constant $\alpha$, and
 conduction does $p\,\mathrm dV$ work, launching weak acoustics ($u\neq0$,
 $\mathrm{Ma}\sim10^{-3}$). The formal operator order (2nd space / 3rd time) is
-isolated in the companion `1D_Thermal_Conduction_Convergence` example.
+masked here by this floor.
 
 ## Run
 
 ```bash
-./mfc.sh run examples/1D_Thermal_Conduction/case.py -n 4
-python3 examples/1D_Thermal_Conduction/validate.py
+./mfc.sh run examples/1D_thermal_conduction/case.py -n 4
+python3 examples/1D_thermal_conduction/validate.py
 ```
 
 `validate.py` reads the `restart_data/` this case writes in place, recovers $T$ from
