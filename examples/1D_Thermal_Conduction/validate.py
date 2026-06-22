@@ -5,8 +5,8 @@ A sine-shaped temperature bump cools between fixed-temperature walls. The exact
 answer is T_wall + A sin(pi x/L) exp(-alpha (pi/L)^2 t). This script does NOT run
 MFC -- run the case first, then run this to analyze the result:
 
-  ./mfc.sh run examples/Thermal_Conduction_1D/case.py -n 4
-  python3 examples/Thermal_Conduction_1D/validate.py
+  ./mfc.sh run examples/1D_Thermal_Conduction/case.py -n 4
+  python3 examples/1D_Thermal_Conduction/validate.py
 
 It reads back the temperature MFC saved (restart_data/ in this directory), compares
 to the exact solution, reports the error, and writes figures/heat_1d.png + summary.json.
@@ -115,7 +115,7 @@ def norms(num, ex):
 def main():
     rd = os.path.join(HERE, "restart_data")
     if not os.path.isdir(rd):
-        raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/Thermal_Conduction_1D/case.py -n 4")
+        raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/1D_Thermal_Conduction/case.py -n 4")
     dt, (m, _, _), (xc, _, _), steps, load = read_run(HERE)
     t = np.array([s * dt for s in steps])
     nums = [temperature(load(s)) for s in steps]

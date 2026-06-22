@@ -11,9 +11,9 @@ sweeps, both produced by case.py with environment overrides (see Allrun):
 
 This script does NOT run MFC -- run the sweeps first (./Allrun), then:
 
-  python3 examples/Thermal_Conduction_Convergence/validate.py            # both
-  python3 examples/Thermal_Conduction_Convergence/validate.py spatial
-  python3 examples/Thermal_Conduction_Convergence/validate.py temporal
+  python3 examples/1D_Thermal_Conduction_Convergence/validate.py            # both
+  python3 examples/1D_Thermal_Conduction_Convergence/validate.py spatial
+  python3 examples/1D_Thermal_Conduction_Convergence/validate.py temporal
 
 It reads runs/<label>/, writes figures/convergence_{spatial,temporal}.png and
 summary.json.

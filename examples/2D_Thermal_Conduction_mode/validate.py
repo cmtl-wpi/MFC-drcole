@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Checks MFC's heat conduction against the exact 3D periodic-mode solution.
+"""Checks MFC's heat conduction against the exact 2D periodic-mode solution.
 
-A sine wave in a triply-periodic cube, T0 + A sin(kx) sin(ky) sin(kz), k = 2*pi/L,
-cooling evenly in every direction as exp(-3 alpha k^2 t). This script does NOT run
-MFC -- run the case first, then run this to analyze the result:
+A sine wave in a doubly-periodic box, T0 + A sin(kx) sin(ky), k = 2*pi/L, cools in
+place as exp(-2 alpha k^2 t). This script does NOT run MFC -- run the case first,
+then run this to analyze the result:
 
-  ./mfc.sh run examples/Thermal_Conduction_3D_mode/case.py -n 16
-  python3 examples/Thermal_Conduction_3D_mode/validate.py
+  ./mfc.sh run examples/2D_Thermal_Conduction_mode/case.py -n 8
+  python3 examples/2D_Thermal_Conduction_mode/validate.py
 
 It recovers temperature from the EOS, compares to the exact solution, fits the
-isotropic cooling rate, and writes figures/heat_3d_mode.png + summary.json.
+in-place cooling rate, and writes figures/heat_2d_mode.png + summary.json.
 
 How error is reported: L1 = average error, L2 = typical (root-mean-square) error,
 Linf = the single worst cell.
@@ -37,9 +37,9 @@ TWALL, AMP = 10.0, 3.0
 KW = 2.0 * math.pi / L  # periodic single-mode wavenumber
 
 
-def exact_3d_mode(X, Y, Z, t):
-    rate = ALPHA * 3.0 * KW**2
-    return TWALL + AMP * np.sin(KW * X) * np.sin(KW * Y) * np.sin(KW * Z) * math.exp(-rate * t)
+def exact_2d_mode(X, Y, t):
+    rate = ALPHA * 2.0 * KW**2
+    return TWALL + AMP * np.sin(KW * X) * np.sin(KW * Y) * math.exp(-rate * t)
 
 
 def read_run(rundir):
@@ -111,24 +111,24 @@ def norms(num, ex):
 def main():
     rd = os.path.join(HERE, "restart_data")
     if not os.path.isdir(rd):
-        raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/Thermal_Conduction_3D_mode/case.py -n 16")
-    dt, (m, n, p), (xc, yc, zc), steps, load = read_run(HERE)
-    X, Y, Z = np.meshgrid(xc, yc, zc, indexing="ij")
+        raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/2D_Thermal_Conduction_mode/case.py -n 8")
+    dt, (m, n, _), (xc, yc, _), steps, load = read_run(HERE)
+    X, Y = np.meshgrid(xc, yc, indexing="ij")  # [m,n]
     t = np.array([s * dt for s in steps])
-    rate_an = ALPHA * 3.0 * KW**2
+    rate_an = ALPHA * 2.0 * KW**2
     L1s, L2s, Lis, amp, umax = [], [], [], [], 0.0
     field_last = ex_last = None
     # per step: error norms vs analytic, plus the mode amplitude (projection of
-    # (T - T0) onto sin*sin*sin) whose exponential decay gives the cooling rate.
+    # (T - T0) onto sin*sin) whose exponential decay gives the cooling rate.
     for i, s in enumerate(steps):
         fields = load(s)
-        T = np.transpose(temperature(fields), (2, 1, 0))  # [z,y,x]->[x,y,z]
-        ex = exact_3d_mode(X, Y, Z, t[i])
+        T = np.transpose(temperature(fields), (1, 0))  # [y,x]->[x,y]
+        ex = exact_2d_mode(X, Y, t[i])
         nr = norms(T, ex)
         L1s.append(nr["L1"])
         L2s.append(nr["L2"])
         Lis.append(nr["Linf"])
-        amp.append(((T - TWALL) * np.sin(KW * X) * np.sin(KW * Y) * np.sin(KW * Z)).sum())
+        amp.append(((T - TWALL) * np.sin(KW * X) * np.sin(KW * Y)).sum())
         umax = max(umax, float(velocity_mag(fields).max()))
         if i == len(steps) - 1:
             field_last, ex_last = T, ex
@@ -138,20 +138,19 @@ def main():
 
     fig = plt.figure(figsize=(14, 8))
     gs = fig.add_gridspec(2, 3, height_ratios=[1.2, 1.0])
-    kz = p // 2
-    vmin, vmax = float(ex_last[:, :, kz].min()), float(ex_last[:, :, kz].max())
+    vmin, vmax = float(ex_last.min()), float(ex_last.max())
     ax0 = fig.add_subplot(gs[0, 0])
-    ax0.pcolormesh(xc, yc, field_last[:, :, kz].T, vmin=vmin, vmax=vmax, cmap="inferno", shading="auto")
-    ax0.set(title=f"MFC  T(x,y, z=L/2),  t={t[-1]:.3f}", xlabel="x", ylabel="y", aspect="equal")
+    ax0.pcolormesh(xc, yc, field_last.T, vmin=vmin, vmax=vmax, cmap="inferno", shading="auto")
+    ax0.set(title=f"MFC  T(x,y),  t={t[-1]:.3f}", xlabel="x", ylabel="y", aspect="equal")
     ax1 = fig.add_subplot(gs[0, 1])
-    im = ax1.pcolormesh(xc, yc, ex_last[:, :, kz].T, vmin=vmin, vmax=vmax, cmap="inferno", shading="auto")
+    im = ax1.pcolormesh(xc, yc, ex_last.T, vmin=vmin, vmax=vmax, cmap="inferno", shading="auto")
     ax1.set(title="analytic", xlabel="x", ylabel="y", aspect="equal")
     fig.colorbar(im, ax=[ax0, ax1], shrink=0.8, label="T")
-    jy = n // 2
+    jy = n // 4  # probe the antinode (y=L/4); y=L/2 is a node of sin(ky)
     ax2 = fig.add_subplot(gs[0, 2])
-    ax2.plot(xc, ex_last[:, jy, kz], "k-", lw=2, label="analytic")
-    ax2.plot(xc[::3], field_last[::3, jy, kz], "C3o", ms=4, mfc="none", label="MFC")
-    ax2.set(title="center line  y=z=L/2", xlabel="x", ylabel="T")
+    ax2.plot(xc, ex_last[:, jy], "k-", lw=2, label="analytic")
+    ax2.plot(xc[::3], field_last[::3, jy], "C3o", ms=4, mfc="none", label="MFC")
+    ax2.set(title="line  y=L/4 (antinode)", xlabel="x", ylabel="T")
     ax2.legend(fontsize=9)
     ax3 = fig.add_subplot(gs[1, 0])
     ax3.semilogy(t, L1s, "C0-o", ms=3, label="L1")
@@ -162,23 +161,23 @@ def main():
     ax4 = fig.add_subplot(gs[1, 1])
     ax4.plot(t, amp / amp[0], "C0-", lw=2, label="MFC")
     ax4.plot(t, np.exp(-rate_an * t), "k--", lw=1.5, label=f"e^(−{rate_an:.2f}t)")
-    ax4.set(xlabel="t", ylabel="wave height", title=f"cooling rate: measured {rate:.3f} vs exact {rate_an:.3f} ({rate_err:.1f}%)")
+    ax4.set(xlabel="t", ylabel="mode amplitude", title=f"cooling rate: measured {rate:.3f} vs exact {rate_an:.3f} ({rate_err:.1f}%)")
     ax4.legend(fontsize=9)
     ax5 = fig.add_subplot(gs[1, 2])
     ax5.axis("off")
-    ax5.text(0.0, 0.95, f"grid {m}³\nmax|u| = {umax:.1e}\n\npeak L∞ = {Lis.max():.3e}\nfinal L2 = {L2s[-1]:.3e}\n\nrate err = {rate_err:.2f}%", va="top", family="monospace", fontsize=10)
-    fig.suptitle("3D heat: a sine wave in a box, cooling evenly in every direction", fontweight="bold")
+    ax5.text(0.0, 0.95, f"grid {m}×{n}\nmax|u| = {umax:.1e}\n\npeak L∞ = {Lis.max():.3e}\nfinal L2 = {L2s[-1]:.3e}\n\nrate err = {rate_err:.2f}%", va="top", family="monospace", fontsize=10)
+    fig.suptitle("2D heat: a sine wave in a periodic box, cooling in place", fontweight="bold")
     fig.tight_layout()
     os.makedirs(FIG, exist_ok=True)
-    fig.savefig(os.path.join(FIG, "heat_3d_mode.png"), dpi=130)
+    fig.savefig(os.path.join(FIG, "heat_2d_mode.png"), dpi=130)
     plt.close(fig)
-    print(f"  3D mode: peak L∞={Lis.max():.3e}  final L2={L2s[-1]:.3e}  rate {rate:.3f} vs {rate_an:.3f} ({rate_err:.2f}%)  max|u|={umax:.1e}")
+    print(f"  2D mode: peak L∞={Lis.max():.3e}  final L2={L2s[-1]:.3e}  rate {rate:.3f} vs {rate_an:.3f} ({rate_err:.2f}%)  max|u|={umax:.1e}")
     json.dump(
-        {"heat_3d_mode": {"N": int(m), "max_u": umax, "measured_rate": rate, "analytic_rate": rate_an, "rate_error_pct": rate_err, "Linf_peak": float(Lis.max()), "L2_final": float(L2s[-1])}},
+        {"heat_2d_mode": {"N": int(m), "max_u": umax, "measured_rate": rate, "analytic_rate": rate_an, "rate_error_pct": rate_err, "Linf_peak": float(Lis.max()), "L2_final": float(L2s[-1])}},
         open(SUMMARY, "w"),
         indent=2,
     )
-    print(f"  wrote {os.path.relpath(os.path.join(FIG, 'heat_3d_mode.png'), HERE)}, summary.json")
+    print(f"  wrote {os.path.relpath(os.path.join(FIG, 'heat_2d_mode.png'), HERE)}, summary.json")
 
 
 if __name__ == "__main__":

@@ -28,9 +28,9 @@ conduction-driven acoustics — does not vanish under grid refinement.
 `CONV_NSTEPS`); `Allrun` drives both sweeps into `runs/<label>/`:
 
 ```bash
-examples/Thermal_Conduction_Convergence/Allrun           # both sweeps
-examples/Thermal_Conduction_Convergence/Allrun spatial   # grid sweep only
-python3 examples/Thermal_Conduction_Convergence/validate.py
+examples/1D_Thermal_Conduction_Convergence/Allrun           # both sweeps
+examples/1D_Thermal_Conduction_Convergence/Allrun spatial   # grid sweep only
+python3 examples/1D_Thermal_Conduction_Convergence/validate.py
 ```
 
 `validate.py` reads `runs/<label>/`, fits the slopes, and writes

@@ -21,13 +21,13 @@ $T = (p + p_\infty)/((\gamma-1)\rho c_v)$. The blob is imposed through the
 full **production setting** (temperature coupled to the flow). The resulting
 **few-percent physics floor** — spatially varying $\alpha = k/(\rho c_p)$ and weak
 $p\,\mathrm dV$ acoustics — is real physics, not a discretization defect; the formal
-order is isolated in `Thermal_Conduction_Convergence`.
+order is isolated in `1D_Thermal_Conduction_Convergence`.
 
 ## Run
 
 ```bash
-./mfc.sh run examples/Thermal_Conduction_3D_hotspot/case.py -n 16
-python3 examples/Thermal_Conduction_3D_hotspot/validate.py
+./mfc.sh run examples/3D_Thermal_Conduction_hotspot/case.py -n 16
+python3 examples/3D_Thermal_Conduction_hotspot/validate.py
 ```
 
 `validate.py` reads the in-place `restart_data/`, recovers $T$, compares to the
