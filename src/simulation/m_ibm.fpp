@@ -718,8 +718,7 @@ contains
 
     !> Interpolate primitive variables to a ghost point's image point using bilinear or trilinear interpolation
     subroutine s_interpolate_image_point(q_prim_vf, gp, alpha_rho_IP, alpha_IP, pres_IP, vel_IP, c_IP, r_IP, v_IP, pb_IP, mv_IP, &
-
-        & nmom_IP, pb_in, mv_in, presb_IP, massv_IP)
+                                         & nmom_IP, pb_in, mv_in, presb_IP, massv_IP)
         $:GPU_ROUTINE(parallelism='[seq]')
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf  !< Primitive Variables
         real(stp), optional, dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:,1:), intent(in) :: pb_in, mv_in

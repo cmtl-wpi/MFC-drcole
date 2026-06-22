@@ -479,9 +479,8 @@ contains
 
     !> Computes viscous terms
     subroutine s_get_viscous(qL_prim_rsx_vf, qL_prim_rsy_vf, qL_prim_rsz_vf, dqL_prim_dx_n, dqL_prim_dy_n, dqL_prim_dz_n, &
-
-        & qL_prim, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_n, dqR_prim_dy_n, dqR_prim_dz_n, qR_prim, &
-            & q_prim_qp, dq_prim_dx_qp, dq_prim_dy_qp, dq_prim_dz_qp, ix, iy, iz)
+                             & qL_prim, qR_prim_rsx_vf, qR_prim_rsy_vf, qR_prim_rsz_vf, dqR_prim_dx_n, dqR_prim_dy_n, &
+                             & dqR_prim_dz_n, qR_prim, q_prim_qp, dq_prim_dx_qp, dq_prim_dy_qp, dq_prim_dz_qp, ix, iy, iz)
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: qL_prim_rsx_vf, qR_prim_rsx_vf, &
              & qL_prim_rsy_vf, qR_prim_rsy_vf, qL_prim_rsz_vf, qR_prim_rsz_vf
@@ -849,7 +848,6 @@ contains
 
     !> Reconstruct left and right cell-boundary values of viscous primitive variables
     subroutine s_reconstruct_cell_boundary_values_visc(v_vf, vL_x, vL_y, vL_z, vR_x, vR_y, vR_z, norm_dir, vL_prim_vf, &
-
         & vR_prim_vf, ix, iy, iz)
 
         type(scalar_field), dimension(iv%beg:iv%end), intent(in) :: v_vf
@@ -946,7 +944,6 @@ contains
 
     !> Reconstruct left and right cell-boundary values of viscous primitive variable derivatives
     subroutine s_reconstruct_cell_boundary_values_visc_deriv(v_vf, vL_x, vL_y, vL_z, vR_x, vR_y, vR_z, norm_dir, vL_prim_vf, &
-
         & vR_prim_vf, ix, iy, iz)
         type(scalar_field), dimension(iv%beg:iv%end), intent(in)                                    :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,iv%beg:), intent(inout) :: vL_x, vL_y, vL_z, vR_x, &

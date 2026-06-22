@@ -92,8 +92,7 @@ contains
 
     !> Perform MUSCL reconstruction of left and right cell-boundary values from cell-averaged variables
     subroutine s_muscl(v_vf, vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, muscl_dir, is1_muscl_d, &
-
-        & is2_muscl_d, is3_muscl_d)
+                       & is2_muscl_d, is3_muscl_d)
 
         type(scalar_field), dimension(1:), intent(in)                                          :: v_vf
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x, vL_rs_vf_y, &
@@ -218,8 +217,7 @@ contains
 
     !> Apply THINC interface-compression to sharpen volume-fraction reconstructions at material interfaces
     subroutine s_interface_compression(vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, muscl_dir, &
-
-        & is1_muscl_d, is2_muscl_d, is3_muscl_d)
+                                       & is1_muscl_d, is2_muscl_d, is3_muscl_d)
 
         real(wp), dimension(idwbuff(1)%beg:,idwbuff(2)%beg:,idwbuff(3)%beg:,1:), intent(inout) :: vL_rs_vf_x, vL_rs_vf_y, &
              & vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z
@@ -241,7 +239,6 @@ contains
                             moncon = (aCR - aC)*(aC - aCL)
 
                             if (aC >= ic_eps .and. aC <= 1._wp - ic_eps .and. moncon > moncon_cutoff) then  ! Interface cell
-
                                 if (aCR - aCL > 0._wp) then
                                     sign = 1._wp
                                 else
