@@ -861,6 +861,9 @@ def _load():
         _r(f"{px}mu_min", REAL, {"viscosity"}, math=r"\mu_{\min,k}")
         _r(f"{px}mu_max", REAL, {"viscosity"}, math=r"\mu_{\max,k}")
         _r(f"{px}mu_bulk", REAL, {"viscosity"}, math=r"\mu_{\mathrm{bulk},k}")
+        _r(f"{px}visc_model", INT, {"viscosity"})
+        _r(f"{px}visc_c", REAL, {"viscosity"}, math=r"\f$C_{\mu,k}\f$")
+        _r(f"{px}visc_d", REAL, {"viscosity"}, math=r"\f$D_{\mu,k}\f$")
 
     # bub_pp (bubble properties)
     for a, sym in [

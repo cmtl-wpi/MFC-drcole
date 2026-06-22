@@ -67,6 +67,7 @@ contains
         #:endif
         real(wp)               :: Cp_avg, Cv_avg, T_avg, c_sum_Yi_Phi, eps
         real(wp)               :: T_L, T_R
+        real(wp)               :: mCP_L, mCP_R      !< mixture heat capacity for the Arrhenius mu(T) temperature
         real(wp)               :: MW_L, MW_R
         real(wp)               :: R_gas_L, R_gas_R
         real(wp)               :: Cp_L, Cp_R
@@ -144,9 +145,9 @@ contains
                                         & Ys_R, Xs_L, Xs_R, Gamma_iL, Gamma_iR, Cp_iL, Cp_iR, Yi_avg, Phi_avg, h_iL, h_iR, &
                                         & h_avg_2, tau_e_L, tau_e_R, flux_ene_e, xi_field_L, xi_field_R, pcorr, zcoef, rho_L, &
                                         & rho_R, pres_L, pres_R, E_L, E_R, H_L, H_R, Cp_avg, Cv_avg, T_avg, eps, c_sum_Yi_Phi, &
-                                        & T_L, T_R, Y_L, Y_R, MW_L, MW_R, R_gas_L, R_gas_R, Cp_L, Cp_R, Cv_L, Cv_R, Gamm_L, &
-                                        & Gamm_R, gamma_L, gamma_R, pi_inf_L, pi_inf_R, qv_L, qv_R, qv_avg, c_L, c_R, G_L, G_R, &
-                                        & rho_avg, H_avg, c_avg, gamma_avg, ptilde_L, ptilde_R, vel_L_rms, vel_R_rms, &
+                                        & T_L, T_R, mCP_L, mCP_R, Y_L, Y_R, MW_L, MW_R, R_gas_L, R_gas_R, Cp_L, Cp_R, Cv_L, Cv_R, &
+                                        & Gamm_L, Gamm_R, gamma_L, gamma_R, pi_inf_L, pi_inf_R, qv_L, qv_R, qv_avg, c_L, c_R, &
+                                        & G_L, G_R, rho_avg, H_avg, c_avg, gamma_avg, ptilde_L, ptilde_R, vel_L_rms, vel_R_rms, &
                                         & vel_avg_rms, vel_L_tmp, vel_R_tmp, Ms_L, Ms_R, pres_SL, pres_SR, alpha_L_sum, &
                                         & alpha_R_sum, rho_Star, E_Star, p_Star, p_K_Star, vel_K_star, s_L, s_R, s_M, s_P, s_S, &
                                         & xi_M, xi_P, xi_L, xi_R, xi_L_m1, xi_R_m1, xi_MP, xi_PP]', firstprivate='[Re_size_loc1, Re_size_loc2]')
@@ -227,6 +228,19 @@ contains
                                 end do
 
                                 if (viscous) then
+                                    if (viscous_T_dependent) then
+                                        ! Mixture stiffened-gas temperature for the Arrhenius mu(T) shear-viscosity override.
+                                        ! mCP = sum(alpha_rho_i*cv_i*gamma_i); T = ((Gamma+1)*p + pi_inf)/mCP (matches
+                                        ! f_compute_mixture_temperature).
+                                        mCP_L = 0._wp; mCP_R = 0._wp
+                                        $:GPU_LOOP(parallelism='[seq]')
+                                        do i = 1, num_fluids
+                                            mCP_L = mCP_L + qL_prim_rsx_vf(${SF('')}$, i)*cvs(i)*gs_min(i)
+                                            mCP_R = mCP_R + qR_prim_rsx_vf(${SF(' + 1')}$, i)*cvs(i)*gs_min(i)
+                                        end do
+                                        T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
+                                        T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
+                                    end if
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do i = 1, 2
                                         Re_L(i) = dflt_real
@@ -235,9 +249,21 @@ contains
                                         if (merge(Re_size_loc1, Re_size_loc2, i == 1) > 0) Re_R(i) = 0._wp
                                         $:GPU_LOOP(parallelism='[seq]')
                                         do q = 1, merge(Re_size_loc1, Re_size_loc2, i == 1)
-                                            Re_L(i) = qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + Re_idx(i, q))/Res_gs(i, q) + Re_L(i)
-                                            Re_R(i) = qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + Re_idx(i, q))/Res_gs(i, &
-                                                 & q) + Re_R(i)
+                                            ! Arrhenius mu(T) = exp(C + D/T) overrides the constant shear viscosity (i == 1) for
+                                            ! fluids with visc_model == 1; Res_gs stores the constant 1/mu for all other cases.
+                                            if (i == 1 .and. viscous_T_dependent .and. visc_models(Re_idx(i, q)) == 1) then
+                                                Re_L(i) = qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + Re_idx(i, &
+                                                     & q))*exp(visc_cs(Re_idx(i, q)) + visc_ds(Re_idx(i, q))/max(T_L, &
+                                                     & sgm_eps)) + Re_L(i)
+                                                Re_R(i) = qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + Re_idx(i, &
+                                                     & q))*exp(visc_cs(Re_idx(i, q)) + visc_ds(Re_idx(i, q))/max(T_R, &
+                                                     & sgm_eps)) + Re_R(i)
+                                            else
+                                                Re_L(i) = qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + Re_idx(i, q))/Res_gs(i, &
+                                                     & q) + Re_L(i)
+                                                Re_R(i) = qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + Re_idx(i, q))/Res_gs(i, &
+                                                     & q) + Re_R(i)
+                                            end if
                                         end do
                                         Re_L(i) = 1._wp/max(Re_L(i), sgm_eps)
                                         Re_R(i) = 1._wp/max(Re_R(i), sgm_eps)
