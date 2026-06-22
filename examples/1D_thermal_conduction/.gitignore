@@ -1,0 +1,11 @@
+# MFC run artifacts (this case runs in place; rerun ./mfc.sh run case.py to regenerate).
+# Keep case.py, validate.py, README.md, figures/, diagrams/, summary.json.
+restart_data/
+silo_hdf5/
+D/
+*.inp
+*.dat
+*.inf
+MFC.out
+MFC.sh
+__pycache__/
