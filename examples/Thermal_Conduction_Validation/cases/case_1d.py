@@ -62,7 +62,6 @@ print(
             "precision": 2,
             "prim_vars_wrt": "T",
             "cons_vars_wrt": "T",
-            "T_wrt": "T",  # write temperature recovered from the EOS so post_process/viz can plot T
             "parallel_io": "T",
             # Thermal conduction (EOS temperature)
             "thermal_conduction": "T",
