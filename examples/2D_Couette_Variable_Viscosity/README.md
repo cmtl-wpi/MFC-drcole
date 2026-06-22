@@ -123,8 +123,12 @@ the constant-viscosity **0.500** -- the signal a constant-`mu` code cannot produ
 | 65 | 3.41e-5  | 4.85e-5   | 3.93e-7  |
 | 97 | 1.53e-5  | 2.20e-5   | 1.75e-7  |
 
-Observed spatial order (L2 velocity) = **2.00**. Figures in `figures/`
-(`couette_profiles.png`, `couette_convergence.png`); full data in `summary.json`.
+Observed spatial order (L2 velocity) = **2.00**. Figures in `figures/`: profile
+overlay (`couette_profiles.png`), L2 convergence (`couette_convergence.png`), and
+the spatial relative error (`couette_error.png`) -- the latter shows the
+pointwise `(u - u_exact)/U` shrinking with refinement and collapsing under an
+`Ny^2` rescaling, i.e. the second-order accuracy holds everywhere in the gap, not
+just in the L2 norm. Full data in `summary.json`.
 
 ## Scope and the companion benchmark
 

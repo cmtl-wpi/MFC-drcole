@@ -158,6 +158,28 @@ def main(grids):
     fig2.tight_layout()
     fig2.savefig(os.path.join(FIG, "couette_convergence.png"), dpi=130)
 
+    # --- figure 3: spatial relative error ---
+    # Left: signed relative velocity error along the gap, one curve per grid --
+    # shows where the error lives and that it shrinks under refinement. Right: the
+    # same error scaled by (Ny/Ny_coarsest)^2; the curves collapse onto one shape,
+    # so the 2nd-order convergence holds pointwise, not just in the L2 norm.
+    ny0 = nys[0]
+    fig3, (axe, axs) = plt.subplots(1, 2, figsize=(11, 4.6))
+    for r in results:
+        rel = (r["u"] - r["u_ex"]) / cfg.U
+        axe.plot(rel, r["yc"], "-o", ms=3, label=f"Ny={r['ny']}")
+        axs.plot(rel * (r["ny"] / ny0) ** 2, r["yc"], "-o", ms=3, label=f"Ny={r['ny']}")
+    for a in (axe, axs):
+        a.axvline(0.0, color="k", lw=0.6)
+        a.set_ylabel("y / H")
+        a.legend(fontsize=8)
+    axe.set_xlabel(r"$(u_{\rm MFC} - u_{\rm exact})\,/\,U$")
+    axe.set_title("relative velocity error")
+    axs.set_xlabel(r"$(u_{\rm MFC} - u_{\rm exact})/U \times (N_y/N_{y,0})^2$")
+    axs.set_title("grid-scaled error (collapse = 2nd order in space)")
+    fig3.tight_layout()
+    fig3.savefig(os.path.join(FIG, "couette_error.png"), dpi=130)
+
     # --- summary.json ---
     summary = {
         "config": {
@@ -176,7 +198,8 @@ def main(grids):
         "grids": [{k: r[k] for k in ("N", "ny", "dy", "nsteps", "unsteadiness", "err_u_L2", "err_u_Linf", "err_T_L2")} for r in results],
     }
     json.dump(summary, open(SUMMARY, "w"), indent=2)
-    print(f"\nwrote {SUMMARY}\nwrote {FIG}/couette_profiles.png, {FIG}/couette_convergence.png")
+    print(f"\nwrote {SUMMARY}")
+    print(f"wrote {FIG}/couette_profiles.png, couette_convergence.png, couette_error.png")
 
 
 if __name__ == "__main__":
