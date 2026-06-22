@@ -130,7 +130,7 @@ DESCRIPTIONS = {
     "c_wrt": "Write sound speed field",
     "omega_wrt": "Write vorticity field",
     "cf_wrt": "Write color function field",
-    "T_s_wrt": "Write independent temperature scalar field",
+    "T_wrt": "Write EOS-derived mixture temperature field",
     # Immersed boundaries
     "ib": "Enable immersed boundary method",
     "num_ibs": "Number of immersed boundary patches",
@@ -161,7 +161,6 @@ DESCRIPTIONS = {
     "sigma_T_ref": "Reference temperature for the linear sigma(T) closure",
     "sigma_dTdT": "dsigma/dT slope for the linear sigma(T) closure",
     "thermal_conduction": "Enable bulk Fourier heat conduction in the energy equation",
-    "thermal_scalar": "Carry temperature as an independent advected scalar, decoupled from the EOS",
     "Bx0": "Background magnetic field in x-direction",
     "relax": "Enable relaxation terms",
     "adv_n": "Enable advection of number density",

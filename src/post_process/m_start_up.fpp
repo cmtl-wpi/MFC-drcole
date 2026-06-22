@@ -66,12 +66,12 @@ contains
             & prim_vars_wrt, c_wrt, omega_wrt, qm_wrt, liutex_wrt, schlieren_wrt, schlieren_alpha, fd_order, mixture_err, &
             & alt_soundspeed, flux_lim, flux_wrt, cyl_coord, parallel_io, rhoref, pref, bubbles_euler, qbmm, sigR, R0ref, nb, &
             & polytropic, thermal, Ca, Web, Re_inv, polydisperse, poly_sigma, file_per_process, relax, relax_model, cf_wrt, &
-            & T_s_wrt, sigma, adv_n, ib, num_ibs, cfl_adap_dt, cfl_const_dt, t_save, t_stop, n_start, cfl_target, &
-            & surface_tension, thermal_scalar, sigma_model, sigma_T_ref, sigma_dTdT, bubbles_lagrange, sim_data, hyperelasticity, &
-            & Bx0, relativity, cont_damage, hyper_cleaning, num_bc_patches, igr, igr_order, down_sample, recon_type, muscl_order, &
-            & lag_header, lag_txt_wrt, lag_db_wrt, lag_id_wrt, lag_pos_wrt, lag_pos_prev_wrt, lag_vel_wrt, lag_rad_wrt, &
-            & lag_rvel_wrt, lag_r0_wrt, lag_rmax_wrt, lag_rmin_wrt, lag_dphidt_wrt, lag_pres_wrt, lag_mv_wrt, lag_mg_wrt, &
-            & lag_betaT_wrt, lag_betaC_wrt, alpha_rho_e_wrt, ib_state_wrt
+            & T_wrt, sigma, adv_n, ib, num_ibs, cfl_adap_dt, cfl_const_dt, t_save, t_stop, n_start, cfl_target, surface_tension, &
+            & sigma_model, sigma_T_ref, sigma_dTdT, bubbles_lagrange, sim_data, hyperelasticity, Bx0, relativity, cont_damage, &
+            & hyper_cleaning, num_bc_patches, igr, igr_order, down_sample, recon_type, muscl_order, lag_header, lag_txt_wrt, &
+            & lag_db_wrt, lag_id_wrt, lag_pos_wrt, lag_pos_prev_wrt, lag_vel_wrt, lag_rad_wrt, lag_rvel_wrt, lag_r0_wrt, &
+            & lag_rmax_wrt, lag_rmin_wrt, lag_dphidt_wrt, lag_pres_wrt, lag_mv_wrt, lag_mg_wrt, lag_betaT_wrt, lag_betaC_wrt, &
+            & alpha_rho_e_wrt, ib_state_wrt
 
         file_loc = 'post_process.inp'
         inquire (FILE=trim(file_loc), EXIST=file_check)
@@ -192,6 +192,7 @@ contains
         character(50) :: filename
         logical       :: file_exists
         integer       :: x_beg, x_end, y_beg, y_end, z_beg, z_end
+        real(wp)      :: mCP  !< Mixture rho*cp for the EOS-derived temperature (T_wrt)
 
         if (output_partial_domain) then
             call s_define_output_region
@@ -683,9 +684,22 @@ contains
             varname(:) = ' '
         end if
 
-        if (T_s_wrt) then
-            q_sf(:,:,:) = q_cons_vf(eqn_idx%T_s)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
-            write (varname, '(A,I0)') 'temperature_scalar'
+        if (T_wrt) then
+            ! EOS-derived mixture temperature T = ((gamma_mix + 1)*p + pi_inf_mix)/mCP, with
+            ! mCP = sum_i alpha_rho_i*cv_i*gs_min_i (matches f_compute_mixture_temperature).
+            do k = -offset_z%beg, p + offset_z%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do i = -offset_x%beg, m + offset_x%end
+                        mCP = 0._wp
+                        do l = 1, num_fluids
+                            mCP = mCP + q_prim_vf(eqn_idx%cont%beg + l - 1)%sf(i, j, k)*cvs(l)*gs_min(l)
+                        end do
+                        q_sf(i, j, k) = ((gamma_sf(i, j, k) + 1._wp)*q_prim_vf(eqn_idx%E)%sf(i, j, k) + pi_inf_sf(i, j, &
+                             & k))/max(mCP, sgm_eps)
+                    end do
+                end do
+            end do
+            write (varname, '(A)') 'temperature'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
         end if

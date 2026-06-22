@@ -7,10 +7,8 @@
 !> @brief Bulk Fourier heat conduction for non-reacting flows: an explicit face flux accumulated into the source flux array and
 !! differenced in s_compute_additional_physics_rhs. The cell conductivity follows the harmonic mixture closure 1/k =
 !! sum(alpha_i/k_i) (Samareh et al. 2014, Eq. 8) over the per-fluid constants fluid_pp(i)%k_therm. The face flux stored at index x
-!! is the face between cells x and x+1 (chemistry diffusion convention). Two modes: by default temperature is recovered from the
-!! mixture stiffened-gas EOS and -k*grad(T) is added to the energy slot; when thermal_scalar is on the temperature is read from the
-!! independent advected scalar eqn_idx%T_s and the diffusivity flux -alpha*grad(T_s) (alpha = k/(rho*cp)) is added to that slot,
-!! decoupling temperature from density. Independent of the chemistry module's chem_params%diffusion path.
+!! is the face between cells x and x+1 (chemistry diffusion convention). Temperature is recovered from the mixture stiffened-gas EOS
+!! and -k*grad(T) is added to the energy slot. Independent of the chemistry module's chem_params%diffusion path.
 module m_thermal_conduction
 
     use m_derived_types      !< Definitions of the derived types
@@ -49,13 +47,8 @@ contains
         do l = idwbuff(3)%beg, idwbuff(3)%end
             do k = idwbuff(2)%beg, idwbuff(2)%end
                 do j = idwbuff(1)%beg, idwbuff(1)%end
-                    if (thermal_scalar) then
-                        ! Independent temperature field carried as its own advected scalar
-                        T_tc(j, k, l) = q_prim_vf(eqn_idx%T_s)%sf(j, k, l)
-                    else
-                        ! Temperature recovered algebraically from the mixture stiffened-gas EOS
-                        T_tc(j, k, l) = f_compute_mixture_temperature(q_prim_vf, j, k, l)
-                    end if
+                    ! Temperature recovered algebraically from the mixture stiffened-gas EOS
+                    T_tc(j, k, l) = f_compute_mixture_temperature(q_prim_vf, j, k, l)
                 end do
             end do
         end do
@@ -214,18 +207,7 @@ contains
 
                     dT_dxi = (T_tc(x + offsets(1), y + offsets(2), z + offsets(3)) - T_tc(x, y, z))/grid_spacing
 
-                    if (thermal_scalar) then
-                        ! Independent temperature scalar: store the CONSERVATIVE conductive heat flux
-                        ! -k_face*dT/dx (same form as the energy slot). The variable-property division
-                        ! by the LOCAL cell rho*cp = sum_i alpha_rho_i*cv_i*gamma_i is applied to the
-                        ! flux divergence in m_rhs, giving the correct rho*cp dT/dt = div(k grad T).
-                        ! (Folding alpha = k/(rho*cp) inside the divergence is only valid for uniform
-                        ! rho*cp; with a property jump it injects a spurious (rho*cp)' term that
-                        ! reverses thermocapillary migration -- see CONDUCTION_REVERSAL_SAGA.md.)
-                        flux_src_vf(eqn_idx%T_s)%sf(x, y, z) = flux_src_vf(eqn_idx%T_s)%sf(x, y, z) - k_face*dT_dxi
-                    else
-                        flux_src_vf(eqn_idx%E)%sf(x, y, z) = flux_src_vf(eqn_idx%E)%sf(x, y, z) - k_face*dT_dxi
-                    end if
+                    flux_src_vf(eqn_idx%E)%sf(x, y, z) = flux_src_vf(eqn_idx%E)%sf(x, y, z) - k_face*dT_dxi
                 end do
             end do
         end do

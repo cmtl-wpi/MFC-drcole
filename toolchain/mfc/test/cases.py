@@ -267,34 +267,6 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                 },
             )
         )
-        # Independent temperature scalar (thermal_scalar): temperature carried as its own
-        # advected scalar (eqn_idx%T_s), prescribed per patch via patch_icpp%T_temp_val and
-        # read by sigma(T) instead of the EOS, decoupling it from density. The bare leaf
-        # exercises passive advection + the sigma(T_s) coupling; the thermal_conduction leaf
-        # also exercises the retargeted -alpha*grad(T_s) diffusion into the T_s slot.
-        stack.push(
-            "Thermal Scalar",
-            {
-                "sigma_model": 1,
-                "sigma_dTdT": -1e-6,
-                "sigma_T_ref": 0,
-                "thermal_scalar": "T",
-                "fluid_pp(1)%cv": 1816,
-                "fluid_pp(2)%cv": 717.5,
-                "patch_icpp(1)%T_temp_val": 1.0,
-                "patch_icpp(2)%T_temp_val": 0.5,
-                "patch_icpp(3)%T_temp_val": 1.0,
-            },
-        )
-        cases.append(define_case_d(stack, [], {}))
-        cases.append(
-            define_case_d(
-                stack,
-                ["thermal_conduction=T"],
-                {"thermal_conduction": "T", "fluid_pp(1)%k_therm": 0.01, "fluid_pp(2)%k_therm": 0.01},
-            )
-        )
-        stack.pop()
         stack.pop()
 
     def alter_weno(dimInfo):
@@ -1980,30 +1952,6 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                 "thermal_conduction": "T",
                 "fluid_pp(1)%k_therm": 0.5,
                 "fluid_pp(1)%cv": 717.5,
-                "patch_icpp(2)%z_centroid": 0.3,
-                "patch_icpp(2)%length_z": 0.4,
-                "patch_icpp(3)%z_centroid": 0.75,
-                "patch_icpp(3)%length_z": 0.5,
-            },
-        )
-        cases.append(define_case_d(stack, "", {}, ppn=2))
-        stack.pop()
-
-        # Independent temperature scalar with 2 MPI ranks: the appended T_s conserved variable
-        # rides the generic halo exchange, and the retargeted conductive flux into the T_s slot at
-        # the shared rank boundary is built from ghost-cell values, so a distinct T_temp_val per
-        # patch (a temperature jump on the z = 0.5 face) pins the cross-rank stencil from step one.
-        stack.push(
-            "MPI Consistency -> 3D -> Thermal Scalar",
-            {
-                **base_3d,
-                "thermal_scalar": "T",
-                "thermal_conduction": "T",
-                "fluid_pp(1)%k_therm": 0.5,
-                "fluid_pp(1)%cv": 717.5,
-                "patch_icpp(1)%T_temp_val": 1.0,
-                "patch_icpp(2)%T_temp_val": 0.8,
-                "patch_icpp(3)%T_temp_val": 1.0,
                 "patch_icpp(2)%z_centroid": 0.3,
                 "patch_icpp(2)%length_z": 0.4,
                 "patch_icpp(3)%z_centroid": 0.75,

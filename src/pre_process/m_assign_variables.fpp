@@ -544,10 +544,6 @@ contains
             q_prim_vf(eqn_idx%c)%sf(j, k, l) = eta*patch_icpp(patch_id)%cf_val + (1._wp - eta)*orig_prim_vf(eqn_idx%c)
         end if
 
-        if (thermal_scalar) then
-            q_prim_vf(eqn_idx%T_s)%sf(j, k, l) = eta*patch_icpp(patch_id)%T_temp_val + (1._wp - eta)*orig_prim_vf(eqn_idx%T_s)
-        end if
-
         if (1._wp - eta < 1.e-16_wp) patch_id_fp(j, k, l) = patch_id
 
     end subroutine s_assign_patch_species_primitive_variables

@@ -474,7 +474,6 @@ See @ref equations "Equations" for the mathematical models these parameters cont
 | `sigma_T_ref`              | Real    | Reference temperature for the linear sigma(T) closure |
 | `sigma_dTdT`               | Real    | dsigma/dT slope for the linear sigma(T) closure |
 | `thermal_conduction`       | Logical | Activate bulk Fourier heat conduction in the energy equation |
-| `thermal_scalar`           | Logical | Carry temperature as an independent advected scalar, decoupled from the EOS |
 | `viscous`                  | Logical | Activate viscosity |
 | `hypoelasticity`           | Logical | Activate hypoelasticity* |
 | `pre_stress`               | Logical | Enable pre-stress initialization for hypoelasticity |
@@ -579,7 +578,6 @@ This option requires `weno_Re_flux` to be true because cell boundary values are 
 
 - `thermal_conduction` activates a bulk Fourier heat flux \f$-k \nabla T\f$ in the energy equation for non-reacting flows, independent of the chemistry module's `chem_params%%diffusion` path. The cell conductivity follows the harmonic mixture closure \f$1/k = \sum_i \alpha_i / k_i\f$ over the per-fluid constants `fluid_pp(i)%%k_therm` (all of which must be positive), and temperature is recovered from the mixture stiffened-gas equation of state, so every fluid's `cv` must be positive and `model_eqns` must be 2 or 3. The diffusion term is explicit: with a fixed `dt`, ensure \f$\Delta t < \Delta x^2 \rho c_p / (2 d\, k)\f$ (with \f$d\f$ the number of dimensions); the CFL-based time stepper (`cfl_adap_dt`) accounts for the conductive limit automatically and the run-time information file reports it in the VCFL column. By default every boundary is adiabatic (zero temperature gradient). Setting `bc_x%%isothermal_in`/`bc_x%%isothermal_out` (and the `bc_y`/`bc_z` analogues) with `bc_x%%Twall_in`/`bc_x%%Twall_out` imposes a Dirichlet wall temperature there via the reflection \f$T_\mathrm{ghost} = 2 T_\mathrm{wall} - T_\mathrm{interior}\f$. This is a **wall** boundary condition: use it only at no-slip/slip walls. Do **not** apply it at an open/non-reflecting boundary (e.g. `bc = -3`) with advective throughflow — clamping the temperature there fights the advected field and drives a spurious flow (it reverses 2D thermocapillary migration; see `examples/2D_thermocapillary_migration`). Leave open boundaries non-isothermal (adiabatic); an imposed far-field gradient is then sustained by the initial condition over the quasi-steady window.
 
-- `thermal_scalar` carries temperature as its own advected conserved scalar (decoupled from the stiffened-gas equation of state) instead of recovering it from the pressure and density. Prescribe the field per patch with `patch_icpp(i)%%T_temp_val` (a constant or an analytic expression of `x`, `y`, `z`, mirroring `cf_val`); it is advected like the color function, and when `thermal_conduction` is also enabled it is diffused at the thermal diffusivity \f$\alpha = k/(\rho c_p)\f$ rather than diffusing the energy. The temperature-dependent surface-tension closure `sigma_model = 1` then reads this scalar directly. This is the recommended way to impose a fixed thermal field (e.g. for thermocapillary migration), since it does not couple temperature to density through the equation of state. Requires `model_eqns` 2 or 3 and `riemann_solver` 1 or 2; set `T_s_wrt` to output the field. Not supported with chemistry, IGR, cylindrical coordinates, bubbles, elasticity, MHD, relaxation, or immersed boundaries.
 
 - `viscous` activates viscosity when set to ``'T'``. Requires `Re(1)` and `Re(2)` to be set.
 
@@ -664,7 +662,7 @@ To restart the simulation from $k$-th time step, see @ref running "Restarting Ca
 | `qm_wrt`                | Logical | Add the Q-criterion to the database|
 | `liutex_wrt`            | Logical | Add the Liutex to the database|
 | `cf_wrt`                | Logical | Write color function field |
-| `T_s_wrt`               | Logical | Write the independent temperature scalar field |
+| `T_wrt`                 | Logical | Write the EOS-derived mixture temperature field |
 | `chem_wrt_T`            | Logical | Write temperature field for chemistry output |
 | `fft_wrt`               | Logical | Enable FFT output |
 | `sim_data`              | Logical | Write interface and energy data files (post_process) |

@@ -500,14 +500,8 @@ contains
                                         mCP_L = mCP_L + alpha_rho_L(i)*cvs(i)*gs_min(i)
                                         mCP_R = mCP_R + alpha_rho_R(i)*cvs(i)*gs_min(i)
                                     end do
-                                    if (thermal_scalar) then
-                                        ! mu(T) reads the independent temperature scalar T_s when carried (matches sigma(T))
-                                        T_L = qL_prim_rs${XYZ}$_vf(j, k, l, eqn_idx%T_s)
-                                        T_R = qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%T_s)
-                                    else
-                                        T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
-                                        T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
-                                    end if
+                                    T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
+                                    T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
                                     mu_mix_L = 0._wp; mu_mix_R = 0._wp
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do q = 1, Re_size(1)
@@ -1953,14 +1947,8 @@ contains
                                         mCP_L = mCP_L + qL_prim_rs${XYZ}$_vf(j, k, l, i)*cvs(i)*gs_min(i)
                                         mCP_R = mCP_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, i)*cvs(i)*gs_min(i)
                                     end do
-                                    if (thermal_scalar) then
-                                        ! mu(T) reads the independent temperature scalar T_s when carried (matches sigma(T))
-                                        T_L = qL_prim_rs${XYZ}$_vf(j, k, l, eqn_idx%T_s)
-                                        T_R = qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%T_s)
-                                    else
-                                        T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
-                                        T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
-                                    end if
+                                    T_L = ((gamma_L + 1._wp)*pres_L + pi_inf_L)/max(mCP_L, sgm_eps)
+                                    T_R = ((gamma_R + 1._wp)*pres_R + pi_inf_R)/max(mCP_R, sgm_eps)
                                     mu_mix_L = 0._wp; mu_mix_R = 0._wp
                                     $:GPU_LOOP(parallelism='[seq]')
                                     do q = 1, Re_size(1)
@@ -2248,12 +2236,6 @@ contains
                                 if (surface_tension) then
                                     flux_rs${XYZ}$_vf(j, k, l, eqn_idx%c) = (xi_M*qL_prim_rs${XYZ}$_vf(j, k, l, &
                                                       & eqn_idx%c) + xi_P*qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%c))*s_S
-                                end if
-
-                                ! TEMPERATURE SCALAR FLUX (passive advection)
-                                if (thermal_scalar) then
-                                    flux_rs${XYZ}$_vf(j, k, l, eqn_idx%T_s) = (xi_M*qL_prim_rs${XYZ}$_vf(j, k, l, &
-                                                      & eqn_idx%T_s) + xi_P*qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%T_s))*s_S
                                 end if
 
                                 ! Geometrical source flux for cylindrical coordinates
@@ -3331,14 +3313,6 @@ contains
                                                       & eqn_idx%c)*(vel_R(dir_idx(1)) + s_P*(xi_R - 1._wp))
                                 end if
 
-                                ! TEMPERATURE SCALAR FLUX (passive advection)
-                                if (thermal_scalar) then
-                                    flux_rs${XYZ}$_vf(j, k, l, eqn_idx%T_s) = xi_M*qL_prim_rs${XYZ}$_vf(j, k, l, &
-                                                      & eqn_idx%T_s)*(vel_L(dir_idx(1)) + s_M*(xi_L - 1._wp)) &
-                                                      & + xi_P*qR_prim_rs${XYZ}$_vf(j + 1, k, l, &
-                                                      & eqn_idx%T_s)*(vel_R(dir_idx(1)) + s_P*(xi_R - 1._wp))
-                                end if
-
                                 ! Hyperelastic reference map flux for material deformation tracking
                                 if (hyperelasticity) then
                                     $:GPU_LOOP(parallelism='[seq]')
@@ -4156,25 +4130,12 @@ contains
 
             ! Conduction-only runs allocate just the energy slot, so zero only it; when
             ! viscous or surface tension is active their zero-fill above already covers E
-            if ((thermal_conduction .and. .not. (viscous .or. surface_tension .or. thermal_scalar)) .or. dummy) then
+            if ((thermal_conduction .and. .not. (viscous .or. surface_tension)) .or. dummy) then
                 $:GPU_PARALLEL_LOOP(collapse=3)
                 do l = is3%beg, is3%end
                     do k = is2%beg, is2%end
                         do j = is1%beg, is1%end
                             flux_src_vf(eqn_idx%E)%sf(j, k, l) = 0._wp
-                        end do
-                    end do
-                end do
-                $:END_GPU_PARALLEL_LOOP()
-            end if
-
-            ! Temperature scalar diffusion accumulates into its own slot; zero it first
-            if (thermal_scalar .or. dummy) then
-                $:GPU_PARALLEL_LOOP(collapse=3)
-                do l = is3%beg, is3%end
-                    do k = is2%beg, is2%end
-                        do j = is1%beg, is1%end
-                            flux_src_vf(eqn_idx%T_s)%sf(j, k, l) = 0._wp
                         end do
                     end do
                 end do
@@ -4229,25 +4190,12 @@ contains
 
             ! Conduction-only runs allocate just the energy slot, so zero only it; when
             ! viscous or surface tension is active their zero-fill above already covers E
-            if ((thermal_conduction .and. .not. (viscous .or. surface_tension .or. thermal_scalar)) .or. dummy) then
+            if ((thermal_conduction .and. .not. (viscous .or. surface_tension)) .or. dummy) then
                 $:GPU_PARALLEL_LOOP(collapse=3)
                 do l = is3%beg, is3%end
                     do j = is1%beg, is1%end
                         do k = is2%beg, is2%end
                             flux_src_vf(eqn_idx%E)%sf(k, j, l) = 0._wp
-                        end do
-                    end do
-                end do
-                $:END_GPU_PARALLEL_LOOP()
-            end if
-
-            ! Temperature scalar diffusion accumulates into its own slot; zero it first
-            if (thermal_scalar .or. dummy) then
-                $:GPU_PARALLEL_LOOP(collapse=3)
-                do l = is3%beg, is3%end
-                    do j = is1%beg, is1%end
-                        do k = is2%beg, is2%end
-                            flux_src_vf(eqn_idx%T_s)%sf(k, j, l) = 0._wp
                         end do
                     end do
                 end do
@@ -4302,25 +4250,12 @@ contains
 
             ! Conduction-only runs allocate just the energy slot, so zero only it; when
             ! viscous or surface tension is active their zero-fill above already covers E
-            if ((thermal_conduction .and. .not. (viscous .or. surface_tension .or. thermal_scalar)) .or. dummy) then
+            if ((thermal_conduction .and. .not. (viscous .or. surface_tension)) .or. dummy) then
                 $:GPU_PARALLEL_LOOP(collapse=3)
                 do j = is1%beg, is1%end
                     do k = is2%beg, is2%end
                         do l = is3%beg, is3%end
                             flux_src_vf(eqn_idx%E)%sf(l, k, j) = 0._wp
-                        end do
-                    end do
-                end do
-                $:END_GPU_PARALLEL_LOOP()
-            end if
-
-            ! Temperature scalar diffusion accumulates into its own slot; zero it first
-            if (thermal_scalar .or. dummy) then
-                $:GPU_PARALLEL_LOOP(collapse=3)
-                do j = is1%beg, is1%end
-                    do k = is2%beg, is2%end
-                        do l = is3%beg, is3%end
-                            flux_src_vf(eqn_idx%T_s)%sf(l, k, j) = 0._wp
                         end do
                     end do
                 end do

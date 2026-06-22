@@ -178,10 +178,9 @@ module m_global_parameters
     !> @{
     real(wp) :: sigma
     logical  :: surface_tension
-    logical  :: thermal_scalar  !< Independent transported temperature scalar (decoupled from the EOS)
-    integer  :: sigma_model     !< 0: constant sigma; 1: linear thermal closure sigma(T)
-    real(wp) :: sigma_T_ref     !< Reference temperature for the linear sigma(T) closure
-    real(wp) :: sigma_dTdT      !< dsigma/dT slope (with sign) for the linear sigma(T) closure
+    integer  :: sigma_model  !< 0: constant sigma; 1: linear thermal closure sigma(T)
+    real(wp) :: sigma_T_ref  !< Reference temperature for the linear sigma(T) closure
+    real(wp) :: sigma_dTdT   !< dsigma/dT slope (with sign) for the linear sigma(T) closure
     !> @}
 
     integer, allocatable, dimension(:,:,:) :: logic_grid
@@ -349,7 +348,6 @@ contains
             patch_icpp(i)%rho = dflt_real
             patch_icpp(i)%vel = dflt_real
             patch_icpp(i)%pres = dflt_real
-            patch_icpp(i)%T_temp_val = dflt_real
             patch_icpp(i)%alpha = dflt_real
             patch_icpp(i)%gamma = dflt_real
             patch_icpp(i)%pi_inf = dflt_real
@@ -422,7 +420,6 @@ contains
         Web = dflt_real
         poly_sigma = dflt_real
         surface_tension = .false.
-        thermal_scalar = .false.
 
         adv_n = .false.
 
@@ -794,12 +791,6 @@ contains
             eqn_idx%species%beg = sys_size + 1
             eqn_idx%species%end = sys_size + num_species
             sys_size = eqn_idx%species%end
-        end if
-
-        ! Independent temperature scalar appended last so existing index ordering is preserved
-        if (thermal_scalar) then
-            eqn_idx%T_s = sys_size + 1
-            sys_size = eqn_idx%T_s
         end if
 
         call s_configure_coordinate_bounds(recon_type, weno_polyn, muscl_polyn, igr_order, buff_size, idwint, idwbuff, viscous, &

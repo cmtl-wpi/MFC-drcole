@@ -42,7 +42,7 @@ contains
             & 'perturb_flow', 'perturb_sph', 'mixlayer_vel_profile',              &
             & 'mixlayer_perturb', 'bubbles_euler', 'polytropic', 'polydisperse',  &
             & 'qbmm', 'file_per_process', 'adv_n', 'ib' , 'cfl_adap_dt',          &
-            & 'cfl_const_dt', 'cfl_dt', 'surface_tension', 'thermal_scalar',       &
+            & 'cfl_const_dt', 'cfl_dt', 'surface_tension',                         &
             & 'bc_x%isothermal_in', 'bc_y%isothermal_in', 'bc_z%isothermal_in',   &
             & 'bc_x%isothermal_out', 'bc_y%isothermal_out', 'bc_z%isothermal_out',&
             & 'hyperelasticity', 'pre_stress', 'elliptic_smoothing', 'viscous',   &
@@ -92,7 +92,7 @@ contains
                 & 'length_x', 'length_y', 'length_z', 'radius', 'epsilon',     &
                 & 'beta', 'smooth_coeff', 'rho', 'p0', 'm0', 'r0', 'v0',       &
                 & 'pres', 'gamma', 'pi_inf', 'hcid', 'cv', 'qv', 'qvp',        &
-                & 'model_threshold', 'cf_val', 'T_temp_val', 'Bx', 'By', 'Bz']
+                & 'model_threshold', 'cf_val', 'Bx', 'By', 'Bz']
                 call MPI_BCAST(patch_icpp(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
