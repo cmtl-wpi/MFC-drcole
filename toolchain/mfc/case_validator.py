@@ -742,8 +742,11 @@ class CaseValidator:
         sigma = self.get("sigma")
         model_eqns = self.get("model_eqns")
         num_fluids = self.get("num_fluids")
+        sigma_model = self.get("sigma_model")
+        sigma_dTdT = self.get("sigma_dTdT")
+        sigma_T_ref = self.get("sigma_T_ref")
 
-        if not surface_tension and sigma is None:
+        if not surface_tension and sigma is None and sigma_model is None:
             return
 
         self.prohibit(surface_tension and sigma is None, "sigma must be set if surface_tension is enabled")
@@ -751,6 +754,29 @@ class CaseValidator:
         self.prohibit(sigma is not None and not surface_tension, "sigma is set but surface_tension is not enabled")
         self.prohibit(surface_tension and model_eqns not in [2, 3], "The surface tension model requires model_eqns = 2 or model_eqns = 3")
         self.prohibit(surface_tension and num_fluids != 2, "The surface tension model requires num_fluids = 2")
+
+        # Thermal Marangoni: linear sigma(T) closure (sigma_model = 1)
+        self.prohibit(
+            sigma_model is not None and sigma_model not in [0, 1],
+            "sigma_model must be 0 (constant) or 1 (linear in temperature)",
+        )
+        self.prohibit(
+            (sigma_model == 1 or sigma_dTdT is not None or sigma_T_ref is not None) and not surface_tension,
+            "sigma_model / sigma_dTdT / sigma_T_ref require surface_tension to be enabled",
+        )
+        self.prohibit(
+            sigma_model == 1 and sigma_dTdT is None,
+            "sigma_model = 1 (thermal Marangoni) requires sigma_dTdT (dsigma/dT) to be set",
+        )
+        # Temperature is recovered from the stiffened-gas EOS, which divides by the
+        # mixture heat capacity sum(alpha*rho*cv*gamma); cv must be set for both fluids.
+        if sigma_model == 1:
+            for i in (1, 2):
+                cv = self.get(f"fluid_pp({i})%cv")
+                self.prohibit(
+                    cv is None or cv <= 0,
+                    f"sigma_model = 1 requires fluid_pp({i})%cv > 0 (needed to evaluate temperature)",
+                )
 
     def check_mhd(self):
         """Checks constraints on MHD parameters"""
