@@ -120,7 +120,9 @@ def main(grids):
     nys = np.array([r["ny"] for r in results])
     errs_u = np.array([r["err_u_L2"] for r in results])
     errs_T = np.array([r["err_T_L2"] for r in results])
-    order_u = float(np.polyfit(np.log(nys), np.log(errs_u), 1)[0])
+    # error ~ dy^order; dy = H/Ny, so fit log(err) vs log(dy) -> positive order
+    dys = cfg.H / nys
+    order_u = float(np.polyfit(np.log(dys), np.log(errs_u), 1)[0])
 
     # --- console report ---
     print(f"\nVariable-viscosity Couette validation  (Re={cfg.Re:.0f}, Ma={cfg.Ma:.2f}, Br={cfg.Br:.3f}, mu-contrast={cfg.mu_of_T(cfg.T0) / cfg.mu_of_T(cfg.T1):.2f})")
@@ -135,7 +137,7 @@ def main(grids):
     axu.plot(rf["u_ex"], rf["yc"], "-", color="k", lw=2, label="exact (coupled BVP)")
     axu.plot(rf["u"], rf["yc"], "o", ms=4, color="C0", label=f"MFC (Ny={rf['ny']})")
     axu.plot(cfg.U * rf["yc"] / cfg.H, rf["yc"], "--", color="C3", lw=1, label=r"constant-$\mu$ (straight)")
-    axu.set_xlabel("u / wall speed direction"), axu.set_ylabel("y / H")
+    axu.set_xlabel("u / U"), axu.set_ylabel("y / H")
     axu.set_title("velocity: curvature is the mu(T) signal"), axu.legend(fontsize=8)
     axt.plot(rf["T_ex"], rf["yc"], "-", color="k", lw=2, label="exact")
     axt.plot(rf["T"], rf["yc"], "s", ms=4, color="C1", label="MFC")

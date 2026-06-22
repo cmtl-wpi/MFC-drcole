@@ -112,16 +112,19 @@ COUETTE_N=64 ./mfc.sh run examples/2D_Couette_Variable_Viscosity/case.py -n 1
 
 ## Results
 
-<!-- filled in by validate.py after the sweep -->
+The MFC steady velocity matches the exact `mu(T)` Couette profile and converges at
+second order; temperature is exact to ~1e-6 and the runs are fully steady
+(`unsteadiness ~ 1e-9`). The viscosity contrast bends `u(H/2)` to **0.352** versus
+the constant-viscosity **0.500** -- the signal a constant-`mu` code cannot produce.
 
-Spatial convergence (`runs/` + `python3 validate.py`):
+| Ny | L2(u)/U  | Linf(u)/U | L2(T)/dT |
+|----|----------|-----------|----------|
+| 33 | 1.33e-4  | 1.83e-4   | 1.59e-6  |
+| 65 | 3.41e-5  | 4.85e-5   | 3.93e-7  |
+| 97 | 1.53e-5  | 2.20e-5   | 1.75e-7  |
 
-| Ny | L2(u)/U | Linf(u)/U | L2(T)/dT |
-|----|---------|-----------|----------|
-| _populated by validate.py_ |
-
-Observed order of accuracy and the profile/convergence figures are written to
-`summary.json` and `figures/`.
+Observed spatial order (L2 velocity) = **2.00**. Figures in `figures/`
+(`couette_profiles.png`, `couette_convergence.png`); full data in `summary.json`.
 
 ## Scope and the companion benchmark
 
