@@ -625,6 +625,9 @@ def _load():
     _r("sigma", REAL, {"surface_tension"}, math=r"\f$\sigma\f$")
     _r("surface_tension", LOG, {"surface_tension"})
 
+    # Bulk thermal conduction
+    _r("thermal_conduction", LOG, {"thermal_conduction"})
+
     # Chemistry
     _r("cantera_file", STR, {"chemistry"})
     _r("chemistry", LOG, {"chemistry"})
@@ -850,6 +853,7 @@ def _load():
         px = f"fluid_pp({f})%"
         for a, sym in [("gamma", r"\f$\gamma_k\f$"), ("pi_inf", r"\f$\pi_{\infty,k}\f$"), ("cv", r"\f$c_{v,k}\f$"), ("qv", r"\f$q_{v,k}\f$"), ("qvp", r"\f$q'_{v,k}\f$")]:
             _r(f"{px}{a}", REAL, math=sym)
+        _r(f"{px}k_therm", REAL, {"thermal_conduction"}, math=r"\f$k_k\f$")
         _r(f"{px}G", REAL, {"elasticity"}, math=r"\f$G_k\f$")
         _r(f"{px}Re(1)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (shear)")
         _r(f"{px}Re(2)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (bulk)")
@@ -1208,6 +1212,7 @@ _nv(
     "hypoelasticity",
     "hyperelasticity",
     "surface_tension",
+    "thermal_conduction",
     "relativity",
     "ib",
     "num_ibs",

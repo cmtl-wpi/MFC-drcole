@@ -157,6 +157,18 @@ PHYSICS_DOCS = {
         "category": "Feature Compatibility",
         "explanation": "Requires model_eqns 2 or 3, num_fluids = 2.",
     },
+    "check_thermal_conduction": {
+        "title": "Bulk Thermal Conduction",
+        "category": "Numerical Schemes",
+        "math": r"\frac{1}{k} = \textstyle\sum_i \frac{\alpha_i}{k_i}, \quad T = \frac{(\Gamma+1)p + \Pi_\infty}{\sum_i \alpha_i \rho_i c_{v,i} \gamma_i}",
+        "explanation": (
+            "Bulk Fourier conduction adds an explicit -k grad(T) face flux to the energy equation. "
+            "Temperature comes from the mixture stiffened-gas EOS, so every fluid needs cv > 0 and "
+            "model_eqns must be 2 or 3. The harmonic mixture closure requires k_therm > 0 for every "
+            "fluid. Not yet supported with chemistry, IGR, cylindrical coordinates, bubbles, "
+            "elasticity, MHD, relaxation, or immersed boundaries."
+        ),
+    },
     "check_hypoelasticity": {
         "title": "Hypoelasticity",
         "category": "Feature Compatibility",
@@ -1029,6 +1041,53 @@ class CaseValidator:
                 self.get(f"fluid_pp({i})%Re(2)") is not None,
                 f"fluid_pp({i})%Re(2) (bulk viscosity) is not supported for non-Newtonian fluids",
             )
+
+    def check_thermal_conduction(self):
+        """Checks constraints on bulk thermal conduction"""
+        thermal_conduction = self.get("thermal_conduction", "F") == "T"
+        num_fluids = self.get("num_fluids")
+        model_eqns = self.get("model_eqns")
+
+        # If num_fluids is not set, check at least fluid 1 (for model_eqns=1)
+        if num_fluids is None:
+            num_fluids = 1
+
+        for i in range(1, num_fluids + 1):
+            k_therm = self.get(f"fluid_pp({i})%k_therm")
+            if k_therm is not None:
+                self.prohibit(not thermal_conduction, f"fluid_pp({i})%k_therm is specified, but thermal_conduction is not set to true")
+
+        if not thermal_conduction:
+            return
+
+        self.prohibit(model_eqns not in [2, 3], "thermal_conduction requires model_eqns = 2 or 3 (mixture stiffened-gas temperature)")
+
+        # Temperature is recovered from the stiffened-gas EOS, which divides by the
+        # mixture heat capacity sum(alpha*rho*cv*gamma); cv must be set for every fluid.
+        # The harmonic mixture closure 1/k = sum(alpha_i/k_i) needs k > 0 for every fluid.
+        for i in range(1, num_fluids + 1):
+            k_therm = self.get(f"fluid_pp({i})%k_therm")
+            cv = self.get(f"fluid_pp({i})%cv")
+            self.prohibit(k_therm is None, f"thermal_conduction is enabled, but fluid_pp({i})%k_therm is not specified")
+            self.prohibit(k_therm is not None and k_therm <= 0, f"thermal_conduction requires fluid_pp({i})%k_therm > 0 (harmonic mixture closure)")
+            self.prohibit(cv is None or cv <= 0, f"thermal_conduction requires fluid_pp({i})%cv > 0 (needed to evaluate temperature)")
+
+        # v1 feature-combination restrictions: the conduction flux only supports the
+        # plain multi-fluid stiffened-gas energy equation on Cartesian grids
+        incompatible = [
+            ("chemistry", "use chem_params%diffusion for heat conduction in reacting mixtures"),
+            ("igr", "IGR bypasses the additional-physics flux divergence"),
+            ("cyl_coord", "the cylindrical flux divergence lacks the conduction geometric terms"),
+            ("bubbles_euler", "the mixture temperature does not account for the bubble void fraction"),
+            ("bubbles_lagrange", "the mixture temperature does not account for the Lagrangian bubble phase"),
+            ("hypoelasticity", "elastic energy in the energy equation is not handled by the conduction closure"),
+            ("hyperelasticity", "elastic energy in the energy equation is not handled by the conduction closure"),
+            ("mhd", "magnetic energy in the energy equation is not handled by the conduction closure"),
+            ("relax", "conduction with pressure-temperature relaxation is untested"),
+            ("ib", "the conduction flux next to an immersed body would read unphysical interior temperatures"),
+        ]
+        for flag, reason in incompatible:
+            self.prohibit(self.get(flag, "F") == "T", f"thermal_conduction is not supported with {flag}: {reason}")
 
     def check_mhd_simulation(self):
         """Checks MHD constraints specific to simulation"""
@@ -2240,6 +2299,7 @@ class CaseValidator:
         self.check_stiffened_eos()
         self.check_eos_parameter_sanity()
         self.check_surface_tension()
+        self.check_thermal_conduction()
         self.check_mhd()
         self.check_chemistry()
 

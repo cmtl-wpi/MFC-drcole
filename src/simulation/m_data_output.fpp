@@ -98,6 +98,9 @@ contains
 
         if (viscous) then
             write (3, '(13X,A10,13X,A16)', advance="no") trim('VCFL Max'), trim('Rc Min')
+        else if (thermal_conduction) then
+            ! The thermal-conduction diffusion number is folded into the VCFL column
+            write (3, '(13X,A10)', advance="no") trim('VCFL Max')
         end if
 
         write (3, *)  ! new line
@@ -174,20 +177,22 @@ contains
             real(wp), dimension(num_fluids) :: alpha  !< Cell-avg. volume fraction
             real(wp), dimension(num_vels)   :: vel    !< Cell-avg. velocity
         #:endif
-        real(wp)               :: vel_sum  !< Cell-avg. velocity sum
-        real(wp)               :: pres     !< Cell-avg. pressure
-        real(wp)               :: gamma    !< Cell-avg. sp. heat ratio
-        real(wp)               :: pi_inf   !< Cell-avg. liquid stiffness function
-        real(wp)               :: qv       !< Cell-avg. internal energy reference value
-        real(wp)               :: c        !< Cell-avg. sound speed
-        real(wp)               :: H        !< Cell-avg. enthalpy
-        real(wp), dimension(2) :: Re       !< Cell-avg. Reynolds numbers
-        integer                :: j, k, l
-        integer                :: fl       !< Fluid loop iterator
+        real(wp)               :: vel_sum                       !< Cell-avg. velocity sum
+        real(wp)               :: pres                          !< Cell-avg. pressure
+        real(wp)               :: gamma                         !< Cell-avg. sp. heat ratio
+        real(wp)               :: pi_inf                        !< Cell-avg. liquid stiffness function
+        real(wp)               :: qv                            !< Cell-avg. internal energy reference value
+        real(wp)               :: c                             !< Cell-avg. sound speed
+        real(wp)               :: H                             !< Cell-avg. enthalpy
+        real(wp), dimension(2) :: Re                            !< Cell-avg. Reynolds numbers
+        real(wp)               :: k_mix, mCP_mix, alpha_T_cell  !< Cell-avg. thermal diffusivity pieces
+        integer                :: i, j, k, l
+        integer                :: fl                            !< Fluid loop iterator
 
         ! Computing Stability Criteria at Current Time-step
 
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[j, k, l, vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv, fl]')
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[i, j, k, l, vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv, fl, &
+                            & k_mix, mCP_mix, alpha_T_cell]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -207,8 +212,24 @@ contains
                         Re(1) = 1._wp/max(Re(1), sgm_eps)
                     end if
 
-                    if (viscous) then
+                    if (thermal_conduction) then
+                        ! Harmonic mixture conductivity (Samareh Eq. 8), consistent with the flux
+                        k_mix = 0._wp; mCP_mix = 0._wp
+                        $:GPU_LOOP(parallelism='[seq]')
+                        do i = 1, num_fluids
+                            k_mix = k_mix + min(max(q_prim_vf(eqn_idx%adv%beg + i - 1)%sf(j, k, l), 0._wp), 1._wp)/max(kappas(i), &
+                                                & sgm_eps)
+                            mCP_mix = mCP_mix + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)*gs_min(i)
+                        end do
+                        alpha_T_cell = 1._wp/max(k_mix, sgm_eps)/max(mCP_mix, sgm_eps)
+                    end if
+
+                    if (viscous .and. thermal_conduction) then
+                        call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf, vcfl_sf, Rc_sf, alpha_T_cell)
+                    else if (viscous) then
                         call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf, vcfl_sf, Rc_sf)
+                    else if (thermal_conduction) then
+                        call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf, vcfl_sf, alpha_T=alpha_T_cell)
                     else
                         call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf)
                     end if
@@ -222,6 +243,8 @@ contains
 
         if (viscous) then
             $:GPU_UPDATE(host='[vcfl_sf, Rc_sf]')
+        else if (thermal_conduction) then
+            $:GPU_UPDATE(host='[vcfl_sf]')
         end if
 
         icfl_max_loc = maxval(icfl_sf)
@@ -229,6 +252,9 @@ contains
         if (viscous) then
             vcfl_max_loc = maxval(vcfl_sf)
             Rc_min_loc = minval(Rc_sf)
+        else if (thermal_conduction) then
+            ! Rc_sf is only written on the viscous path, so reduce vcfl_sf alone
+            vcfl_max_loc = maxval(vcfl_sf)
         end if
 #else
         #:call GPU_PARALLEL(copyout='[icfl_max_loc]', copyin='[icfl_sf]')
@@ -239,6 +265,11 @@ contains
                 vcfl_max_loc = maxval(vcfl_sf)
                 Rc_min_loc = minval(Rc_sf)
             #:endcall GPU_PARALLEL
+        else if (thermal_conduction) then
+            ! Rc_sf is only written on the viscous path, so reduce vcfl_sf alone
+            #:call GPU_PARALLEL(copyout='[vcfl_max_loc]', copyin='[vcfl_sf]')
+                vcfl_max_loc = maxval(vcfl_sf)
+            #:endcall GPU_PARALLEL
         end if
 #endif
 
@@ -247,14 +278,16 @@ contains
                 & Rc_min_glb)
         else
             icfl_max_glb = icfl_max_loc
-            if (viscous) vcfl_max_glb = vcfl_max_loc
+            if (viscous .or. thermal_conduction) vcfl_max_glb = vcfl_max_loc
             if (viscous) Rc_min_glb = Rc_min_loc
         end if
 
         if (icfl_max_glb > icfl_max) icfl_max = icfl_max_glb
 
-        if (viscous) then
+        if (viscous .or. thermal_conduction) then
             if (vcfl_max_glb > vcfl_max) vcfl_max = vcfl_max_glb
+        end if
+        if (viscous) then
             if (Rc_min_glb < Rc_min) Rc_min = Rc_min_glb
         end if
 
@@ -263,6 +296,8 @@ contains
 
             if (viscous) then
                 write (3, '(13X,F10.6,13X,ES16.6)', advance="no") vcfl_max_glb, Rc_min_glb
+            else if (thermal_conduction) then
+                write (3, '(13X,F10.6)', advance="no") vcfl_max_glb
             end if
 
             write (3, *)  ! new line
@@ -274,7 +309,7 @@ contains
                 call s_mpi_abort('ICFL is greater than 1.0. Exiting.')
             end if
 
-            if (viscous) then
+            if (viscous .or. thermal_conduction) then
                 if (.not. f_approx_equal(vcfl_max_glb, vcfl_max_glb)) then
                     call s_mpi_abort('VCFL is NaN. Exiting.')
                 else if (vcfl_max_glb > 1._wp) then
@@ -1650,7 +1685,7 @@ contains
         write (3, '(A)') ''
 
         write (3, '(A,F9.6)') 'ICFL Max: ', icfl_max
-        if (viscous) write (3, '(A,F9.6)') 'VCFL Max: ', vcfl_max
+        if (viscous .or. thermal_conduction) write (3, '(A,F9.6)') 'VCFL Max: ', vcfl_max
         if (viscous) write (3, '(A,F10.6)') 'Rc Min: ', Rc_min
 
         call cpu_time(run_time)
@@ -1693,7 +1728,7 @@ contains
             @:ALLOCATE(icfl_sf(0:m, 0:n, 0:p))
             icfl_max = 0._wp
 
-            if (viscous) then
+            if (viscous .or. thermal_conduction) then
                 @:ALLOCATE(vcfl_sf(0:m, 0:n, 0:p))
                 @:ALLOCATE(Rc_sf  (0:m, 0:n, 0:p))
 
@@ -1730,7 +1765,7 @@ contains
 
         if (run_time_info) then
             @:DEALLOCATE(icfl_sf)
-            if (viscous) then
+            if (viscous .or. thermal_conduction) then
                 @:DEALLOCATE(vcfl_sf, Rc_sf)
             end if
         end if
