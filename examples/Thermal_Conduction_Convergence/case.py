@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # Convergence driver: 1D single Fourier mode on a periodic domain (no BC error).
 # T = T0 + A*sin(2*pi*x/L), imposed through the density at uniform pressure;
-# temperature is recovered from the stiffened-gas EOS. The harness sets grid and
-# time step via the environment so it can hold the diffusion number fixed
+# temperature is recovered from the stiffened-gas EOS. The harness (Allrun) sets
+# grid and time step via the environment so it can hold the diffusion number fixed
 # (spatial sweep) or vary dt on a fixed grid (temporal sweep).
 import json
 import math
