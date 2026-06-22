@@ -47,10 +47,17 @@ def collect():
         wd = os.path.dirname(inp)
         if not os.path.isdir(os.path.join(wd, "restart_data")):
             continue
-        # Only analyze FINISHED runs -- an in-progress run's partial data measures as an early-ramp
-        # value (the rise hasn't plateaued), which would silently pollute the convergence fits.
-        log = os.path.join(wd, "run.log")
-        if not (os.path.isfile(log) and "Finished MFC" in open(log).read()):
+        # Only analyze runs whose SIMULATION reached t_step_stop -- an in-progress run's partial data
+        # measures as an early-ramp value (the rise hasn't plateaued), which would silently pollute
+        # the convergence fits. We key on sim completion (newest restart == t_step_stop), NOT on the
+        # "Finished MFC" marker: that marker also requires post_process to succeed, but a run whose
+        # post_process crashed still has complete restart data and must be measurable.
+        stop = -1
+        for ln in open(inp):
+            if "=" in ln and ln.split("=", 1)[0].strip().lower() == "t_step_stop":
+                stop = int(float(ln.split("=", 1)[1].strip().rstrip(",")))
+        saved = [int(t) for f in glob.glob(os.path.join(wd, "restart_data", "lustre_*.dat")) for t in [os.path.basename(f)[len("lustre_") : -len(".dat")]] if t.isdigit()]
+        if not saved or max(saved) < stop:
             continue
         geom, wtok, nxtok, matok = os.path.relpath(wd, RUNS).split(os.sep)
         m = subprocess.run([sys.executable, os.path.join(HERE, "measure.py"), wd], capture_output=True, text=True, check=False)
@@ -114,13 +121,22 @@ def converge_grid(rows):
     Nx = np.array([p[0] for p in pts])
     ratio = np.array([p[1] for p in pts])
     dx = CORNER["W"] / Nx
-    print(f"  grid: Nx={Nx.tolist()}  ratio={[round(x, 3) for x in ratio]}")
+    # The interface is a discontinuity, so the scheme is effectively 1st order there: extrapolate the
+    # plateau linearly in dx to the continuum limit dx -> 0. (This is the only deficit axis that moves;
+    # confinement and Ma are flat, so the dx->0 intercept is MFC's resolved estimate of v_t/u_YGB.)
+    slope, intercept = np.polyfit(dx, ratio, 1)
+    print(f"  grid: Nx={Nx.tolist()}  ratio={[round(x, 3) for x in ratio]}  -> dx->0 intercept = {intercept:+.3f}")
 
     fig, ax = plt.subplots(figsize=(7.0, 5.0))
-    ax.plot(dx, ratio, "s-", color="#C44E52", ms=7, lw=1.2, label=f"MFC cube W={CORNER['W']:g}")
-    ax.axhline(1.0, ls="--", color="0.4", lw=1.1, label=r"$u_{\mathrm{YGB}}$ (ratio $=1$)")
-    ax.set_xlabel(r"cell size  $\Delta x = W/N_x$")
+    xf = np.linspace(0.0, dx.max() * 1.05, 100)
+    ax.plot(dx, ratio, "s", color="#C44E52", ms=8, label=f"MFC cube W={CORNER['W']:g}")
+    ax.plot(xf, intercept + slope * xf, "-", color="#C44E52", lw=1.3, label=f"linear-in-$\\Delta x$ fit ($\\Delta x\\to0$: {intercept:.3f})")
+    ax.plot(0.0, intercept, "*", color="k", ms=16, zorder=5, label=f"continuum extrapolation = {intercept:.3f}")
+    ax.axhline(1.0, ls="--", color="0.4", lw=1.1, label=r"$u_{\mathrm{YGB}}$ (analytic, ratio $=1$)")
+    ax.axhline(0.95, ls=":", color="#2ca25f", lw=1.3, label=r"Samareh DNS 3D sphere ($0.95$)")
+    ax.set_xlabel(r"cell size  $\Delta x = W/N_x$  ($0$ = continuum)")
     ax.set_ylabel(r"plateau  $v_t / u_{\mathrm{YGB}}$")
+    ax.set_xlim(left=-0.005)
     ax.set_title(r"Grid convergence (fixed box $W={}$, Ma$={}$)".format(int(CORNER["W"]), CORNER["Ma"]))
     ax.legend(loc="best", fontsize=9, frameon=False)
     ax.grid(alpha=0.3)
@@ -128,7 +144,7 @@ def converge_grid(rows):
     os.makedirs(FIG, exist_ok=True)
     fig.savefig(os.path.join(FIG, "ygb_vs_dx.png"), dpi=160)
     plt.close(fig)
-    save_block("grid", {"Nx": Nx.tolist(), "dx": dx.tolist(), "ratio_plateau": ratio.tolist(), "W": CORNER["W"], "Ma": CORNER["Ma"]})
+    save_block("grid", {"Nx": Nx.tolist(), "dx": dx.tolist(), "ratio_plateau": ratio.tolist(), "slope": float(slope), "ratio_dx0": float(intercept), "W": CORNER["W"], "Ma": CORNER["Ma"]})
 
 
 def converge_ma(rows):
