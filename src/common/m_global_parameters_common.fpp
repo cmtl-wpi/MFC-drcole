@@ -438,6 +438,9 @@ contains
         thermal_conduction = .false.
         adv_n = .false.
         sigma = dflt_real
+        sigma_model = 0
+        sigma_T_ref = dflt_real
+        sigma_dTdT = 0._wp
         bubbles_lagrange = .false.
 
         ! Immersed boundaries
