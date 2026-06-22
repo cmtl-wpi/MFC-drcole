@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-# Thermocapillary migration of a 2D drop at low Marangoni number -- Samareh, Mostaghimi & Moreau,
+# Thermocapillary migration of a 2D drop at finite Marangoni number -- Samareh, Mostaghimi & Moreau,
 # Int. J. Heat Mass Transfer 73 (2014) 616-626, Sec. 4.1.2 / Fig. 7 (test case of Nas & Tryggvason).
 # A drop of diameter D = 1 starts 1D above the cold floor of a 2D x 4D slip-wall box. With Ma finite
 # the energy equation is coupled: the drop's motion distorts the temperature field, a thermal
 # boundary layer forms at the interface, and sigma responds to the evolving local T. Drop and bulk
-# are genuinely different fluids (all material properties at ratio 0.5), so density cannot also
-# encode T -- temperature is carried by an independent advected/diffused scalar T_s, and sigma(T)
-# reads T_s. Non-dimensional targets: Re = 5, Ma = 20, Ca = 0.01666; the migration velocity
-# U* = U/U_r peaks near 0.13 at t* = t/t_r ~ 5.
+# are genuinely DIFFERENT fluids (all material properties at ratio 0.5). Non-dimensional targets:
+# Re = 5, Ma = 20, Ca = 0.01666; Samareh's migration velocity U* = U/U_r peaks near 0.13 at t*~5.
 #
-# rho_b and mu_b are arbitrary (only Re, Ma, Ca are physical); they are chosen for a deeply
-# incompressible state. Keep `e`-notation out of analytic strings (MFC reads `e` as Euler's number).
+# TEMPERATURE WITH DISTINCT FLUIDS (compressible code, incompressible reference).
+# MFC is compressible: at the low migration Mach here, pressure is ~uniform and the EOS locks
+# T = (p+p_inf)/((gam-1)*rho*cv), so a temperature gradient is a density gradient. With two distinct
+# fluids we impose T(y) by a PER-FLUID density proxy: each pure-fluid density absorbs the field,
+#   rho_i(x,y) = (p + p_inf_i)/((gam-1)*cv_i*T(y)).
+# The fluid-to-fluid density RATIO is then height-independent (T(y) cancels), so the prescribed
+# Nas-Tryggvason ratio 0.5 is preserved by tuning the per-fluid stiffening p_inf_i; and the MIXTURE
+# EOS recovers exactly T_mix(y) = T(y) across the interface (the volume fractions cancel) -- no jump.
+# Bulk conduction + isothermal gradient walls then sustain the field against the drop's advection.
+# Honest caveat: each fluid's ABSOLUTE density stratifies as ~1/T (a compressibility artifact absent
+# in Samareh's incompressible solver; magnitude ~ dT/T, shrunk by the T_base offset). So the peak
+# matches Fig 7 only qualitatively; the overshoot-then-settle shape is the validation target.
+# Keep `e`-notation out of analytic strings (MFC reads `e`/`r`/`eps` as substituted tokens).
 
 import json
 
@@ -18,7 +27,7 @@ import json
 Re = 5.0
 Ma = 20.0
 Ca = 0.01666
-prop_ratio = 0.5  # droplet / bulk material-property ratio
+prop_ratio = 0.5  # droplet / bulk material-property ratio (rho, mu, cv, k all at 0.5)
 
 # Geometry: D = 1 drop in a 2D wide x 4D tall box; drop 1D above the cold floor, gradient axis = y
 D = 1.0
@@ -36,32 +45,16 @@ Ny = round(Hy / dx)
 rho_b = 1.0
 mu_b = 0.02
 gam = 2.0
-cv_b = 1.0
 
 # Invert the non-dimensional numbers for the physical surface-tension and conduction properties
 G = Re * mu_b**2 / (rho_b * r**2)  # |sigma_T*gradT| = 0.008
-gradT = 1.0 / Hy  # T runs 0 (cold) .. 1 (hot) across the box height = 0.25
+gradT = 1.0 / Hy  # T runs 1 (cold) .. 2 (hot) across the box height = 0.25
 sigma_T = -G / gradT  # dsigma/dT < 0 = -0.032
 sigma0 = G * r / Ca  # surface tension at T_ref ~ 0.240
 alpha_b = G * r**2 / (mu_b * Ma)  # bulk thermal diffusivity = 0.005
-cp_b = gam * cv_b
-k_b = alpha_b * rho_b * cp_b  # bulk conductivity = 0.01
 
-# Droplet properties = prop_ratio * bulk
-rho_d = prop_ratio * rho_b
-mu_d = prop_ratio * mu_b
-cv_d = prop_ratio * cv_b
-k_d = prop_ratio * k_b
-
-U_r = G * r / mu_b  # Marangoni velocity scale = 0.2
-t_r = mu_b / G  # capillary-thermal time = 2.5
-
-# Stiffened-gas EOS; background pressure well above the Laplace jump sigma0/r
-p0, p_inf = 5.0, 20.0
-c_max = (gam * (p0 + p_inf) / rho_d) ** 0.5  # droplet (lowest density) sets the max sound speed ~ 10
-
-# Imposed field T(y) = T_base + gradT*(y - y_bottom); T_base > 0 so the isothermal-wall validator
-# passes (inert for the shift-invariant scalar T_s). T runs 1 (cold) .. 2 (hot).
+# Imposed field T(y) = T_base + gradT*(y - y_bottom). T_base > 0 keeps rho positive and the
+# isothermal-wall validator happy; a larger offset reduces the ~1/T compressibility stratification.
 T_base = 1.0
 
 
@@ -69,17 +62,61 @@ def T_of_y(y):
     return T_base + gradT * (y - y_bottom)
 
 
-T_ref = T_of_y(y_drop)  # sigma = sigma0 at the drop's initial position
-T_expr = f"{T_base} + {gradT}*(y - ({y_bottom}))"  # plain decimals only (no `e` notation)
+T_ref = T_of_y(y_drop)  # sigma = sigma0 at the drop's initial position; T_ref = 1.25
 
-eps = 1.0e-9  # trace volume fraction of the "other" fluid in each patch
+# Stiffened-gas EOS, bulk fluid. Pick a reference sound speed (low migration Mach ~ U_r/c) and
+# background pressure (well above the Laplace jump sigma0/r); the stiffening and cv then close the
+# EOS so the bulk density is rho_b at (p0, T_ref).
+c_ref = 15.0
+p0 = 5.0
+p_inf_b = c_ref**2 * rho_b / gam - p0  # bulk stiffening
+cv_b = (p0 + p_inf_b) / ((gam - 1.0) * rho_b * T_ref)
+cp_b = gam * cv_b
+k_b = alpha_b * rho_b * cp_b  # bulk conductivity
 
-# Time stepping: min(acoustic CFL, explicit-conduction limit)
+# Droplet = prop_ratio * bulk for every material property. The EOS stiffening p_inf_d follows so the
+# drop density is rho_d at (p0, T_ref): p0+p_inf_d = prop_ratio^2*(p0+p_inf_b) -> ratio rho_d/rho_b = 0.5.
+rho_d = prop_ratio * rho_b
+mu_d = prop_ratio * mu_b
+cv_d = prop_ratio * cv_b
+k_d = prop_ratio * k_b
+p_inf_d = (gam - 1.0) * rho_d * cv_d * T_ref - p0
+
+U_r = G * r / mu_b  # Marangoni velocity scale = 0.2
+t_r = mu_b / G  # capillary-thermal time = 2.5
+
+# Time stepping: min(acoustic CFL, explicit-conduction limit). Density is lowest (sound speed
+# highest) at the hot wall, where rho ~ rho_ref*T_ref/T_hot.
+T_hot = T_of_y(Hy / 2.0)
+rho_hot_min = prop_ratio * rho_b * T_ref / T_hot  # drop fluid at the hot wall: global density min
+c_max = (gam * (p0 + p_inf_d) / rho_hot_min) ** 0.5
+alpha_d = k_d / (rho_d * cp_b * prop_ratio)  # = k_d/(rho_d*cp_d), the fastest-diffusing phase
+alpha_max = max(alpha_b, alpha_d)
 mydt = 0.35 * dx / c_max
-alpha_max = max(alpha_b, k_d / (rho_d * gam * cv_d))  # fastest-diffusing phase sets the diffusion dt
-mydt = min(mydt, 0.35 * dx**2 / (4.0 * alpha_max))  # 2D explicit diffusion number
+mydt = min(mydt, 0.35 * dx**2 / (4.0 * alpha_max))
 t_step_stop = round(15.0 * t_r / mydt)  # 15 capillary-thermal times
 t_step_save = max(1, t_step_stop // 100)
+
+# One analytic patch over the whole box (a second patch's analytic density would leak globally). The
+# smooth circle eta(x,y) ~ 1 in the drop / 0 outside drives the color, the volume-fraction split, the
+# Laplace pressure jump, and BOTH per-fluid densities together. Hardcode the drop center/radius as
+# decimals -- a bare r/e/eps token would be substituted by the IC parser.
+xc_d, yc_d, r_d = 0.0, y_drop, r
+w_if = 0.75 * dx  # interface half-width (~3-cell transition)
+laplace = sigma0 / r  # Laplace pressure jump sigma/r
+dist = f"sqrt((x - ({xc_d:.9f}))**2 + (y - ({yc_d:.9f}))**2)"
+eta = f"0.5*(1.0 - tanh(({dist} - {r_d:.9f})/{w_if:.9f}))"
+Texpr = f"({T_base:.9f} + {gradT:.9f}*(y - ({y_bottom:.9f})))"
+pres_expr = f"({p0:.9f} + {laplace:.9f}*({eta}))"
+# volume fractions: drop = eta, bulk = 1 - eta
+alpha2_expr = f"({eta})"
+alpha1_expr = f"(1.0 - ({eta}))"
+# partial densities: alpha_i * rho_i, with rho_i = (p + p_inf_i)/((gam-1)*cv_i*T(y))
+cb = (gam - 1.0) * cv_b
+cd = (gam - 1.0) * cv_d
+arho1_expr = f"(1.0 - ({eta}))*({pres_expr} + {p_inf_b:.9f})/({cb:.9f}*{Texpr})"
+arho2_expr = f"({eta})*({pres_expr} + {p_inf_d:.9f})/({cd:.9f}*{Texpr})"
+cf_expr = f"({eta})"
 
 # Configuration case dictionary
 data = {
@@ -102,7 +139,7 @@ data = {
     "model_eqns": 3,
     "alt_soundspeed": "F",
     "mixture_err": "T",
-    "mpp_lim": "F",
+    "mpp_lim": "T",
     "time_stepper": 3,
     "weno_order": 5,
     "weno_eps": 1e-16,
@@ -119,9 +156,9 @@ data = {
     "bc_x%end": -2,
     "bc_y%beg": -2,
     "bc_y%end": -2,
-    "num_patches": 2,
+    "num_patches": 1,
     "num_fluids": 2,
-    # Physics: viscosity + bulk conduction + sigma(T); T carried by an independent scalar T_s
+    # Physics: viscosity + bulk conduction + temperature-dependent surface tension sigma(T)
     "viscous": "T",
     "surface_tension": "T",
     "sigma": sigma0,
@@ -129,28 +166,29 @@ data = {
     "sigma_T_ref": T_ref,
     "sigma_dTdT": sigma_T,
     "thermal_conduction": "T",
-    "thermal_scalar": "T",
     # Database Structure Parameters
     "format": 1,
     "precision": 2,
     "prim_vars_wrt": "T",
     "cons_vars_wrt": "T",
     "cf_wrt": "T",
-    "T_s_wrt": "T",
+    "T_wrt": "T",
     "parallel_io": "T",
     # Fluid 1 (bulk)
     "fluid_pp(1)%gamma": 1.0 / (gam - 1.0),
-    "fluid_pp(1)%pi_inf": gam * p_inf / (gam - 1.0),
+    "fluid_pp(1)%pi_inf": gam * p_inf_b / (gam - 1.0),
     "fluid_pp(1)%cv": cv_b,
     "fluid_pp(1)%Re(1)": 1.0 / mu_b,
     "fluid_pp(1)%k_therm": k_b,
-    # Fluid 2 (droplet), all material properties at prop_ratio * bulk
+    # Fluid 2 (droplet), all material properties at prop_ratio * bulk; stiffening keeps rho_d/rho_b = 0.5
     "fluid_pp(2)%gamma": 1.0 / (gam - 1.0),
-    "fluid_pp(2)%pi_inf": gam * p_inf / (gam - 1.0),
+    "fluid_pp(2)%pi_inf": gam * p_inf_d / (gam - 1.0),
     "fluid_pp(2)%cv": cv_d,
     "fluid_pp(2)%Re(1)": 1.0 / mu_d,
     "fluid_pp(2)%k_therm": k_d,
-    # Patch 1: bulk medium, density rho_b, color c = 0, linear T_s(y)
+    # Single analytic patch: the drop lives entirely in eta(x,y). Color, volume fractions, pressure,
+    # and both per-fluid densities all share it, so the mixture EOS recovers the linear T(y) exactly
+    # (drop included) while the distinct fluid-to-fluid density ratio (0.5) is preserved.
     "patch_icpp(1)%geometry": 3,
     "patch_icpp(1)%x_centroid": 0.0,
     "patch_icpp(1)%y_centroid": 0.0,
@@ -158,32 +196,12 @@ data = {
     "patch_icpp(1)%length_y": Hy,
     "patch_icpp(1)%vel(1)": 0.0,
     "patch_icpp(1)%vel(2)": 0.0,
-    "patch_icpp(1)%pres": p0,
-    "patch_icpp(1)%alpha_rho(1)": (1.0 - eps) * rho_b,
-    "patch_icpp(1)%alpha_rho(2)": eps * rho_d,
-    "patch_icpp(1)%alpha(1)": 1.0 - eps,
-    "patch_icpp(1)%alpha(2)": eps,
-    "patch_icpp(1)%cf_val": 0.0,
-    "patch_icpp(1)%T_temp_val": T_expr,
-    # Patch 2: droplet (circle), fluid 2 at rho_d, color c = 1, same T_s(y) as the bulk (T is
-    # continuous across the interface). Pressure carries the Laplace jump p0 + sigma/r.
-    "patch_icpp(2)%geometry": 2,
-    "patch_icpp(2)%x_centroid": 0.0,
-    "patch_icpp(2)%y_centroid": y_drop,
-    "patch_icpp(2)%radius": r,
-    "patch_icpp(2)%alter_patch(1)": "T",
-    "patch_icpp(2)%smoothen": "T",
-    "patch_icpp(2)%smooth_patch_id": 1,
-    "patch_icpp(2)%smooth_coeff": 0.5,
-    "patch_icpp(2)%vel(1)": 0.0,
-    "patch_icpp(2)%vel(2)": 0.0,
-    "patch_icpp(2)%pres": p0 + sigma0 / r,
-    "patch_icpp(2)%alpha_rho(1)": eps * rho_b,
-    "patch_icpp(2)%alpha_rho(2)": (1.0 - eps) * rho_d,
-    "patch_icpp(2)%alpha(1)": eps,
-    "patch_icpp(2)%alpha(2)": 1.0 - eps,
-    "patch_icpp(2)%cf_val": 1.0,
-    "patch_icpp(2)%T_temp_val": T_expr,
+    "patch_icpp(1)%pres": pres_expr,
+    "patch_icpp(1)%alpha_rho(1)": arho1_expr,
+    "patch_icpp(1)%alpha_rho(2)": arho2_expr,
+    "patch_icpp(1)%alpha(1)": alpha1_expr,
+    "patch_icpp(1)%alpha(2)": alpha2_expr,
+    "patch_icpp(1)%cf_val": cf_expr,
     # Isothermal Dirichlet gradient walls pin T to the imposed gradient (cold floor / hot ceiling)
     "bc_y%isothermal_in": "T",
     "bc_y%isothermal_out": "T",

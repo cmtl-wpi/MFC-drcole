@@ -79,8 +79,13 @@ def trajectory(case_dir):
     if not steps:
         return None
     nvars = np.fromfile(os.path.join(restart_dir, f"lustre_{steps[0]}.dat"), np.float64).size // cells
-    # thermal_scalar appends the temperature scalar T_s last, so color c is second-to-last.
-    c_idx, T_idx = nvars - 2, nvars - 1
+    c_idx = nvars - 1  # color function is the last conserved variable
+    # Per-fluid stiffened-gas constants for the EOS temperature. T is no longer carried as a scalar;
+    # it is recovered from the mixture EOS (matching f_compute_mixture_temperature in the solver).
+    gm = [param(f"fluid_pp({i})%gamma") for i in (1, 2)]  # = 1/(gamma_i - 1)
+    pin = [param(f"fluid_pp({i})%pi_inf") for i in (1, 2)]
+    cvs = [param(f"fluid_pp({i})%cv") for i in (1, 2)]
+    gsmin = [1.0 / g + 1.0 for g in gm]
 
     times, dist, vel, T_drop = [], [], [], []
     for step in steps:
@@ -89,17 +94,24 @@ def trajectory(case_dir):
         def field(i):
             return snap[i * cells : (i + 1) * cells].reshape(nz, ny, nx)
 
-        rho = field(0) + field(1)  # total density (sum of partial densities)
+        arho1, arho2 = field(0), field(1)
+        rho = arho1 + arho2  # total density (sum of partial densities)
         vy = field(3) / rho  # rise (y) velocity
+        a1, a2 = field(5), field(6)  # volume fractions
+        rho_e = field(7) + field(8)  # mixture internal energy (phasic internal energies)
+        Gamma = a1 * gm[0] + a2 * gm[1]
+        pi_mix = a1 * pin[0] + a2 * pin[1]
+        mCP = arho1 * cvs[0] * gsmin[0] + arho2 * cvs[1] * gsmin[1]
+        pres = (rho_e - pi_mix) / Gamma
+        T = ((Gamma + 1.0) * pres + pi_mix) / mCP  # EOS temperature (K)
         color = np.clip(field(c_idx), 0.0, 1.0)  # color function (drop = 1, bulk = 0)
-        Ts = field(T_idx)  # temperature scalar
         color_total = color.sum()
         if color_total <= 0:
             continue
         times.append(step * dt * 1e3)  # ms
         dist.append(((color * y_grid).sum() / color_total - y_cold) * 1e3)  # mm from cold wall
         vel.append((color * vy).sum() / color_total * 1e3)  # mm/s
-        T_drop.append((color * Ts).sum() / color_total)  # K
+        T_drop.append((color * T).sum() / color_total)  # K
     return tuple(np.array(a) for a in (times, dist, vel, T_drop))
 
 

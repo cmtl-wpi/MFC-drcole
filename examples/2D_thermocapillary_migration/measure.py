@@ -21,7 +21,7 @@ fig7 is Ly=4D. Pass fig5|fig7|tc3 as the 2nd argument to override.
 All run-dependent constants come from simulation.inp / pre_process.inp so this can't silently
 disagree with the data. The conserved-variable layout is (model_eqns=3, num_fluids=2,
 surface_tension): index 0,1 = partial densities, 3 = y-momentum, and the color function is the last
-conserved variable -- or second-to-last when thermal_scalar appends T_s after it.
+conserved variable.
 
 Usage:  python3 measure.py [case_dir] [fig5|fig7|tc3]
 Writes: <case_dir>/viz/<mode>*.png  and prints a JSON summary line (tag: RESULT_JSON).
@@ -83,10 +83,6 @@ elif Ly > 6.0:
 else:
     mode = "fig7"  # 4D box
 
-# thermal_scalar appends an independent temperature scalar (eqn_idx%T_s) AFTER the color function,
-# so the color function is the second-to-last conserved variable in that mode, otherwise the last.
-ts_mode = str(params.get("thermal_scalar", "F")).upper().strip(". ").startswith("T")
-
 restart_dir = os.path.join(case_dir, "restart_data")
 # Cell-center y positions from the boundary file (last ny+1 boundaries are the interior).
 yb = np.fromfile(os.path.join(restart_dir, "lustre_y_cb.dat"), np.float64)[-(ny + 1) :]
@@ -98,7 +94,7 @@ if not steps:
 
 cells = nx * ny * nz
 nvars = np.fromfile(os.path.join(restart_dir, f"lustre_{steps[0]}.dat"), np.float64).size // cells
-c_idx = nvars - 2 if ts_mode else nvars - 1  # color function index (T_s appended after it in ts_mode)
+c_idx = nvars - 1  # color function is the last conserved variable
 
 
 def field(snapshot, i):

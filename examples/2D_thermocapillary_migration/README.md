@@ -28,15 +28,18 @@ full and the 3D sphere as work in progress.
 | **TC2** | Low Marangoni number, Nas & Tryggvason (§4.1.2) | `Re=5, Ma=20, Ca=0.0167` | **Fig 7** | ✅ **validated** — overshoot brackets 0.13 |
 | **TC3** | Large Marangoni number, LMS flight experiment (§4.2) | large `Ma`, `μ(T)` | **Figs 8, 10–13** | 🟡 **implemented** — converged run pending |
 
-**Reproducing TC1 (and TC2) required four new physics capabilities in MFC**, none of which existed
-on `master`:
+**Reproducing TC1 (and TC2/TC3) required three new physics capabilities in MFC**, none of which
+existed on `master`:
 
 1. **`σ(T)` — temperature-dependent surface tension** (the thermal-Marangoni closure). *The driver.*
 2. **Bulk Fourier conduction** with an **isothermal Dirichlet wall BC**. *Couples the energy equation for finite `Ma`.*
-3. **An independent temperature scalar `T_s`**. *Decouples `T` from density when the two fluids differ.*
-4. **`μ(T)` — Arrhenius temperature-dependent viscosity**. *Required by TC3's large-`Ma` experiment.*
+3. **`μ(T)` — Arrhenius temperature-dependent viscosity**. *Required by TC3's large-`Ma` experiment.*
 
-Section 3 documents each at the code level; Section 4 presents the validation figures.
+Temperature itself is **not** a new field: MFC is compressible, so the EOS already ties
+`T = (p+p∞)/((γ−1)ρ cv)` to the conserved state. The imposed thermal gradient is set up through the
+**density proxy** (`ρ(y) = ρ_coeff/T(y)`), and `σ(T)`/`μ(T)`/conduction read the EOS temperature
+(`f_compute_mixture_temperature`). Section 3 documents each capability at the code level; Section 4
+presents the validation figures.
 
 ---
 
@@ -78,19 +81,19 @@ migrates toward the hot wall (`U`). Source: `figures/mechanism_schematic.tex`.*
 ## 3. Changes made to MFC (technical)
 
 The branch adds **+1115/−166 lines across 22 source files** plus a new 242-line module and 18 new
-regression golden files. The four features layer together: the three temperature-*dependent* closures
-(σ(T), conduction, μ(T)) all obtain temperature the **same** way — from one EOS-derived mixture helper,
-or, when it is active, from the temperature *carrier* `T_s` — so no two of them can silently disagree.
+regression golden files. The three temperature-*dependent* closures (σ(T), conduction, μ(T)) all
+obtain temperature the **same** way — from one EOS-derived mixture helper
+(`f_compute_mixture_temperature`) — so no two of them can silently disagree.
 
 ```
 src/simulation/m_thermal_conduction.fpp   (NEW, 242 lines)   bulk conduction + isothermal wall BC
 src/simulation/m_surface_tension.fpp       (+72)             σ(T) closure, face-local Marangoni stress
 src/simulation/m_riemann_solvers.fpp       (+277)            μ(T) injection (HLLC/HLL/LF)
-src/simulation/m_rhs.fpp                    (+163)            conduction / T_s flux-divergence in the RHS
+src/simulation/m_rhs.fpp                    (+163)            conduction flux-divergence in the RHS
 src/simulation/m_sim_helpers.fpp           (+85)             shared mixture-temperature helper, conduction CFL
 src/simulation/include/inline_capillary.fpp (+14)            σ-parametrised capillary stress tensor
-src/common/m_derived_types.fpp             (+25)             eqn_idx%T_s, fluid_pp%{k_therm,visc_*}, patch%T_temp_val
-src/common/m_variables_conversion.fpp      (+25)             device arrays kappas, visc_*; T_s pass-through
+src/common/m_derived_types.fpp             (+25)             fluid_pp%{k_therm,visc_*}
+src/common/m_variables_conversion.fpp      (+25)             device arrays kappas, visc_*
 src/common/m_mpi_common.fpp                (+14)             fold conduction diffusion number into the CFL reduction
 src/{simulation,pre_process,post_process}/m_global_parameters.fpp, m_start_up.fpp, m_checker.fpp, ...
 ```
@@ -125,8 +128,8 @@ parametrised on `σ` for exactly this. The σ-weighted stress is added to moment
 Marangoni stress** — realised implicitly by the face-to-face variation of the stress tensor, not a
 separately coded `∇σ` term.
 
-**Temperature source.** `T_cell` is read from the independent scalar `q_prim_vf(eqn_idx%T_s)` when
-`thermal_scalar` is on, else from the EOS helper `f_compute_mixture_temperature` (see §3.5).
+**Temperature source.** `T_cell` is recovered from the EOS helper `f_compute_mixture_temperature`
+(see §3.5).
 `c_sigma` is **always** allocated when surface tension is on, so the GPU device mapping is valid even
 for `sigma_model = 0` (commit `78e952a5`).
 
@@ -167,34 +170,39 @@ advected and diffused, and the wall temperatures are Dirichlet (`T=0` floor, `T=
 > wall+conduction case plateaus correctly. *Commits:* `e4ef3528`, `0950e3ce` (tests), `0038007b`,
 > `1c74c720`.
 
-### 3.3 Independent temperature scalar `T_s`
+### 3.3 Temperature: the density proxy (no extra field)
 
-**Why Samareh needs it.** TC3's two fluids have *different* densities, so temperature can no longer be
-encoded in the density field (the trick used for the equal-density TC1; see §5). `T_s` carries
-temperature as its own field, decoupled from density.
+MFC is compressible, so temperature is **already** an EOS function of the conserved state,
+`T = (p+p∞)/((γ−1)ρ cv)`; there is no separate temperature variable. To impose the linear gradient
+`T(y)` we use the **density proxy** — at uniform pressure, set the density to absorb the field:
+`ρ(y) = (p0+p∞)/((γ−1)cv·T(y))`. `σ(T)`/`μ(T)`/conduction all read the EOS temperature via
+`f_compute_mixture_temperature` (`m_sim_helpers.fpp`).
 
-**Selected by** `thermal_scalar = T`; per-patch IC `patch_icpp(i)%T_temp_val` (analytic-capable);
-post-process output flag `T_s_wrt` (written as `temperature_scalar`).
+**Equal-density fluids (TC1/Fig 5).** One analytic patch where color, the Laplace pressure jump, and
+density share one smooth circle `η(x,y)`, so the recovered `T` is exactly linear everywhere — drop
+included (`case_Ma_0.py`, `case_Ma_0p001.py`).
 
-- **Layout.** A new index `eqn_idx%T_s` (`m_derived_types.fpp:155`) is appended **last** to `sys_size`
-  in all three targets (`m_global_parameters.fpp` sim `1163–1167`, pre, post), preserving every
-  existing index position. It is a conserved variable but **passive/aliased** — copied unchanged in
-  cons↔prim (`m_variables_conversion.fpp:790,1038`) and pointer-aliased in the RHS
-  (`m_rhs.fpp:182–186`), exactly like the color function. IC assignment (smoothing-blended) at
-  `m_assign_variables.fpp:547–549`.
-- **Governing equation:** advected passively and, when conduction is on, diffused at the thermal
-  diffusivity in **variable-property** form,
-  `∂T_s/∂t + u·∇T_s = (1/(ρ c_p))·∇·(k ∇T_s)`.
-  The conductive flux is stored conservatively (`−k_face·dT/dξ`,
-  `m_thermal_conduction.fpp:217–225`); the RHS divides the flux divergence by the local
-  `ρ c_p` (`m_rhs.fpp:1437–1451`).
+**Distinct fluids (TC2/TC3, Fig 7 & Fig 8/13).** Density also carries the fluid-to-fluid ratio, so use
+a **per-fluid** density proxy, `ρ_i(y) = (p+p∞_i)/((γ−1)cv_i·T(y))`. Two facts make this work:
+- the density **ratio** `ρ_d/ρ_b` is height-independent (`T(y)` cancels), so the prescribed
+  Nas-Tryggvason / Fluorinert ratio is preserved by tuning the per-fluid stiffening `p∞_i`;
+- the **mixture** EOS recovers `T_mix(y) = T(y)` exactly across the interface (the volume fractions
+  cancel), so there is no temperature jump.
 
-> **⚠ Second correctness fix (also `1c74c720`).** The diffusion was first written constant-property as
-> `∇·(α ∇T)` with `α = k/(ρc_p)` *inside* the divergence. Where `ρc_p` jumps across the interface that
-> form injects a spurious `(ρc_p)′` term that again reverses migration. It was corrected to
-> `(1/(ρc_p))·∇·(k ∇T)`. (Independent of the MPI guard above, but bundled in the same commit.)
+The single analytic patch sets color, the volume-fraction split, pressure, and both per-fluid
+densities from one `η` (`case_Ma_20.py`, `case_Ma_1723.py`). Bulk conduction + isothermal gradient
+walls sustain the field against the drop's advection.
 
-**Targets:** all three (it changes `sys_size`). *Commits:* `42c42fde`, `6e571c2c`.
+> **Honest caveat.** A density proxy is a *transported* field, so without conduction the drop's flow
+> advects the gradient it should hold (frozen-`T` is only a `t/t_r ≲ 2` anchor). And each fluid's
+> *absolute* density stratifies as `~1/T` — a compressibility artifact absent in Samareh's
+> incompressible solver (magnitude `~ΔT/T`, shrunk by a large `T0`/`T_base` offset). So the equal-density
+> low-`Ma` cases match quantitatively (Fig 5 → 0.80, Fig 6 → 0.95) while the distinct-fluid finite-`Ma`
+> cases are qualitative (correct overshoot-then-settle shape; the exact peak is compressible-fidelity
+> limited).
+
+**Output.** Post-process flag `T_wrt` writes the EOS-derived `temperature` field (same formula as the
+solver's closures), for visualization.
 
 ### 3.4 `μ(T)` — Arrhenius temperature-dependent viscosity
 
@@ -215,7 +223,7 @@ less-viscous oil — the experiment's **non-monotonic** rise "loop" (Fig 8/13) t
 - **Plumbing.** Per-fluid values are flattened into device arrays `visc_models/visc_cs/visc_ds` and a
   gate flag `viscous_T_dependent` in `m_variables_conversion.fpp:372–381` (uploaded once,
   `#ifdef MFC_SIMULATION`). Type fields live in `m_derived_types.fpp:324–326` (common).
-- **Temperature source.** `T_s` if `thermal_scalar`, else the EOS L/R state temperature computed inline.
+- **Temperature source.** The EOS L/R state temperature computed inline.
 - **Validation:** `case_validator.py:check_visc_model`, `m_checker.fpp:s_check_inputs_visc_model`
   (requires `viscous`, HLLC, `model_eqns=3`). *Commit:* `ba5944fe`.
 
@@ -224,12 +232,11 @@ less-viscous oil — the experiment's **non-monotonic** rise "loop" (Fig 8/13) t
 - **Mixture-temperature helper** `f_compute_mixture_temperature` (`m_sim_helpers.fpp:48–67`, a
   sequential GPU routine): from the stiffened-gas mixture EOS,
   `T = ((Γ_mix+1)·p + Π∞_mix)/(ρ c_p)_mix`. σ(T) and conduction call this helper on the cell state;
-  μ(T) applies the **same EOS algebra** to the reconstructed Riemann L/R states inline. Either way,
-  when `thermal_scalar` is on all three instead read `T_s` directly — so every temperature consumer
-  sees a temperature that is, by construction, identical.
-- **Regression coverage.** 18 new golden-file tests in `toolchain/mfc/test/cases.py`: single- and
-  differing-property conduction, a viscous+conduction combination, 2-rank MPI cases (which would have
-  caught the halo bug), and a `thermal_scalar + thermal_conduction` case.
+  μ(T) applies the **same EOS algebra** to the reconstructed Riemann L/R states inline — so every
+  temperature consumer sees a temperature that is, by construction, identical.
+- **Regression coverage.** Golden-file tests in `toolchain/mfc/test/cases.py`: single- and
+  differing-property conduction, a viscous+conduction combination, and 2-rank MPI cases (which would
+  have caught the halo bug).
 - **Analytic conduction validation.** The bulk-conduction operator is verified against
   closed-form 1D/2D/3D heat-equation solutions — including formal grid (slope 2) and time
   (slope 3) convergence — in the dedicated `examples/Thermal_Conduction_Validation/` example.
@@ -309,9 +316,10 @@ features — match; the late-time over-decline is a limitation of the compressib
 **What MFC builds** (`../3D_thermocapillary_migration/case_Ma_1723.py`): the full LMS cell in SI units — a 3D Fluorinert FC-75 sphere
 (`D = 10.7 mm`) in silicone oil, `T_c = 283 K` / `T_h = 343 K`, `|∇T| = 1000 K/m`,
 `σ_0 = 0.007 N/m`, `σ_T = −3.6×10⁻⁵ N/m·K`, real per-fluid densities/conductivities/heat capacities,
-`σ(T)`, bulk conduction, the independent `T_s` (since the densities differ), **and the Arrhenius
-`μ(T)`** with Samareh's Eq. 30 coefficients (silicone oil `C=−10.17, D=1643`; Fluorinert
-`C=−11.76, D=1540`). This case exercises **all four** new features at once.
+`σ(T)`, bulk conduction, a **per-fluid density proxy** (the densities differ, so each fluid's density
+encodes the same `T(y)`; §3.3), **and the Arrhenius `μ(T)`** with Samareh's Eq. 30 coefficients
+(silicone oil `C=−10.17, D=1643`; Fluorinert `C=−11.76, D=1540`). This case exercises all three new
+closures at once.
 
 **Honest status.** The case validates and smoke-runs, and qualitative animations exist
 (`animations/tc3_fig8_*.mp4`), but there is **no converged Fig 8 figure yet**: the headline
@@ -333,16 +341,21 @@ tiled view per case):
 ## 5. How MFC realises the temperature field
 
 MFC is a compressible solver with **no temperature unknown** — `T` is recovered from the stiffened-gas
-EOS, `T = (p + p∞)/((γ−1)·ρ·c_v)` (§3.5). Two ways to impose Samareh's linear profile:
+EOS, `T = (p + p∞)/((γ−1)·ρ·c_v)` (§3.5). Samareh's linear profile is imposed through the **density
+proxy** (§3.3):
 
-- **Density proxy (TC1, equal densities).** Encode the linear `T` in the *density* IC,
-  `ρ(y) = ρ_coeff/(T_0 + ∇T·y)`, so `T(y)` is linear by construction. The absolute baseline is shifted
-  up by `T_0 = 10` so the proxy stays positive as `T → 0`; the gradient and slope `σ_T` (all that
-  `v_YGB` and the Marangoni stress depend on) are exact. This is the *zero-conduction* limit: the flow
-  advects a frozen profile, so it agrees with Samareh's invariant-`T` case only at early times.
-- **Independent scalar `T_s` (TC2/TC3, finite `Ma` or differing densities).** Carry temperature in its
-  own field (§3.3) with true Dirichlet walls and bulk conduction. This is the physically faithful path
-  and the one the validation figures use.
+- **Equal densities (TC1/Fig 5).** Encode the linear `T` in a single density IC,
+  `ρ(y) = ρ_coeff/(T_0 + ∇T·y)`. The baseline is shifted up by `T_0 = 10` so the proxy stays positive;
+  the gradient and slope `σ_T` (all that `v_YGB` and the Marangoni stress depend on) are exact.
+- **Distinct densities (TC2/TC3, Fig 7 & 8).** Use a *per-fluid* proxy, `ρ_i(y) = (p+p∞_i)/((γ−1)cv_i T(y))`:
+  the density ratio is height-independent (so the prescribed fluid ratio is preserved) and the mixture
+  EOS keeps `T` continuous across the interface.
+
+Without conduction a proxy is a *frozen, transported* field — the flow advects it, so it matches
+Samareh's invariant-`T` case only at early times (`t/t_r ≲ 2`). Bulk conduction + isothermal Dirichlet
+walls (the finite-`Ma` realization) actively restore the gradient; that is the path the validation
+figures use. The remaining gap is compressibility (each fluid's density stratifies `~1/T`), so distinct-fluid
+finite-`Ma` cases are qualitative rather than exact (§3.3 caveat).
 
 ---
 
@@ -406,8 +419,8 @@ python3 examples/3D_thermocapillary_migration/measure.py examples/3D_thermocapil
 | Script | Role |
 |---|---|
 | `case_Ma_0.py` | TC1 (Sec 4.1.1 / Fig 5), 2D zero-Marangoni frozen-`T` rise, slip-wall box. The literal `Ma=0` reference (fast); drifts above 0.80 at late `t/t_r`. Hardcoded; change the grid by editing `Nx`. |
-| `case_Ma_0p001.py` | TC1 conduction companion: same geometry, but `T` is evolved as an independent scalar `T_s` with large conductivity (`Ma=0.001`) so it holds Samareh's invariant-`T` 0.80 plateau. This is the canonical Fig 5 run (`tc1/ma0p001/w<grid>/sc050`); conduction-`dt`-limited, so coarse grids only. |
-| `case_Ma_20.py` | TC2 (Sec 4.1.2 / Fig 7), 2D low-Ma migration (Nas & Tryggvason), conduction + independent `T_s`. Hardcoded single configuration. |
+| `case_Ma_0p001.py` | TC1 conduction companion: same single-patch density proxy, but with large conductivity (`Ma=0.001`) + isothermal walls actively holding Samareh's invariant-`T` 0.80 plateau. The canonical Fig 5 run (`tc1/ma0p001/w<grid>/sc050`); conduction-`dt`-limited, so coarse grids only. |
+| `case_Ma_20.py` | TC2 (Sec 4.1.2 / Fig 7), 2D finite-Ma migration (Nas & Tryggvason), conduction + per-fluid density proxy (distinct fluids). Qualitative (compressible); hardcoded single configuration. |
 | `../3D_thermocapillary_migration/case_Ma_1723.py` | TC3 (Sec 4.2 / Figs 8,13), 3D large-Ma + `μ(T)`, matched to the LMS experiment. Hardcoded single configuration. |
 
 *Run drivers → `results/<target>_summary.json` + figures:*

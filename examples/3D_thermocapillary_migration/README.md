@@ -65,11 +65,15 @@ terminal velocity `u_YGB` (`v_t/u_YGB → 1.0`) as a proper validation of MFC's 
 
 ## Why it differs from `case.py`
 
-- **Decoupled temperature.** `thermal_scalar = T`: temperature is an independent advected+diffused
-  scalar `T_s`, and σ(T) reads `T_s` directly (not the density-coupled EOS temperature). Density is
-  uniform; both fluids identical (μ\*=k\*=1). The only driver is the σ(T) gradient — the clean YGB
-  setup. The density proxy of `case.py` instead advects with the drop's own flow and reverses the
-  gradient, so it is not a faithful invariant-`T` realization (see `memory/why-thermal-scalar.md`).
+Both cases use the same temperature setup — the **density proxy** (`ρ(y)=ρ_coeff/T(y)`, recovered
+from the EOS) with bulk conduction + isothermal walls holding the gradient (identical fluids,
+μ\*=k\*=1, so the only driver is the σ(T) gradient). The difference is the **validation strategy**:
+
+- `case.py` is a single *confined* run in an offset 5D×7.5D box that reproduces Samareh's Fig 6
+  anchor (`v_t/v_YGB ≈ 0.95`).
+- `case_ygb.py` is a **convergence harness**: a cube geometry with the drop centered for clean
+  symmetric clearance, plus `YGB_W`/`YGB_MA`/`YGB_NX` knobs to extrapolate the confinement, finite-Ma,
+  and grid deficits → recover the analytic `u_YGB` (`v_t/u_YGB → 1.0`).
 
 ## Recovering `u_YGB` is a convergence claim, not one number
 
@@ -93,7 +97,7 @@ python3 run_ygb.py anchor              # reproduce Samareh ~0.95 in the confined
 python3 run_ygb.py confinement         # the headline cube sweep (multi-hour each; run under nohup)
 python3 run_ygb.py grid ma             # grid + Ma refinement of the converged corner
 python3 validate_ygb.py all            # convergence fits -> figures/ygb_vs_{confinement,dx,Ma}.png
-python3 fields_ygb.py <run_dir>        # T_s / color midplane sanity field
+python3 fields_ygb.py <run_dir>        # EOS temperature / color midplane sanity field
 ```
 
 `run_ygb.py` runs into `runs/ygb/<geom>/<W>/<grid>/<Ma>/` and **skips** populated leaves (pass

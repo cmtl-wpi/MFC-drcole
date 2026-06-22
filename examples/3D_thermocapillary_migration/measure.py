@@ -60,12 +60,12 @@ def read_namelist(path):
 
 params = read_namelist(os.path.join(case_dir, "simulation.inp"))
 patches = read_namelist(os.path.join(case_dir, "pre_process.inp"))
-# thermal_scalar appends an independent temperature scalar (eqn_idx%T_s) AFTER the color function,
-# so in that mode the color function is the second-to-last conserved variable, not the last.
-ts_mode = str(params.get("thermal_scalar", "F")).upper().strip(". ").startswith("T")
 # Bulk Fourier conduction tames the frozen-T runaway; when it's on (this 3D case by construction)
 # the "frozen-T drift" caveat -- a 2D no-conduction artifact -- does not apply.
 cond_mode = str(params.get("thermal_conduction", "F")).upper().strip(". ").startswith("T")
+# thermal_scalar transports T as an extra conserved variable, appended AFTER the color function.
+# When it's on, the color function is the second-to-last variable, not the last (see c_idx below).
+thermal_scalar = str(params.get("thermal_scalar", "F")).upper().strip(". ").startswith("T")
 
 
 def param(name, src=params):
@@ -102,8 +102,7 @@ v_YGB = (2.0 / 15.0) * (-dsigma_dT) * gradT * r / mu  # YGB terminal speed (mu* 
 samareh_ratio = 0.95 if dim == 3 else 0.80
 
 # Conserved-variable layout (model_eqns=3, num_fluids=2, surface_tension):
-#   indices 0,1 = partial densities, 2 = x-momentum, 3 = y-momentum, color c is last --
-#   or second-to-last when thermal_scalar appends T_s after it.
+#   indices 0,1 = partial densities, 2 = x-momentum, 3 = y-momentum, color c is last.
 restart_dir = os.path.join(case_dir, "restart_data")
 
 # Cell-center y positions from the boundary file (last ny+1 boundaries are the interior).
@@ -140,7 +139,7 @@ for s in steps:
     snap = np.fromfile(os.path.join(restart_dir, f"lustre_{s}.dat"), np.float64)
     rho = field(snap, 0) + field(snap, 1)  # total density (sum of partial densities)
     vy = field(snap, 3) / rho  # rise (y) velocity
-    c_idx = nvars - 2 if ts_mode else nvars - 1  # T_s is appended after the color function in ts_mode
+    c_idx = nvars - 2 if thermal_scalar else nvars - 1  # color fn is last, unless T_s trails it
     c = np.clip(field(snap, c_idx), 0.0, None)  # color function
     csum = c.sum()
     times.append(s * dt)

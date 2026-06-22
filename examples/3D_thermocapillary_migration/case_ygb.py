@@ -5,15 +5,16 @@
 # box), FINITE Ma (temperature not perfectly invariant), and GRID. Re_M = rho*v_YGB*D/mu ~ 0.018 is
 # already deep Stokes, so no Reynolds sweep is needed.
 #
-# WHY THE DECOUPLED THERMAL SCALAR (and not the density proxy of case.py)
-# The sibling case.py fakes temperature through density (rho = rho_coeff/T(y)); that proxy is a
-# TRANSPORTED field, so the drop's own flow advects the gradient it is meant to hold -- the local
-# gradient collapses and reverses, and the rise velocity decays. This case carries temperature as an
-# INDEPENDENT advected+diffused scalar T_s (thermal_scalar = T), decoupled from density. With
-# thermal_scalar = T the surface-tension closure reads T_s directly (m_surface_tension.fpp), so
-# sigma(T) is driven by the true temperature field, not an EOS artifact. Density is uniform, both
-# fluids identical (mu* = k* = 1), so the ONLY thing driving the drop is the sigma(T) gradient -- the
-# clean YGB setup.
+# TEMPERATURE = DENSITY PROXY + CONDUCTION
+# MFC is compressible: at the low migration Mach here, pressure is ~uniform and the EOS locks
+# T = (p+p_inf)/((gam-1)*rho*cv), so the imposed gradient T(y) is encoded as rho(y) = rho_coeff/T(y).
+# A bare density proxy is a TRANSPORTED field -- the drop's own flow advects the gradient it should
+# hold -- so we ALSO run bulk conduction + isothermal gradient walls, which actively restore the
+# field (the finite-Ma realization; YGB_MA sets the conduction strength). Both fluids are identical,
+# so one analytic patch (shared smooth sphere eta(x,y,z) driving color, the Laplace pressure jump,
+# and density together) makes the EOS-recovered T exactly linear everywhere -- drop included. Honest
+# caveat: density stratifies as ~1/T (a compressibility artifact absent in the incompressible
+# reference; magnitude ~ dT/T, shrunk by the T0 offset).
 #
 # GEOMETRY MODES (env YGB_GEOM)
 #   cube     (default) -- box W^3 cubic, drop CENTERED at y=0; maximal symmetric clearance so
@@ -24,11 +25,12 @@
 # PARAMETERS (Samareh, Mostaghimi & Moreau 2014, Sec. 4.1.1): D=1 sphere, rho_d=rho_b=0.2,
 # mu_d=mu_b=0.1, sigma0=0.1, sigma_T=-0.1, |gradT|=2/15 -> v_YGB=8.889e-3. Slip walls on all six
 # faces; isothermal Dirichlet gradient walls on y (cold floor / hot ceiling) hold the imposed field.
-# T is shifted up by T0=10 (Samareh's T0=0) to keep it positive for the isothermal-wall validator;
-# only gradT and sigma_T (which set v_YGB) are physical.
+# T is shifted up by T0=10 (Samareh's T0=0) to keep rho positive; only gradT and sigma_T (which set
+# v_YGB) are physical.
 #
-# GOTCHA (analytic-IC parser): MFC expands a bare `e` to Euler's number even inside `1e-9`. Keep
-# `e`-notation out of every analytic patch string (T_temp_val); eps is folded into plain decimals.
+# GOTCHA (analytic-IC parser): MFC expands a bare `e` to Euler's number even inside `1e-9`, and a
+# bare `r`/`eps` to the patch radius/epsilon. Keep them out of every analytic patch string (use
+# plain decimals); tanh/sqrt are safe.
 
 import json
 import os
@@ -62,17 +64,17 @@ p = Nx - 1  # z (short) -- 3D
 # -- Equation of state (two IDENTICAL stiffened-gas fluids, gamma=2; mu*=1, k*=1) --
 gam = 2.0
 p_inf, p0 = 32.0, 8.0  # with rho=0.2: c = sqrt(gam*(p0+p_inf)/rho) = 20
-rho_b = 0.2  # uniform density EVERYWHERE (no density proxy); Samareh rho_d=rho_b=0.2
 mu = 0.1  # dynamic viscosity of both phases; MFC takes Re = 1/mu
-cv_b = 1.0  # EOS heat capacity (arbitrary; T_s is the thermal field, sigma reads T_s)
 
-# -- Imposed linear temperature field T(y) = T0 + gradT*y, carried by the scalar T_s --
-T0 = 10.0  # baseline (keeps T > 0 for the isothermal-wall validator)
+# -- Imposed linear temperature field T(y) = T0 + gradT*y, encoded as rho(y) = rho_coeff/T(y) --
+T0 = 10.0  # baseline (keeps rho > 0 and the isothermal-wall validator happy)
 gradT = 2.0 / 15.0  # |dT/dy| = 0.13333 (Samareh)
 sigma0 = 0.1  # surface tension at T_ref
 sigma_T = -0.1  # dsigma/dT
+rho_b = 0.2  # density at the reference temperature T0 (Samareh rho_d=rho_b=0.2)
+rho_coeff = rho_b * T0  # = 2.0
+cv_b = (p0 + p_inf) / ((gam - 1.0) * rho_coeff)  # closes the EOS so rho(T0) = rho_b; = 20
 T_ref = T0 + gradT * y_drop  # sigma = sigma0 at the drop's INITIAL center
-T_expr = f"{T0} + {gradT:.9f}*y"  # plain decimals only (no `e` notation)
 
 eps = 1.0e-9  # trace volume fraction of the (identical) second phase
 
@@ -83,11 +85,25 @@ t_r = mu / abs(sigma_T * gradT)  # capillary-thermal time = 7.5
 
 # -- Bulk thermal conduction (k*=1): alpha_T from the requested thermal Marangoni number Ma --
 alpha_T = U_r * r / Ma  # thermal diffusivity = 0.03333/Ma
-cp_b = gam * cv_b  # specific heat at constant pressure = 2.0
-k_therm = alpha_T * rho_b * cp_b  # bulk conductivity; both fluids equal
+cp_b = gam * cv_b  # specific heat at constant pressure
+k_therm = alpha_T * rho_b * cp_b  # bulk conductivity at the reference state; both fluids equal
+
+# -- One analytic patch: smooth sphere eta(x,y,z) ~ 1 in the drop / 0 outside drives color, the
+# Laplace pressure jump, and density together, so the EOS-recovered T is the imposed linear field
+# everywhere (rho tracks p, the (p+p_inf) factors cancel). Hardcode center/radius as decimals. --
+xc_d, yc_d, zc_d, r_d = 0.0, y_drop, 0.0, r
+w_if = 0.75 * dx  # interface half-width (~3-cell transition)
+laplace = sigma0 / r  # Laplace pressure jump sigma/r
+dist = f"sqrt((x - ({xc_d:.9f}))**2 + (y - ({yc_d:.9f}))**2 + (z - ({zc_d:.9f}))**2)"
+eta = f"0.5*(1.0 - tanh(({dist} - {r_d:.9f})/{w_if:.9f}))"
+cf_expr = f"({eta})"
+pres_expr = f"{p0:.9f} + {laplace:.9f}*({eta})"
+rho_num = (1.0 - eps) * rho_coeff
+rho_expr = f"{rho_num:.9f}*({p0 + p_inf:.9f} + {laplace:.9f}*({eta}))/({p0 + p_inf:.9f}*({T0} + {gradT:.9f}*y))"
 
 # -- Time stepping: min(acoustic CFL, 3D explicit-diffusion limit d=3) --
-c_max = (gam * (p0 + p_inf) / rho_b) ** 0.5  # = 20 (uniform density -> single sound speed)
+rho_min = rho_coeff / (T0 + gradT * Ly / 2.0)  # hot wall: lowest density, max sound speed
+c_max = (gam * (p0 + p_inf) / rho_min) ** 0.5
 mydt = 0.35 * dx / c_max
 mydt = min(mydt, 0.35 * dx**2 / (6.0 * alpha_T))  # dt <= 0.35*dx^2/(2*d*alpha), d=3 (3D)
 t_step_stop = int(round(n_tr * t_r / mydt))
@@ -133,9 +149,9 @@ data = {
     "bc_y%end": -2,
     "bc_z%beg": -2,
     "bc_z%end": -2,
-    "num_patches": 2,
+    "num_patches": 1,
     "num_fluids": 2,
-    # Physics: viscosity + bulk conduction + sigma(T); T carried by an independent scalar T_s
+    # Physics: viscosity + bulk conduction + temperature-dependent surface tension sigma(T)
     "viscous": "T",
     "surface_tension": "T",
     "sigma": sigma0,
@@ -143,14 +159,13 @@ data = {
     "sigma_T_ref": T_ref,
     "sigma_dTdT": sigma_T,
     "thermal_conduction": "T",
-    "thermal_scalar": "T",
     # Output
     "format": 1,
     "precision": 2,
     "prim_vars_wrt": "T",
     "cons_vars_wrt": "T",
     "cf_wrt": "T",
-    "T_s_wrt": "T",
+    "T_wrt": "T",
     "parallel_io": "T",
     # Continuous phase (fluid 1)
     "fluid_pp(1)%gamma": 1.0 / (gam - 1.0),
@@ -164,8 +179,9 @@ data = {
     "fluid_pp(2)%cv": cv_b,
     "fluid_pp(2)%Re(1)": 1.0 / mu,
     "fluid_pp(2)%k_therm": k_therm,
-    # Patch 1 -- background medium (3D cuboid spanning the domain): uniform density, color c=0,
-    # linear T_s(y). NO density proxy -- alpha_rho is a plain uniform value.
+    # Single analytic patch (3D cuboid spanning the domain). The drop lives entirely in eta(x,y,z):
+    # cf, pres, and alpha_rho all share it, so rho tracks the (jump-carrying) pressure and the
+    # EOS-recovered T is exactly the imposed linear field everywhere -- drop included.
     "patch_icpp(1)%geometry": 9,  # 3D cuboid
     "patch_icpp(1)%x_centroid": 0.0,
     "patch_icpp(1)%y_centroid": 0.0,
@@ -176,35 +192,13 @@ data = {
     "patch_icpp(1)%vel(1)": 0.0,
     "patch_icpp(1)%vel(2)": 0.0,
     "patch_icpp(1)%vel(3)": 0.0,
-    "patch_icpp(1)%pres": p0,
-    "patch_icpp(1)%alpha_rho(1)": (1.0 - eps) * rho_b,
-    "patch_icpp(1)%alpha_rho(2)": eps * rho_b,
+    "patch_icpp(1)%pres": pres_expr,
+    "patch_icpp(1)%alpha_rho(1)": rho_expr,
+    "patch_icpp(1)%alpha_rho(2)": eps,
     "patch_icpp(1)%alpha(1)": 1.0 - eps,
     "patch_icpp(1)%alpha(2)": eps,
-    "patch_icpp(1)%cf_val": 0.0,
-    "patch_icpp(1)%T_temp_val": T_expr,
-    # Patch 2 -- droplet (3D sphere): color c=1, same linear T_s(y) (T continuous across interface),
-    # identical fluid to patch 1. Pressure carries the Laplace jump p0 + sigma/r (no t=0 transient).
-    "patch_icpp(2)%geometry": 8,  # 3D sphere
-    "patch_icpp(2)%x_centroid": 0.0,
-    "patch_icpp(2)%y_centroid": y_drop,
-    "patch_icpp(2)%z_centroid": 0.0,
-    "patch_icpp(2)%radius": r,
-    "patch_icpp(2)%alter_patch(1)": "T",
-    "patch_icpp(2)%smoothen": "T",
-    "patch_icpp(2)%smooth_patch_id": 1,
-    "patch_icpp(2)%smooth_coeff": 0.5,
-    "patch_icpp(2)%vel(1)": 0.0,
-    "patch_icpp(2)%vel(2)": 0.0,
-    "patch_icpp(2)%vel(3)": 0.0,
-    "patch_icpp(2)%pres": p0 + sigma0 / r,
-    "patch_icpp(2)%alpha_rho(1)": eps * rho_b,
-    "patch_icpp(2)%alpha_rho(2)": (1.0 - eps) * rho_b,
-    "patch_icpp(2)%alpha(1)": eps,
-    "patch_icpp(2)%alpha(2)": 1.0 - eps,
-    "patch_icpp(2)%cf_val": 1.0,
-    "patch_icpp(2)%T_temp_val": T_expr,
-    # Isothermal Dirichlet gradient walls pin T_s to the imposed gradient (cold floor / hot ceiling)
+    "patch_icpp(1)%cf_val": cf_expr,
+    # Isothermal Dirichlet gradient walls pin T to the imposed gradient (cold floor / hot ceiling)
     "bc_y%isothermal_in": "T",
     "bc_y%isothermal_out": "T",
     "bc_y%Twall_in": T0 + gradT * (-Ly / 2.0),  # cold floor (y%beg)

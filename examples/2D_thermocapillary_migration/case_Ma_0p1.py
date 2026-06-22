@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Thermocapillary migration of a 2D drop in the near-zero-Marangoni limit, realized by BULK
+# Thermocapillary migration of a 2D drop in the low-Marangoni limit, realized by BULK
 # CONDUCTION -- Samareh, Mostaghimi & Moreau, Int. J. Heat Mass Transfer 73 (2014) 616-626,
 # Sec. 4.1.1 / Fig. 5. This is the conduction companion to the frozen-T case_Ma_0.py. Both impose
 # the temperature field through density (rho = rho_coeff/T at uniform p, recovered from the EOS),
@@ -20,7 +20,7 @@
 import json
 
 # Marangoni number: the small-Ma realization of Samareh's Ma = 0 limit (smaller -> closer to invariant T)
-Ma = 0.001
+Ma = 0.1
 
 # Geometry: D = 1 drop, 5D wide x 7.5D tall box; drop 1.5D above the cold floor, rise axis = y
 D = 1.0

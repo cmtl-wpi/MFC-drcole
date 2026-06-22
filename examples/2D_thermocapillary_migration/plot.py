@@ -19,8 +19,7 @@
 
 All run-dependent constants are read from each run's simulation.inp, so the plots can't silently
 disagree with the data. Conserved layout (model_eqns=3, num_fluids=2): 0,1 = partial densities,
-2 = x-momentum, 3 = y-momentum, 7,8 = phasic internal energies, color c last (second-to-last when a
-thermal_scalar T_s is appended).
+2 = x-momentum, 3 = y-momentum, 7,8 = phasic internal energies, color c last.
 
 Usage (no subcommand runs `samareh`, the headline overlays -- the usual rebuild):
     python3 plot.py [samareh]
@@ -75,13 +74,12 @@ def color_weighted_vy(run_dir):
     P = read_namelist(inp)
     f = lambda k: float(P[k.lower()])  # noqa: E731
     nx, ny, nz = int(f("m")) + 1, int(f("n")) + 1, int(f("p")) + 1
-    ts = str(P.get("thermal_scalar", "F")).strip(". ").upper().startswith("T")
     cells = nx * ny * nz
     steps = sorted(int(m.group(1)) for ff in glob.glob(os.path.join(rd, "lustre_*.dat")) if (m := re.search(r"lustre_(\d+)\.dat$", ff)))
     if not steps:
         return None
     nvars = np.fromfile(os.path.join(rd, f"lustre_{steps[0]}.dat"), np.float64).size // cells
-    c_idx = nvars - 2 if ts else nvars - 1  # color function (T_s appended after it in ts mode)
+    c_idx = nvars - 1  # color function is the last conserved variable
     t, u_lab = [], []
     for s in steps:
         snap = np.fromfile(os.path.join(rd, f"lustre_{s}.dat"), np.float64)
@@ -350,14 +348,13 @@ def load_field_case(case_dir):
         sys.exit(f"no lustre_<step>.dat snapshots in {restart_dir!r} -- run the case first")
     ncell = nx * ny
     nvars = np.fromfile(os.path.join(restart_dir, f"lustre_{steps[0]}.dat"), np.float64).size // ncell
-    ts_mode = str(P.get("thermal_scalar", "F")).strip(". ").upper().startswith("T")
     viz_dir = os.path.join(case_dir, "viz")
     os.makedirs(viz_dir, exist_ok=True)
     return SimpleNamespace(
         P=P, p=p, nx=nx, ny=ny, ncell=ncell, dt=p("dt"), cv=p("fluid_pp(1)%cv"),
         gamma_mfc=gamma_mfc, pi_inf_mfc=pi_inf_mfc, gamma=gamma, p_inf=p_inf,
         restart_dir=restart_dir, xb=xb, yb=yb, x=0.5 * (xb[:-1] + xb[1:]), y=0.5 * (yb[:-1] + yb[1:]),
-        steps=steps, nvars=nvars, c_idx=nvars - 2 if ts_mode else nvars - 1, viz_dir=viz_dir,
+        steps=steps, nvars=nvars, c_idx=nvars - 1, viz_dir=viz_dir,
     )
 
 
