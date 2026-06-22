@@ -14,7 +14,7 @@ module m_sim_helpers
 
     implicit none
 
-    private; public :: s_compute_enthalpy, s_compute_stability_from_dt, s_compute_dt_from_cfl
+    private; public :: s_compute_enthalpy, s_compute_stability_from_dt, s_compute_dt_from_cfl, f_compute_mixture_temperature
 
 contains
 
@@ -40,6 +40,29 @@ contains
         end if
 
     end function f_compute_filtered_dtheta
+
+    !> Computes the cell-centered mixture stiffened-gas temperature from primitive variables: T = ((Gamma_mix + 1)*p +
+    !! pi_inf_mix)/mCP, with Gamma_mix = sum(alpha_i*gammas(i)), pi_inf_mix = sum(alpha_i*pi_infs(i)), and mCP =
+    !! sum(alpha_rho_i*cvs(i)*gs_min(i)).
+    function f_compute_mixture_temperature(q_prim_vf, j, k, l) result(T_cell)
+
+        $:GPU_ROUTINE(parallelism='[seq]')
+        type(scalar_field), intent(in), dimension(sys_size) :: q_prim_vf
+        integer, intent(in)                                 :: j, k, l
+        real(wp)                                            :: T_cell
+        real(wp)                                            :: gamma_mix, pi_inf_mix, mCP
+        integer                                             :: i
+
+        gamma_mix = 0._wp; pi_inf_mix = 0._wp; mCP = 0._wp
+        $:GPU_LOOP(parallelism='[seq]')
+        do i = 1, num_fluids
+            gamma_mix = gamma_mix + q_prim_vf(eqn_idx%adv%beg + i - 1)%sf(j, k, l)*gammas(i)
+            pi_inf_mix = pi_inf_mix + q_prim_vf(eqn_idx%adv%beg + i - 1)%sf(j, k, l)*pi_infs(i)
+            mCP = mCP + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)*gs_min(i)
+        end do
+        T_cell = ((gamma_mix + 1._wp)*q_prim_vf(eqn_idx%E)%sf(j, k, l) + pi_inf_mix)/max(mCP, sgm_eps)
+
+    end function f_compute_mixture_temperature
 
     !> Computes inviscid CFL terms for multi-dimensional cases (2D/3D only)
     function f_compute_multidim_cfl_terms(vel, c, j, k, l) result(cfl_terms)

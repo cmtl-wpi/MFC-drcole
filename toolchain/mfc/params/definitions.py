@@ -624,6 +624,9 @@ def _load():
     # Surface tension
     _r("sigma", REAL, {"surface_tension"}, math=r"\f$\sigma\f$")
     _r("surface_tension", LOG, {"surface_tension"})
+    _r("sigma_model", INT, {"surface_tension"})
+    _r("sigma_T_ref", REAL, {"surface_tension"})
+    _r("sigma_dTdT", REAL, {"surface_tension"})
 
     # Chemistry
     _r("cantera_file", STR, {"chemistry"})
@@ -1204,6 +1207,9 @@ _nv(
     "poly_sigma",
     "qbmm",
     "sigma",
+    "sigma_model",
+    "sigma_T_ref",
+    "sigma_dTdT",
     "adv_n",
     "hypoelasticity",
     "hyperelasticity",
