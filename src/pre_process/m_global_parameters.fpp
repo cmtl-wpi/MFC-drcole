@@ -351,6 +351,9 @@ contains
             fluid_pp(i)%pi_inf = dflt_real
             fluid_pp(i)%cv = 0._wp
             fluid_pp(i)%k_therm = 0._wp
+            fluid_pp(i)%visc_model = 0
+            fluid_pp(i)%visc_c = 0._wp
+            fluid_pp(i)%visc_d = 0._wp
             fluid_pp(i)%qv = 0._wp
             fluid_pp(i)%qvp = 0._wp
             fluid_pp(i)%G = 0._wp

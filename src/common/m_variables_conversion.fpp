@@ -43,6 +43,10 @@ module m_variables_conversion
 #ifndef MFC_SIMULATION
     real(wp), allocatable, public, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, kappas
     $:GPU_DECLARE(create='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, kappas]')
+    integer, allocatable, public, dimension(:)  :: visc_models          !< Per-fluid viscosity-model ids
+    real(wp), allocatable, public, dimension(:) :: visc_cs, visc_ds     !< Per-fluid Arrhenius mu(T) coefficients
+    logical, public                             :: viscous_T_dependent  !< .true. if any fluid uses mu(T)
+    $:GPU_DECLARE(create='[visc_models, visc_cs, visc_ds, viscous_T_dependent]')
 #endif
 
     real(wp), allocatable, dimension(:)   :: Gs_vc
@@ -338,7 +342,10 @@ contains
         @:ALLOCATE(qvps    (1:num_fluids))
         @:ALLOCATE(Gs_vc     (1:num_fluids))
         @:ALLOCATE(kappas (1:num_fluids))
+        ! GPU device mapping is valid even when no fluid uses mu(T); viscous_T_dependent gates the override.
+        @:ALLOCATE(visc_models(1:num_fluids), visc_cs(1:num_fluids), visc_ds(1:num_fluids))
 
+        viscous_T_dependent = .false.
         do i = 1, num_fluids
             gammas(i) = fluid_pp(i)%gamma
             gs_min(i) = 1.0_wp/gammas(i) + 1.0_wp
@@ -349,8 +356,12 @@ contains
             kappas(i) = fluid_pp(i)%k_therm
             qvs(i) = fluid_pp(i)%qv
             qvps(i) = fluid_pp(i)%qvp
+            visc_models(i) = fluid_pp(i)%visc_model
+            visc_cs(i) = fluid_pp(i)%visc_c
+            visc_ds(i) = fluid_pp(i)%visc_d
+            if (fluid_pp(i)%visc_model == 1) viscous_T_dependent = .true.
         end do
-        $:GPU_UPDATE(device='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas]')
+        $:GPU_UPDATE(device='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas, visc_models, visc_cs, visc_ds, viscous_T_dependent]')
 
 #ifdef MFC_SIMULATION
         if (viscous) then
@@ -1236,6 +1247,8 @@ contains
 
 #ifdef MFC_SIMULATION
         @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas)
+        @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
+        @:DEALLOCATE(visc_models, visc_cs, visc_ds)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
         end if
@@ -1244,6 +1257,8 @@ contains
         end if
 #else
         @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas)
+        @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
+        @:DEALLOCATE(visc_models, visc_cs, visc_ds)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
         end if

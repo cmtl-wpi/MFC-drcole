@@ -254,6 +254,10 @@ module m_global_parameters
 
     real(wp), allocatable, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, kappas
     $:GPU_DECLARE(create='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, kappas]')
+    integer, allocatable, dimension(:)  :: visc_models          !< Per-fluid viscosity-model ids on the device
+    real(wp), allocatable, dimension(:) :: visc_cs, visc_ds     !< Per-fluid Arrhenius mu(T) coefficients on the device
+    logical                             :: viscous_T_dependent  !< .true. if any fluid uses an Arrhenius mu(T) (visc_model = 1)
+    $:GPU_DECLARE(create='[visc_models, visc_cs, visc_ds, viscous_T_dependent]')
 
     real(wp)                                    :: mytime     !< Current simulation time
     real(wp)                                    :: finaltime  !< Final simulation time
@@ -391,6 +395,9 @@ contains
             fluid_pp(i)%pi_inf = dflt_real
             fluid_pp(i)%cv = 0._wp
             fluid_pp(i)%k_therm = 0._wp
+            fluid_pp(i)%visc_model = 0
+            fluid_pp(i)%visc_c = 0._wp
+            fluid_pp(i)%visc_d = 0._wp
             fluid_pp(i)%qv = 0._wp
             fluid_pp(i)%qvp = 0._wp
             fluid_pp(i)%Re(:) = dflt_real

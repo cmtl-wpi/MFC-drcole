@@ -38,6 +38,7 @@ contains
         call s_check_inputs_time_stepping
 
         call s_check_inputs_thermal_conduction
+        call s_check_inputs_visc_model
 
         @:PROHIBIT(ib_state_wrt .and. .not. ib, "ib_state_wrt requires ib to be enabled")
         @:PROHIBIT(many_ib_patch_parallelism .and. .not. ib, "many_ib_patch_parallelism requires ib to be enabled")
@@ -166,5 +167,24 @@ contains
         end if
 
     end subroutine s_check_inputs_thermal_conduction
+    !> Checks constraints on the temperature-dependent (Arrhenius) viscosity model
+    impure subroutine s_check_inputs_visc_model
+
+        integer :: i
+
+        do i = 1, num_fluids
+            @:PROHIBIT(fluid_pp(i)%visc_model < 0 .or. fluid_pp(i)%visc_model > 1, &
+                       & "fluid_pp visc_model must be 0 (constant) or 1 (Arrhenius mu = exp(C + D/T))")
+            if (fluid_pp(i)%visc_model == 1) then
+                @:PROHIBIT(.not. viscous, "fluid_pp visc_model = 1 (Arrhenius mu(T)) requires viscous = T")
+                @:PROHIBIT(fluid_pp(i)%cv <= 0._wp, &
+                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) requires cv > 0 for the EOS temperature")
+                @:PROHIBIT(chemistry, "fluid_pp visc_model = 1 (Arrhenius mu(T)) is not supported with chemistry")
+                @:PROHIBIT(riemann_solver /= 2 .or. model_eqns /= 3, &
+                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) currently requires riemann_solver = 2 (HLLC) and model_eqns = 3")
+            end if
+        end do
+
+    end subroutine s_check_inputs_visc_model
 
 end module m_checker

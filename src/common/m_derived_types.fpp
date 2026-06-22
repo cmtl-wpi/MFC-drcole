@@ -384,6 +384,9 @@ module m_derived_types
         real(wp), dimension(2) :: Re             !< Reynolds number
         real(wp)               :: cv             !< heat capacity
         real(wp)               :: k_therm        !< thermal conductivity (constant per fluid, used when thermal_conduction is on)
+        integer                :: visc_model     !< viscosity model: 0=constant Re, 1=Arrhenius mu=exp(visc_c+visc_d/T)
+        real(wp)               :: visc_c         !< Arrhenius viscosity coefficient C
+        real(wp)               :: visc_d         !< Arrhenius viscosity coefficient D
         real(wp)               :: qv             !< reference energy per unit mass for SGEOS, q (see Le Metayer (2004))
         real(wp)               :: qvp            !< reference entropy per unit mass for SGEOS, q' (see Le Metayer (2004))
         real(wp)               :: G
