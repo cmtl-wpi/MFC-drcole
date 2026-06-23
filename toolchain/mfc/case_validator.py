@@ -161,6 +161,19 @@ PHYSICS_DOCS = {
             "relaxation, or immersed boundaries."
         ),
     },
+    "check_visc_model": {
+        "title": "Temperature-Dependent (Arrhenius) Viscosity",
+        "category": "Numerical Schemes",
+        "math": r"\mu_k(T) = \exp\!\left(C_{\mu,k} + \frac{D_{\mu,k}}{T}\right), \quad T = \frac{(\Gamma+1)p + \Pi_\infty}{\sum_i \alpha_i \rho_i c_{v,i} \gamma_i}",
+        "explanation": (
+            "fluid_pp(i)%visc_model selects the shear-viscosity law: 0 = constant Reynolds number, "
+            "1 = Arrhenius mu(T) = exp(C + D/T) with coefficients visc_c and visc_d. The per-side "
+            "mixture temperature comes from the stiffened-gas EOS, so every fluid needs cv > 0. The "
+            "Arrhenius override of the shear Reynolds number is currently implemented for "
+            "riemann_solver = 2 (HLLC) with model_eqns = 2 (5-equation) or 3 (6-equation), requires "
+            "viscous = T, and is not supported with chemistry."
+        ),
+    },
     # Feature Compatibility
     "check_mhd": {
         "title": "Magnetohydrodynamics (MHD)",
@@ -929,8 +942,8 @@ class CaseValidator:
                 self.prohibit(cv is not None and cv <= 0, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires cv > 0")
                 self.prohibit(chemistry, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) is not supported with chemistry")
                 self.prohibit(
-                    riemann_solver != 2 or model_eqns != 3,
-                    f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) currently requires riemann_solver=2 (HLLC) and model_eqns=3",
+                    riemann_solver != 2 or model_eqns not in (2, 3),
+                    f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) currently requires riemann_solver=2 (HLLC) and model_eqns=2 or 3",
                 )
 
     def check_thermal_conduction(self):

@@ -417,6 +417,18 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                     cases.append(define_case_d(stack, "weno_avg", {"weno_avg": "T"}))
                     stack.pop()
 
+                # Temperature-dependent (Arrhenius) viscosity mu(T)=exp(C+D/T) on the HLLC
+                # 5-equation path (riemann_solver=2, model_eqns=2). D /= 0 makes Re(1) depend
+                # on the per-side mixture temperature, which is built from the reconstructed
+                # partial densities (alpha_rho_L/R) -- exercises the s_hllc 5-eq mCP path.
+                cases.append(
+                    define_case_d(
+                        stack,
+                        "visc_model=1",
+                        {"fluid_pp(1)%visc_model": 1, "fluid_pp(1)%visc_c": 0.1, "fluid_pp(1)%visc_d": 0.5, "fluid_pp(1)%cv": 1.0},
+                    )
+                )
+
                 stack.pop()
 
                 # Bulk thermal conduction: -k*grad(T) energy flux without chemistry. The

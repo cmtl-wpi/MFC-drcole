@@ -57,8 +57,8 @@ contains
                 @:PROHIBIT(fluid_pp(i)%cv <= 0._wp, &
                            & "fluid_pp visc_model = 1 (Arrhenius mu(T)) requires cv > 0 for the EOS temperature")
                 @:PROHIBIT(chemistry, "fluid_pp visc_model = 1 (Arrhenius mu(T)) is not supported with chemistry")
-                @:PROHIBIT(riemann_solver /= 2 .or. model_eqns /= 3, &
-                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) currently requires riemann_solver = 2 (HLLC) and model_eqns = 3")
+                @:PROHIBIT(riemann_solver /= 2 .or. (model_eqns /= 2 .and. model_eqns /= 3), &
+                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) currently requires riemann_solver = 2 (HLLC) and model_eqns = 2 or 3")
             end if
         end do
 

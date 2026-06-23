@@ -2962,15 +2962,18 @@ contains
 
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do i = 1, num_fluids
-                                    rho_L = rho_L + qL_prim_rs${XYZ}$_vf(j, k, l, i)
+                                    alpha_rho_L(i) = qL_prim_rs${XYZ}$_vf(j, k, l, i)
+                                    alpha_rho_R(i) = qR_prim_rs${XYZ}$_vf(j + 1, k, l, i)
+
+                                    rho_L = rho_L + alpha_rho_L(i)
                                     gamma_L = gamma_L + qL_prim_rs${XYZ}$_vf(j, k, l, eqn_idx%E + i)*gammas(i)
                                     pi_inf_L = pi_inf_L + qL_prim_rs${XYZ}$_vf(j, k, l, eqn_idx%E + i)*pi_infs(i)
-                                    qv_L = qv_L + qL_prim_rs${XYZ}$_vf(j, k, l, i)*qvs(i)
+                                    qv_L = qv_L + alpha_rho_L(i)*qvs(i)
 
-                                    rho_R = rho_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, i)
+                                    rho_R = rho_R + alpha_rho_R(i)
                                     gamma_R = gamma_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%E + i)*gammas(i)
                                     pi_inf_R = pi_inf_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, eqn_idx%E + i)*pi_infs(i)
-                                    qv_R = qv_R + qR_prim_rs${XYZ}$_vf(j + 1, k, l, i)*qvs(i)
+                                    qv_R = qv_R + alpha_rho_R(i)*qvs(i)
                                 end do
 
                                 Re_max = 0
