@@ -201,7 +201,7 @@ print(
 
 # -- figure: (A) v vs distance (Samareh Fig-8 axes); (B) v vs time; (C) the mu(T) divergence vs height --
 fig, (axA, axB, axC) = plt.subplots(1, 3, figsize=(16.5, 5.0))
-CMU, CC = "#0072B2", "#D55E00"  # colorblind blue / vermillion
+CMU, CC = "#0072B2", "#D55E00"  # colorblind blue / vermilion
 
 # Panels A and B plot the same velocity series against distance (Fig-8 axes) and against time.
 for ax, x_mu, x_c, xlabel, title in (

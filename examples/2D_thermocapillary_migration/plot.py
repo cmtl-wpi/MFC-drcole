@@ -62,7 +62,7 @@ def read_namelist(path):
     return out
 
 
-# ----- samareh: the two headline validation overlays -------------------------------------------------
+# samareh: the two headline validation overlays
 
 def color_weighted_vy(run_dir):
     """Per-snapshot color-weighted lab-frame y-velocity history of a slip-wall run.
@@ -262,7 +262,7 @@ def cmd_samareh(argv):
         break  # only the first available run
 
 
-# ----- ma: TC1 conduction Ma -> 0 convergence sweep --------------------------------------------------
+# ma: TC1 conduction Ma -> 0 convergence sweep
 
 SAMAREH_RATIO = 0.80  # Samareh's converged 2D cylinder ratio (Fig 5)
 
@@ -329,7 +329,7 @@ def cmd_ma(argv):
     print("saved ->", out)
 
 
-# ----- fields: a derived field from one run ----------------------------------------------------------
+# fields: a derived field from one run
 
 def load_field_case(case_dir):
     """Read the grid, EOS constants, and snapshot list for one run into a namespace."""
@@ -533,7 +533,7 @@ def cmd_fields(argv):
     (field_temperature if field == "temperature" else field_sigma)(c, step)
 
 
-# ----- clean: remove orphaned figures (figures no current script produces) ---------------------------
+# clean: remove orphaned figures (figures no current script produces)
 
 # Figures the scripts here legitimately produce -- KEEP IN SYNC with the savefig calls above and with
 # compare_tc3_visc.py. `clean` deletes any other .png/.pdf in figures/ as a stale orphan; source files
