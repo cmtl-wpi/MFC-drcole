@@ -192,6 +192,11 @@ contains
                         ! Isentropic relation: rho = rho0 * (p/p0)^(1/gamma), Saurel et al. JFM (2009)
                         rho_K_s(i) = q_cons_vf(i + eqn_idx%cont%beg - 1)%sf(j, k, l)/max(q_cons_vf(i + eqn_idx%adv%beg - 1)%sf(j, &
                                 & k, l), sgm_eps)*((pres_relax + ps_inf(i))/(pres_K_init(i) + ps_inf(i)))**(1._wp/gs_min(i))
+                        ! A phase driven to zero mass (alpha_rho_i -> 0 while alpha_i is still above
+                        ! sgm_eps) leaves rho_K_s(i) = 0, making the alpha_rho_i/rho_K_s(i) divides below
+                        ! 0/0. rho_K_s is an intrinsic density (O(1)) otherwise, so this clamp only engages
+                        ! in that degenerate cell, where the massless phase then contributes nothing.
+                        rho_K_s(i) = max(rho_K_s(i), sgm_eps)
                         f_pres = f_pres + q_cons_vf(i + eqn_idx%cont%beg - 1)%sf(j, k, l)/rho_K_s(i)
                         df_pres = df_pres - q_cons_vf(i + eqn_idx%cont%beg - 1)%sf(j, k, &
                                                       & l)/(gs_min(i)*rho_K_s(i)*(pres_relax + ps_inf(i)))
