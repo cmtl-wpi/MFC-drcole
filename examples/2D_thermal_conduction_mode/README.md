@@ -41,5 +41,8 @@ decay, and writes `figures/heat_2d_mode.png` + `summary.json`.
 |------|----------------|-----------|-------|
 | 128² | peak $L_\infty$ **0.34**, $L_2$ 0.20 | 0.17 | isotropic decay rate matches to **3.7 %** |
 
+**Validated on GPU** — single NVIDIA V100, OpenACC via nvfortran
+(`./mfc.sh run examples/2D_thermal_conduction_mode/case.py --gpu acc --no-debug -n 1`).
+
 ![setup](diagrams/setup_2d_mode.png)
 ![2D mode](figures/heat_2d_mode.png)

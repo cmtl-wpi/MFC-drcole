@@ -38,5 +38,8 @@ rate, and writes `figures/heat_3d_mode.png` + `summary.json`.
 |------|----------------|-----------|-------|
 | 64³ | peak $L_\infty$ **0.32**, $L_2$ 0.11 | 0.17 | isotropic decay rate matches to **3.1 %** |
 
+**Validated on GPU** — single NVIDIA V100, OpenACC via nvfortran
+(`./mfc.sh run examples/3D_thermal_conduction_mode/case.py --gpu acc --no-debug -n 1`).
+
 ![setup](diagrams/setup_3d_mode.png)
 ![3D mode](figures/heat_3d_mode.png)

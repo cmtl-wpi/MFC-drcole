@@ -42,5 +42,8 @@ the EOS, compares to the exact solution, and writes `figures/heat_1d.png` +
 
 Matches the analytic solution to within the few-percent physics floor.
 
+**Validated on GPU** — single NVIDIA V100, OpenACC via nvfortran
+(`./mfc.sh run examples/1D_thermal_conduction/case.py --gpu acc --no-debug -n 1`).
+
 ![setup](diagrams/setup_1d.png)
 ![1D heat](figures/heat_1d.png)

@@ -40,5 +40,8 @@ profile), and writes `figures/heat_3d_hotspot.png` + `summary.json`.
 |------|----------------|-----------|-------|
 | 96³ | $L_2$ **0.014**, $L_\infty$ 0.11 | 0.24 | x/y/z center lines collapse → no directional bias |
 
+**Validated on GPU** — single NVIDIA V100, OpenACC via nvfortran
+(`./mfc.sh run examples/3D_thermal_conduction_hotspot/case.py --gpu acc --no-debug -n 1`).
+
 ![setup](diagrams/setup_3d_hotspot.png)
 ![3D hot spot](figures/heat_3d_hotspot.png)
