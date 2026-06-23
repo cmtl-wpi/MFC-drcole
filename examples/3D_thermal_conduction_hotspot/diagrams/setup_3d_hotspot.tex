@@ -20,7 +20,7 @@
   \def\S{5}
   \def\dx{1.7}
   \def\dy{1.25}
-  \coordinate (C) at (\S/2,\S/2);  % blob center on front face
+  \coordinate (C) at (\S/2+\dx/2,\S/2+\dy/2);  % blob at the cube's visual center (front center + half depth)
 
   % cube back face + connecting edges
   \draw[gray!55, line width=0.6pt]
