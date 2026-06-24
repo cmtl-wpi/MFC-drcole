@@ -44,6 +44,7 @@ matplotlib.use("Agg")
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNS = os.path.join(HERE, "runs")
@@ -116,11 +117,13 @@ SAMAREH_VOF = np.array([
     (3.0, 0.83), (4.0, 0.83), (5.0, 0.835), (6.0, 0.83), (7.0, 0.835), (8.0, 0.838), (9.0, 0.835),
     (10.0, 0.84)])
 
-# Plain plate style: white background, full box frame, outward ticks, no gridlines.
+# Seaborn aesthetic (whitegrid + notebook context). Applied via rc_context in each plot; the
+# explicit per-curve colors set below (frozen reds, conduction blues) are preserved on top of it.
 PLATE_STYLE = {
-    "axes.grid": False, "axes.facecolor": "white", "figure.facecolor": "white",
-    "axes.edgecolor": "0.0", "axes.linewidth": 1.0, "font.size": 13,
-    "xtick.direction": "out", "ytick.direction": "out",
+    **sns.axes_style("ticks"),
+    **sns.plotting_context("paper", font_scale=1.3),
+    "figure.facecolor": "white",
+    "axes.spines.top": False, "axes.spines.right": False,
 }
 
 
@@ -138,20 +141,24 @@ def read_case_Ma(run_dir):
 
 
 def samareh_fig5():
-    """TC1, Fig 5 (Ma->0 limit): the frozen-T anchor and a finite-Ma bulk-conduction run plotted
-    against each other and Samareh's VOF curve.
+    """TC1, Fig 5: grid-convergence sweeps of both the frozen-T (Ma=0) and bulk-conduction (Ma=0.1)
+    cases, each at several cells/D, plotted against Samareh's VOF curve.
 
-    Frozen-T pins the imposed linear T field through density (no energy transport) and holds a flat
-    plateau near Samareh's converged 0.80. The conduction run evolves an independent T scalar at
-    finite Ma and only *approaches* that limit -- it overshoots, then drifts. Showing both together
-    is the honest frozen-T-vs-conduction comparison; each labels its own Ma read from its case copy.
+    Frozen-T pins the imposed linear T field through density (no energy transport); conduction evolves
+    the coupled energy equation. Each case is its own color family (frozen reds, conduction blues),
+    shaded light->dark = coarse->fine, so the rise/overshoot and the late-time droop can be read as a
+    function of resolution. Each curve labels its own cells/D and run length, read from its case copy.
     """
     # (run dir, color); missing runs are skipped. box width = 5D, so cells/D = (m+1)/5, read per run.
+    # Grid convergence for BOTH cases: frozen-T (Ma=0) in reds, conduction (Ma=0.1) in blues;
+    # within each family light->dark = coarse->fine (12.8, 25.6, 51.2 cells/D).
     runs = [
-        ("tc1/frozen/w064", "#C44E52"),            # frozen-T anchor (Ma=0)
-        ("tc1/ma0p1/w064/sc050", "#9ecae1"),       # conduction Ma sweep: light -> dark as Ma -> 0
-        ("tc1/ma0p01/w064/sc050", "#4292c6"),
-        ("tc1/ma0p001/w064/sc050", "#084594"),
+        ("tc1/frozen/w064", "#fc9272"),            # frozen-T (Ma=0):     12.8 cells/D
+        ("tc1/frozen/w128", "#ef3b2c"),            #                      25.6 cells/D
+        ("tc1/frozen/w256", "#a50f15"),            #                      51.2 cells/D
+        ("tc1/ma0p1/w064/sc050", "#9ecae1"),       # conduction (Ma=0.1): 12.8 cells/D
+        ("tc1/ma0p1/w128/sc050", "#4292c6"),       #                      25.6 cells/D
+        ("tc1/ma0p1/w256/sc050", "#08306b"),       #                      51.2 cells/D
     ]
     series = []
     for name, color in runs:
@@ -168,7 +175,7 @@ def samareh_fig5():
         Ma = read_case_Ma(run)
         kind = "frozen-T" if Ma is None else "conduction"
         ma_txt = r"$Ma=0$" if Ma is None else rf"$Ma={Ma:g}$"
-        label = rf"MFC {kind} ({ma_txt}), {cells_per_D:.0f}/$D$ — to $t/t_r={x.max():.1f}$"
+        label = rf"{kind} ({ma_txt}), {cells_per_D:.1f}/$D$"
         series.append((x, y, color, label))
     if not series:
         print("  fig5: no runs found")
@@ -180,13 +187,15 @@ def samareh_fig5():
         ax.axhline(1.0, color="0.3", lw=1.1, ls="--", zorder=1,
                    label=r"$u_{\mathrm{YGB}}$ (analytic terminal, $\approx 8.89{\times}10^{-3}$)")
         for x, y, color, label in series:
-            ax.plot(x, y, "o--", color=color, ms=4.0, mew=0, lw=0.9, alpha=0.85, label=label)
+            ax.plot(x, y, "-", color=color, lw=1.7, alpha=0.95, solid_capstyle="round", label=label)
         ax.set_xlim(0.0, 10.0)
-        ax.set_ylim(0.0, 1.1)
-        ax.set_xlabel(r"Time   $t/t_r$")
-        ax.set_ylabel(r"Normalized Rise Velocity   $u/u_{\mathrm{YGB}}$")
-        ax.set_title(r"Fig 5 — 2D thermocapillary rise: frozen-T vs conduction ($Ma\to0$)", fontsize=12)
-        ax.legend(loc="lower right", fontsize=10, frameon=False)
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel(r"$t / t_r$")
+        ax.set_ylabel(r"rise velocity   $u / u_{\mathrm{YGB}}$")
+        ax.set_title(r"2D thermocapillary rise: grid convergence", fontsize=13, loc="left")
+        ax.legend(loc="lower left", fontsize=9, frameon=False, ncol=2,
+                  columnspacing=1.2, handlelength=1.6)
+        sns.despine(ax=ax)
         dst = os.path.join(FIGS, "case1_fig5.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)
@@ -572,7 +581,66 @@ def cmd_clean(argv):
     print(f"\n{len(orphans)} orphaned figure(s) " + ("removed" if force else "-- re-run with `plot.py clean --force` to delete"))
 
 
-COMMANDS = {"samareh": cmd_samareh, "ma": cmd_ma, "fields": cmd_fields, "clean": cmd_clean}
+# recon: late-droop sensitivity to the reconstruction scheme (fixed grid, Ma=0.1, 12.8 cells/D).
+# The droop is interface-band smearing during advection, so a less-diffusive / interface-compressing
+# scheme reduces it -- shown here at fixed dx (no grid refinement), isolating the scheme's diffusion.
+RECON_RUNS = [
+    ("recon/muscl", "MUSCL (Van Leer)", "#dd8452"),          # 2nd-order, most diffusive
+    ("recon/weno5", "WENO5 (baseline)", "#4c72b0"),
+    ("recon/wenoz", "WENO-Z", "#8172b3"),
+    ("recon/weno7", "WENO7", "#55a868"),                      # higher order, less diffusive
+    ("recon/muscl_thinc", "MUSCL + THINC (int_comp)", "#c44e52"),  # active interface compression
+]
+
+
+def samareh_recon():
+    """Late-time droop vs reconstruction scheme: the Ma=0.1 conduction case at a fixed grid
+    (12.8 cells/D), reconstructed with WENO5/7, WENO-Z, MUSCL, and MUSCL+THINC interface
+    compression. Same dx for all, so any difference in the droop is the scheme's interface
+    diffusion -- the direct counterpart to the grid sweep, isolating the advection scheme."""
+    series = []
+    for name, label, color in RECON_RUNS:
+        run = os.path.join(RUNS, name)
+        if not os.path.isdir(os.path.join(run, "restart_data")):
+            print(f"  recon: {name} not found, skipping")
+            continue
+        out = color_weighted_vy(run)
+        if out is None or len(out[0]) < 5:
+            print(f"  recon: {name} not ready, skipping")
+            continue
+        x, y = v_ygb_ratio(out)
+        series.append((x, y, color, label))
+    if not series:
+        print("  recon: no runs found")
+        return
+    with plt.rc_context(PLATE_STYLE):
+        fig, ax = plt.subplots(figsize=(7.0, 5.0), constrained_layout=True)
+        ax.plot(SAMAREH_VOF[:, 0], SAMAREH_VOF[:, 1], "s--", color="0.0", ms=5.0, mfc="none", mew=1.3,
+                lw=1.0, label=r"Samareh Fig 5(d), VOF ($Ma=0$)")
+        ax.axhline(1.0, color="0.4", lw=1.0, ls="--", zorder=1, label=r"$u_{\mathrm{YGB}}$")
+        for x, y, color, label in series:
+            ax.plot(x, y, "-", color=color, lw=1.7, alpha=0.95, solid_capstyle="round", label=label)
+        ax.set_xlim(0.0, 10.0)
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel(r"$t / t_r$")
+        ax.set_ylabel(r"rise velocity   $u / u_{\mathrm{YGB}}$")
+        ax.set_title(r"late-time droop vs reconstruction ($Ma=0.1$, 12.8 cells/$D$, fixed grid)",
+                     fontsize=12, loc="left")
+        ax.legend(loc="lower left", fontsize=9, frameon=False, ncol=2,
+                  columnspacing=1.2, handlelength=1.6)
+        sns.despine(ax=ax)
+        dst = os.path.join(FIGS, "case1_recon.png")
+        fig.savefig(dst, dpi=200)
+        plt.close(fig)
+        print(f"  wrote {dst}  ({len(series)} runs)")
+
+
+def cmd_recon(argv):
+    os.makedirs(FIGS, exist_ok=True)
+    samareh_recon()
+
+
+COMMANDS = {"samareh": cmd_samareh, "ma": cmd_ma, "fields": cmd_fields, "recon": cmd_recon, "clean": cmd_clean}
 
 
 def main():

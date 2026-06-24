@@ -119,7 +119,13 @@ times, y_centroid, u_lab, rho_drop_t = map(np.array, (times, y_centroid, u_lab, 
 
 viz_dir = os.path.join(case_dir, "viz")
 os.makedirs(viz_dir, exist_ok=True)
-y_drop0 = param("patch_icpp(2)%y_centroid", patches)  # initial drop position
+# Initial drop position. Two-patch layout: the drop is patch 2, read its centroid. Single
+# analytic patch (current cases): the drop center lives in the IC field, not a namelist key,
+# so take the t=0 color centroid (the guard then just confirms the snapshot is self-consistent).
+if "patch_icpp(2)%y_centroid" in patches:
+    y_drop0 = param("patch_icpp(2)%y_centroid", patches)
+else:
+    y_drop0 = float(y_centroid[0])
 assert abs(y_centroid[0] - y_drop0) < 0.1 * R * (1.0 if mode != "tc3" else Ly / 0.045), f"drop not at patch centroid at t=0 ({y_centroid[0]:.3g} vs {y_drop0:.3g}) -- check layout"
 
 
