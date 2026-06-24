@@ -6,3 +6,4 @@ Subdirectories with their own CLAUDE.md keep their own `memory/` — keep facts 
 scope to the work.
 
 <!-- entries: - [Title](file.md) — hook -->
+- [GPU build on nighthawk](gpu-build-on-nighthawk.md) — venv/compiler/MPI/runtime fixes to get `./mfc.sh build --gpu acc` working on the single-V100 workstation (no modules)
