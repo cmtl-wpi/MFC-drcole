@@ -59,7 +59,6 @@ def read_namelist(path):
 
 
 params = read_namelist(os.path.join(case_dir, "simulation.inp"))
-patches = read_namelist(os.path.join(case_dir, "pre_process.inp"))
 # Bulk Fourier conduction tames the frozen-T runaway; when it's on (this 3D case by construction)
 # the "frozen-T drift" caveat -- a 2D no-conduction artifact -- does not apply.
 cond_mode = str(params.get("thermal_conduction", "F")).upper().strip(". ").startswith("T")
@@ -83,7 +82,10 @@ mu = 1.0 / param("fluid_pp(1)%re(1)")  # MFC takes Re = 1/mu
 dsigma_dT = param("sigma_dtdt")  # sigma(T) slope
 dim = 3 if int(param("p")) > 0 else 2
 wall = int(param("bc_y%beg")) == -2  # slip-wall (Samareh geometry) vs open box
-y_drop0 = param("patch_icpp(2)%y_centroid", patches)  # initial drop position
+# Single analytic patch (num_patches=1): the drop center is baked into the IC eta string, not a
+# patch_icpp param. Recover it from the domain geometry, matching case_ygb.py -- cube centers the
+# drop (Ly == W), samareh puts it 1.5D above the cold floor.
+y_drop0 = 0.5 * (param("y_domain%beg") + param("y_domain%end")) if abs(Ly - W) < 1e-6 else param("y_domain%beg") + 1.5
 
 # Not in the namelists -- analysis choices. MUST match case.py.
 r = 0.5  # droplet radius (D = 1)

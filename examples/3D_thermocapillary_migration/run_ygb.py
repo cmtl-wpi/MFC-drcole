@@ -77,9 +77,12 @@ def ranks_for(Nx):
 def launch(geom, W, Nx, Ma, n_tr, force):
     """Start one variant as a background process. Return (popen, wd, ranks, key), or None if skipped.
 
-    Skips a populated leaf unless force. Uses --no-build: the binary is content-addressed and the
-    analytic IC is identical across the whole sweep, so one build serves every run (run `smoke` once
-    on a fresh checkout to build it). Per-leaf stdout -> <leaf>/run.log so concurrent runs don't mix.
+    Skips a populated leaf unless force. Uses --case-optimization --no-build: the simulation binary
+    is grid- and Ma-independent (m/n/p and k_therm are runtime, not in CASE_OPT_PARAMS) so ONE sim
+    build serves the whole sweep, but the analytic IC bakes a dx-dependent interface width
+    (w_if = 0.75*dx) into the patch strings, so each distinct grid needs its own pre_process build.
+    Pre-build every grid (case-optimized) before sweeping; --no-build then finds each by slug.
+    Per-leaf stdout -> <leaf>/run.log so concurrent runs don't mix.
     """
     wd = leaf_dir(geom, W, Nx, Ma)
     key = os.path.relpath(wd, RUNS)
@@ -96,7 +99,9 @@ def launch(geom, W, Nx, Ma, n_tr, force):
     rel = os.path.relpath(os.path.join(wd, CASE), REPO)
     log = open(os.path.join(wd, "run.log"), "w")
     print(f">>> LAUNCH {key}  Nx={Nx} Ma={Ma} t_r={n_tr} ranks={ranks}", flush=True)
-    p = subprocess.Popen(PIN + ["./mfc.sh", "run", rel, "-n", str(ranks), "--no-build"], cwd=REPO, env=env, stdout=log, stderr=subprocess.STDOUT)
+    p = subprocess.Popen(
+        PIN + ["./mfc.sh", "run", rel, "-n", str(ranks), "-t", "pre_process", "simulation", "--mpi", "--case-optimization", "--no-build"], cwd=REPO, env=env, stdout=log, stderr=subprocess.STDOUT
+    )
     return p, wd, ranks, key
 
 

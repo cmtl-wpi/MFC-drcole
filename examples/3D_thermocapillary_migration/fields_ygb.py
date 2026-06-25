@@ -59,8 +59,15 @@ gm = [float(P[f"fluid_pp({i})%gamma"]) for i in (1, 2)]  # = 1/(gamma_i - 1)
 pin = [float(P[f"fluid_pp({i})%pi_inf"]) for i in (1, 2)]
 cvs = [float(P[f"fluid_pp({i})%cv"]) for i in (1, 2)]
 gsmin = [1.0 / g + 1.0 for g in gm]
-a1, a2 = field(5), field(6)  # volume fractions
-rho_e = field(7) + field(8)  # mixture internal energy (phasic internal energies)
+# model_eqns=3 conserved layout: cont(nf), mom(dim), total-E(1), volume fractions(nf),
+# phasic internal energies(nf), ..., color(last). Derive the offsets so we don't mis-index the
+# total-E slot (a hardcoded 5,6 reads E as a volume fraction -> garbage T + a fake drop "blob").
+nf = int(P.get("num_fluids", 2))
+dim = 3 if nz > 1 else 2
+i_adv = nf + dim + 1  # first volume fraction (after cont, mom, total energy)
+i_ie = i_adv + nf  # first phasic internal energy
+a1, a2 = field(i_adv), field(i_adv + 1)  # volume fractions
+rho_e = field(i_ie) + field(i_ie + 1)  # mixture internal energy (sum of phasic internal energies)
 Gamma = a1 * gm[0] + a2 * gm[1]
 pi_mix = a1 * pin[0] + a2 * pin[1]
 mCP = field(0) * cvs[0] * gsmin[0] + field(1) * cvs[1] * gsmin[1]
