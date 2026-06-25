@@ -109,7 +109,7 @@ data = {
     "recon_type": 2,
     "muscl_order": 2,
     "muscl_lim": 4,
-    "int_comp": "T",
+    "int_comp": 1,
     "ic_beta": 1.6,
     "avg_state": 2,
     "riemann_solver": 2,

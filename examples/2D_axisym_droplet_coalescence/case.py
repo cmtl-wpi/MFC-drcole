@@ -119,7 +119,7 @@ elif SCHEME == "muscl_thinc":
         "recon_type": 2,
         "muscl_order": 2,
         "muscl_lim": 4,  # Van Leer
-        "int_comp": "T",  # THINC interface compression
+        "int_comp": 1,  # THINC interface compression
         "ic_eps": 1e-4,
         "ic_beta": 1.6,
     }
