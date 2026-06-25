@@ -169,6 +169,17 @@ PHYSICS_DOCS = {
             "elasticity, MHD, relaxation, or immersed boundaries."
         ),
     },
+    "check_visc_model": {
+        "title": "Temperature-Dependent Viscosity",
+        "category": "Numerical Schemes",
+        "math": r"\mu_k(T) = \exp\!\left(C_{\mu,k} + D_{\mu,k}/T\right)",
+        "explanation": (
+            "Per-fluid Arrhenius viscosity fluid_pp(i)%visc_model=1 sets mu = exp(visc_c + visc_d/T) "
+            "in the HLLC shear-Re construction, with temperature from the stiffened-gas EOS (needs cv > 0). "
+            "Currently requires viscous = T, riemann_solver = 2 (HLLC), model_eqns = 3, and is not "
+            "supported with chemistry. visc_model = 0 keeps the constant-Re behavior."
+        ),
+    },
     "check_hypoelasticity": {
         "title": "Hypoelasticity",
         "category": "Feature Compatibility",
@@ -1088,6 +1099,29 @@ class CaseValidator:
         ]
         for flag, reason in incompatible:
             self.prohibit(self.get(flag, "F") == "T", f"thermal_conduction is not supported with {flag}: {reason}")
+
+    def check_visc_model(self):
+        """Checks constraints on the temperature-dependent (Arrhenius) viscosity model fluid_pp(i)%visc_model"""
+        viscous = self.get("viscous", "F") == "T"
+        chemistry = self.get("chemistry", "F") == "T"
+        riemann_solver = self.get("riemann_solver")
+        model_eqns = self.get("model_eqns")
+        num_fluids = self.get("num_fluids") or 1
+
+        for i in range(1, num_fluids + 1):
+            visc_model = self.get(f"fluid_pp({i})%visc_model")
+            if visc_model is None:
+                continue
+            self.prohibit(visc_model not in (0, 1), f"fluid_pp({i})%visc_model must be 0 (constant) or 1 (Arrhenius mu=exp(C+D/T))")
+            if visc_model == 1:
+                cv = self.get(f"fluid_pp({i})%cv")
+                self.prohibit(not viscous, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires viscous = T")
+                self.prohibit(cv is not None and cv <= 0, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires cv > 0")
+                self.prohibit(chemistry, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) is not supported with chemistry")
+                self.prohibit(
+                    riemann_solver != 2 or model_eqns != 3,
+                    f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) currently requires riemann_solver=2 (HLLC) and model_eqns=3",
+                )
 
     def check_mhd_simulation(self):
         """Checks MHD constraints specific to simulation"""
@@ -2300,6 +2334,7 @@ class CaseValidator:
         self.check_eos_parameter_sanity()
         self.check_surface_tension()
         self.check_thermal_conduction()
+        self.check_visc_model()
         self.check_mhd()
         self.check_chemistry()
 
