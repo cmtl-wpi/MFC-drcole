@@ -41,8 +41,8 @@ module m_variables_conversion
 
     ! In simulation, gammas, pi_infs, and qvs are already declared in m_global_variables
 #ifndef MFC_SIMULATION
-    real(wp), allocatable, public, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps
-    $:GPU_DECLARE(create='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps]')
+    real(wp), allocatable, public, dimension(:) :: gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, kappas
+    $:GPU_DECLARE(create='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, kappas]')
 #endif
 
     real(wp), allocatable, dimension(:)   :: Gs_vc
@@ -337,6 +337,7 @@ contains
         @:ALLOCATE(qvs    (1:num_fluids))
         @:ALLOCATE(qvps    (1:num_fluids))
         @:ALLOCATE(Gs_vc     (1:num_fluids))
+        @:ALLOCATE(kappas (1:num_fluids))
 
         do i = 1, num_fluids
             gammas(i) = fluid_pp(i)%gamma
@@ -345,10 +346,11 @@ contains
             Gs_vc(i) = fluid_pp(i)%G
             ps_inf(i) = pi_infs(i)/(1.0_wp + gammas(i))
             cvs(i) = fluid_pp(i)%cv
+            kappas(i) = fluid_pp(i)%k_therm
             qvs(i) = fluid_pp(i)%qv
             qvps(i) = fluid_pp(i)%qvp
         end do
-        $:GPU_UPDATE(device='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc]')
+        $:GPU_UPDATE(device='[gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas]')
 
 #ifdef MFC_SIMULATION
         if (viscous) then
@@ -1233,7 +1235,7 @@ contains
 #endif
 
 #ifdef MFC_SIMULATION
-        @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
+        @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
         end if
@@ -1241,7 +1243,7 @@ contains
             @:DEALLOCATE(Res_vc)
         end if
 #else
-        @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
+        @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
         end if

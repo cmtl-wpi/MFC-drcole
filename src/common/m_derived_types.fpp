@@ -383,6 +383,7 @@ module m_derived_types
         real(wp)               :: pi_inf         !< Liquid stiffness
         real(wp), dimension(2) :: Re             !< Reynolds number
         real(wp)               :: cv             !< heat capacity
+        real(wp)               :: k_therm        !< thermal conductivity (constant per fluid, used when thermal_conduction is on)
         real(wp)               :: qv             !< reference energy per unit mass for SGEOS, q (see Le Metayer (2004))
         real(wp)               :: qvp            !< reference entropy per unit mass for SGEOS, q' (see Le Metayer (2004))
         real(wp)               :: G
