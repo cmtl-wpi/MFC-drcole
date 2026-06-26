@@ -116,11 +116,11 @@ data = {
     "mixture_err": "T",
     "mpp_lim": "T",
     "time_stepper": 3,
-    "weno_order": 5,
+    "weno_order": 7,
     "weno_eps": 1e-16,
     "mapped_weno": "T",
     "null_weights": "F",
-    "mp_weno": "T",
+    "mp_weno": "F",  # mp_weno is WENO5-only; off for weno_order=7
     "weno_avg": "T",
     "weno_Re_flux": "T",
     "riemann_solver": 2,
