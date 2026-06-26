@@ -48,6 +48,7 @@ module m_start_up
     use m_checker_common
     use m_checker
     use m_surface_tension
+    use m_thermal_conduction
     use m_body_forces
     use m_sim_helpers
     use m_igr
@@ -835,6 +836,8 @@ contains
 
         if (surface_tension) call s_initialize_surface_tension_module()
 
+        if (thermal_conduction) call s_initialize_thermal_conduction_module()
+
         if (relax) call s_initialize_phasechange_module()
 
         call s_initialize_data_output_module()
@@ -1101,6 +1104,7 @@ contains
         call s_finalize_mpi_proxy_module()
 
         if (surface_tension) call s_finalize_surface_tension_module()
+        if (thermal_conduction) call s_finalize_thermal_conduction_module()
         if (bodyForces) call s_finalize_body_forces_module()
         if (ib) call s_finalize_ibm_module()
 
