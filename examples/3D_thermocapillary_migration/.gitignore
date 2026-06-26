@@ -1,4 +1,4 @@
-# Raw simulation output (large; reproducible via run_ygb.py). Keep results/ (JSON) + figures/.
+# Raw simulation output (large; reproducible via run_ygb.py / sweep_grid_ma.py). Keep results/ (JSON) + figures/.
 runs/
 __pycache__/
 *.pyc
@@ -9,7 +9,7 @@ silo_hdf5/
 viz/
 *.inp
 *.dat
-MFC.out
+*.out
 MFC.sh
 run_time.inf
 smoke_run.log
