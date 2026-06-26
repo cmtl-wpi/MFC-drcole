@@ -114,8 +114,15 @@ eps = 1e-9
 sep = 0.68 * D
 b = B * D
 
-t_end = 1e-3
-t_save = t_end / 200
+# 3.0 ms: case f needs the full Qian & Law timeline (their last frame is 2.88 ms);
+# +0.12 ms past it covers the sim/experiment contact offset (~0.035 ms) with margin.
+# Grid adequacy verified against the D/90 3 ms run (2026-06-02_140913_case-f):
+# over 0-3 ms the interface stays within x=+/-1.18D and y=+/-0.90D (the drop
+# coalesces, n_fragments=1, and OSCILLATES rather than stretching/separating), so
+# the fine zone above (fine_x=1.45D, fine_yz=0.90D) already contains it -- x with
+# 0.27D margin, y exactly at the fine-zone edge (still resolved, zero spare margin).
+t_end = 3e-3
+t_save = t_end / 300  # 10 us cadence, 300 frames (resolves the Qian & Law frames)
 
 data = {
     "run_time_info": "T",
