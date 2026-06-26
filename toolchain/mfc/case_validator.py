@@ -1547,6 +1547,8 @@ class CaseValidator:
         # Fetch global chemistry and diffusion flags
         chemistry = self.get("chemistry", "F") == "T"
         diffusion = self.get("chem_params%diffusion", "F") == "T"
+        chem_heat = chemistry and diffusion
+        thermal_conduction = self.get("thermal_conduction", "F") == "T"
         num_fluids = self.get("num_fluids")
 
         # Chemistry assumes a single reacting gas phase: the temperature/pressure
@@ -1567,11 +1569,14 @@ class CaseValidator:
             bc_end = self.get(f"bc_{dir}%end")
 
             if isothermal_in:
-                # Prohibit isothermal boundaries if chemistry or diffusion are disabled
-                self.prohibit(not chemistry or not diffusion, f"Isothermal In (bc_{dir}%isothermal_in) requires both chemistry='T' and chem_params%diffusion='T' to calculate heat conduction.")
+                # Requires a heat-conduction model (bulk conduction or chemistry diffusion) to act on the wall temperature
+                self.prohibit(
+                    not chem_heat and not thermal_conduction,
+                    f"Isothermal In (bc_{dir}%isothermal_in) requires either thermal_conduction='T' or (chemistry='T' and chem_params%diffusion='T') to calculate heat conduction.",
+                )
 
-                # Prohibit if neither beg nor end is set to a valid wall condition
-                self.prohibit(bc_beg not in wall_bcs, f"Isothermal In (bc_{dir}%isothermal_in) requires a wall. Set bc_{dir}%beg to -15 (slip) or -16 (no-slip).")
+                # The chemistry path applies isothermal walls inside the wall BC routines; bulk conduction imposes the Dirichlet temperature at any boundary type
+                self.prohibit(not thermal_conduction and bc_beg not in wall_bcs, f"Isothermal In (bc_{dir}%isothermal_in) requires a wall. Set bc_{dir}%beg to -15 (slip) or -16 (no-slip).")
 
                 # Check that the wall temperature is defined and physically valid (> 0 K)
                 tw_in = self.get(f"bc_{dir}%Twall_in")
@@ -1580,11 +1585,14 @@ class CaseValidator:
                     self.prohibit(tw_in <= 0.0, f"Wall temperature bc_{dir}%Twall_in must be strictly positive for thermodynamics (got {tw_in}).")
 
             if isothermal_out:
-                # Prohibit isothermal boundaries if chemistry or diffusion are disabled
-                self.prohibit(not chemistry or not diffusion, f"Isothermal Out (bc_{dir}%isothermal_out) requires both chemistry='T' and chem_params%diffusion='T' to calculate heat conduction.")
+                # Requires a heat-conduction model (bulk conduction or chemistry diffusion) to act on the wall temperature
+                self.prohibit(
+                    not chem_heat and not thermal_conduction,
+                    f"Isothermal Out (bc_{dir}%isothermal_out) requires either thermal_conduction='T' or (chemistry='T' and chem_params%diffusion='T') to calculate heat conduction.",
+                )
 
-                # Prohibit if neither beg nor end is set to a valid wall condition
-                self.prohibit(bc_end not in wall_bcs, f"Isothermal Out (bc_{dir}%isothermal_out) requires a wall. Set bc_{dir}%end to -15 (slip) or -16 (no-slip).")
+                # The chemistry path applies isothermal walls inside the wall BC routines; bulk conduction imposes the Dirichlet temperature at any boundary type
+                self.prohibit(not thermal_conduction and bc_end not in wall_bcs, f"Isothermal Out (bc_{dir}%isothermal_out) requires a wall. Set bc_{dir}%end to -15 (slip) or -16 (no-slip).")
 
                 # Check that the wall temperature is defined and physically valid (> 0 K)
                 tw_out = self.get(f"bc_{dir}%Twall_out")
