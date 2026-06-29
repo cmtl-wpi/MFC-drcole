@@ -182,16 +182,13 @@ def samareh_fig5():
     function of resolution. Each curve labels its own cells/D and run length, read from its case copy.
     """
     # (run dir, color); missing runs are skipped. box width = 5D, so cells/D = (m+1)/5, read per run.
-    # Grid convergence for BOTH cases: frozen-T (Ma=0) in reds, conduction (Ma=0.1) in blues;
-    # within each family light->dark = coarse->fine (12.8, 25.6, 51.2 cells/D).
-    runs = [
-        ("tc1/frozen/w064", "#fc9272"),  # frozen-T (Ma=0):     12.8 cells/D
-        ("tc1/frozen/w128", "#ef3b2c"),  #                      25.6 cells/D
-        ("tc1/frozen/w256", "#a50f15"),  #                      51.2 cells/D
-        ("tc1/ma0p1/w064/sc050", "#9ecae1"),  # conduction (Ma=0.1): 12.8 cells/D
-        ("tc1/ma0p1/w128/sc050", "#4292c6"),  #                      25.6 cells/D
-        ("tc1/ma0p1/w256/sc050", "#08306b"),  #                      51.2 cells/D
-    ]
+    # Grid convergence for BOTH cases: frozen-T (Ma=0) in reds, conduction (Ma=0.1) in blues; within
+    # each family light->dark = coarse->fine. Built over the grid ladder so new sweep points (the
+    # sweep_grid_2d campaign: w096/w192/w384) appear automatically without editing this list.
+    grid_nx = [64, 96, 128, 192, 256, 384]
+    shades = np.linspace(0.35, 0.95, len(grid_nx))
+    runs = [(f"tc1/frozen/w{nx:03d}", plt.cm.Reds(s)) for nx, s in zip(grid_nx, shades)]
+    runs += [(f"tc1/ma0p1/w{nx:03d}/sc050", plt.cm.Blues(s)) for nx, s in zip(grid_nx, shades)]
     series = []
     for name, color in runs:
         run = os.path.join(RUNS, name)

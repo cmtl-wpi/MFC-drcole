@@ -27,7 +27,7 @@ CASES = {
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--mfc", type=json.loads, default="{}")
-parser.add_argument("--case", type=str, default="f", choices=CASES.keys())
+parser.add_argument("--case", type=str, default="b", choices=CASES.keys())
 parser.add_argument("--n_start", type=int, default=0)
 args = parser.parse_args()
 
@@ -98,8 +98,8 @@ fine_y = 0.75 * D
 x0, x1 = -1.5 * D, 1.5 * D
 y0, y1 = -1.0 * D, 1.0 * D
 
-Nx = 599  # 600 cells over x = 3.0D  -> D/200
-Ny = 399  # 400 cells over y = 2.0D  -> D/200
+Nx = 1199  # 1200 cells over x = 3.0D  -> D/400
+Ny = 799  # 800 cells over y = 2.0D  -> D/400
 
 eps = 1e-9
 
