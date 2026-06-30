@@ -389,9 +389,24 @@ that paper directly, using the same `σ(T)` + conduction + per-fluid-density-pro
   steps even at 16/$D$, ~5.7 h on one rank since the 32-cell square can't decompose), so the sound speed
   was dropped to $c_\mathrm{ref}{=}2.5$ to keep dt large — but at that sound speed the IC's acoustic
   ringing swamps the tiny ($\mathrm{Ma}\sim10^{-5}$) migration. A faithful run needs $c_\mathrm{ref}\sim15$
-  (proven) **and** a finer grid, i.e. ~5× the steps (~day-scale). This is the hard case; the finite-$Re$
-  sweeps below behave far better.
-- **Fig 3** is already `case_Ma_20.py` (same $Re=5,Ma=20,Ca=0.0167$) — see §4.3.
+  (proven) **and** a finer grid, i.e. ~5× the steps (~day-scale). A wider-domain retry (4D×4D, 8 radii,
+  to test whether confinement rather than acoustics drove the over-speed) went NaN-unstable at 16/$D$
+  (the same instability the sweeps needed `mp_weno=T` for) before it could answer the question. This is
+  the hard case; the finite-$Re$ sweeps below behave far better.
+- **Fig 3** is `case_Ma_20.py` (same $Re=5,Ma=20,Ca=0.0167$; also §4.3).
+
+Head-to-head overlays ([`compare_nt.py`](compare_nt.py); paper curves digitized by eye, MFC's Fig 3
+measured live from `runs/tc2/{w064,w128}`, MFC's Fig 2 from the creeping run in
+`results/nt_fig2_mfc.json`):
+
+![Fig 2 comparison](figures/nt_fig2_comparison.png)
+![Fig 3 comparison](figures/nt_fig3_comparison.png)
+
+**Fig 3 ✅ (shape):** MFC at 32/$D$ and 64/$D$ reproduces the rise and overshoot, peaking at $V^*\approx0.135$
+(paper 0.129), slightly early ($t^*\approx3.7$ vs 5); past the peak it declines faster than the paper
+(the compressible over-relaxation noted in §4.3, §6), and these runs stop at $t^*\approx8$ so the long
+tail isn't shown. **Fig 2 ❌:** MFC oscillates around $V^*\approx0.4$, far above the paper's smooth
+$\approx0.13$ plateau — the creeping case is not reproduced (see the Fig-2 bullet above).
 
 **Single-particle trend claims** (Nas & Tryggvason's *introduction* summarises these from prior
 literature — they are not figures in the paper, so [`sweep.py`](sweep.py) generates the curves from
