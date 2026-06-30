@@ -375,6 +375,58 @@ tiled view per case):
 - TC2: [interface](animations/tc2_fig7_interface.mp4) · [temperature](animations/tc2_fig7_temperature.mp4) · [all variables](animations/tc2_fig7_all_vars.mp4)
 - TC3: [interface](animations/tc3_fig8_interface.mp4) · [temperature](animations/tc3_fig8_temperature.mp4) · [all variables](animations/tc3_fig8_all_vars.mp4)
 
+### 4.6 Nas & Tryggvason (2003) direct validation — Fig 2 + single-particle trends
+
+The TC2 case above is taken from Nas & Tryggvason (*IJMF* **29**, 1117–1135). Two extra pieces validate
+that paper directly, using the same `σ(T)` + conduction + per-fluid-density-proxy machinery (§3):
+
+- **Fig 2** ([`case_NT_fig2.py`](case_NT_fig2.py)) — the creeping single-drop resolution test
+  ($Re=Ma=2.5\times10^{-3}$, $Ca=10^{-3}$, ratios 0.5) in their Fig-1 geometry (periodic-$x$, **no-slip**
+  isothermal-$y$ walls — the conduction wall BC fires on any physical face, not just reflective).
+  Target $V^*\approx 0.13$. **⚠️ Does not yet reproduce it.** The $Nx{=}32$ run completes cleanly but the
+  migration is acoustically contaminated and ~3× fast (mean $V^*\approx 0.4$). Cause is the creeping
+  regime's cost/accuracy tension: at $Re{=}2.5\times10^{-3}$ the run is conduction-step-limited (~1.2 M
+  steps even at 16/$D$, ~5.7 h on one rank since the 32-cell square can't decompose), so the sound speed
+  was dropped to $c_\mathrm{ref}{=}2.5$ to keep dt large — but at that sound speed the IC's acoustic
+  ringing swamps the tiny ($\mathrm{Ma}\sim10^{-5}$) migration. A faithful run needs $c_\mathrm{ref}\sim15$
+  (proven) **and** a finer grid, i.e. ~5× the steps (~day-scale). A wider-domain retry (4D×4D, 8 radii,
+  to test whether confinement rather than acoustics drove the over-speed) went NaN-unstable at 16/$D$
+  (the same instability the sweeps needed `mp_weno=T` for) before it could answer the question. This is
+  the hard case; the finite-$Re$ sweeps below behave far better.
+- **Fig 3** is `case_Ma_20.py` (same $Re=5,Ma=20,Ca=0.0167$; also §4.3).
+
+Head-to-head overlays ([`compare_nt.py`](compare_nt.py); paper curves digitized by eye, MFC's Fig 3
+measured live from `runs/tc2/{w064,w128}`, MFC's Fig 2 from the creeping run in
+`results/nt_fig2_mfc.json`):
+
+![Fig 2 comparison](figures/nt_fig2_comparison.png)
+![Fig 3 comparison](figures/nt_fig3_comparison.png)
+
+**Fig 3 ✅ (shape):** MFC at 32/$D$ and 64/$D$ reproduces the rise and overshoot, peaking at $V^*\approx0.135$
+(paper 0.129), slightly early ($t^*\approx3.7$ vs 5); past the peak it declines faster than the paper
+(the compressible over-relaxation noted in §4.3, §6), and these runs stop at $t^*\approx8$ so the long
+tail isn't shown. **Fig 2 ❌:** MFC oscillates around $V^*\approx0.4$, far above the paper's smooth
+$\approx0.13$ plateau — the creeping case is not reproduced (see the Fig-2 bullet above).
+
+**Single-particle trend claims** (Nas & Tryggvason's *introduction* summarises these from prior
+literature — they are not figures in the paper, so [`sweep.py`](sweep.py) generates the curves from
+[`case_sweep.py`](case_sweep.py), parametrized in $Re/Ma/Ca$ and the four property ratios). Run at
+"quick trends-only" fidelity: 16 cells/$D$ in a confined $2D\times4D$ box, peak $V^*$ as the terminal
+metric, "bubble" = a $\rho^*{=}0.1$ light particle (a true 1/25 gas bubble is ~5× costlier here for the
+same qualitative trend). Honest scorecard (`figures/sweep_*.png`):
+
+| Claim (unbounded-domain literature) | MFC quick result | Verdict |
+|---|---|---|
+| drop $V_t$: ↓ with $Ma$, min, then ↑ | monotonic ↓ then flattens (0.133→0.104) | partial — decline + approach-to-min, no upturn |
+| gas bubble $V_t$: ↓ rapidly with $Ca$ | non-monotonic, peak at $Ca\approx0.1$ | **not reproduced** — deformation/confinement under-resolved |
+| gas bubble $V_t$: ↑ very weakly with $Re$ | ~flat, ~7% over $Re\,2$–$20$ | supported — the *weak* dependence is the point |
+| gas bubble $V_t$: ↓ with $Ma$ | clear ↓ (0.259→0.129) | **reproduced** |
+| drop deforms oblate/prolate vs $\rho^*$ | AR grows with $\rho^*$ (1.02→1.04, prolate) | partial — density-dependent, no sign reversal |
+
+The mixed outcome is expected at this fidelity: the velocity-vs-$Ma$ trends (driven by thermal
+advection) come through, while the $Ca$ and deformation trends (driven by interface deformation in an
+*unbounded* domain) need finer grids and a larger box than the quick tier provides.
+
 ---
 
 ## 5. How MFC realises the temperature field
