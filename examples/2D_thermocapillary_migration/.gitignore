@@ -2,6 +2,8 @@
 runs/
 __pycache__/
 *.pyc
+# Interactive Plotly twins (plot_html.py) -- regenerable on demand, not the paper source of truth
+figures/*.html
 # In-place output of the quick-start run (./mfc.sh run .../case.py from this directory)
 restart_data/
 D/

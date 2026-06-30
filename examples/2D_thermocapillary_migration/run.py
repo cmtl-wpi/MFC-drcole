@@ -6,7 +6,7 @@ file), is measured by measure.py, and its result is collected into results/<summ
 The overlay figures are regenerated at the end.
 
 Targets:
-  fig5  case_Ma_0p001.py -- 2D zero-Ma rise, grid convergence (v/v_YGB -> ~0.80)
+  fig5  case_Ma_0.py -- 2D zero-Ma rise, grid convergence (v/v_YGB -> ~0.80)
   fig7  case_Ma_20.py    -- 2D low-Ma migration (U*/U_r, peak ~0.13)
   tc3   3D case_Ma_1723  -- 3D large-Ma + mu(T)
   all   fig5 + fig7
@@ -42,7 +42,7 @@ NOBIND = {"OMPI_MCA_hwloc_base_binding_policy": "none"}  # don't let prterun pin
 # filenames keep their historical names so the plot scripts and notes that read them resolve.
 TARGETS = {
     "fig5": dict(
-        case="case_Ma_0p001.py",
+        case="case_Ma_0.py",
         mode="fig5",
         summary="summary.json",
         variants=[
