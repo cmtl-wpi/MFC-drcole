@@ -5,8 +5,13 @@
 # centered in a SQUARE box "extending four drop radii in each direction" (2D x 2D), in an imposed
 # linear temperature field (cold floor, hot ceiling). Surface tension falls with temperature, so
 # Marangoni stress drags the interface hot->cold and the drop migrates toward the hot wall. The
-# migration velocity V* = V/U_r rises monotonically to a steady-state plateau ~ 0.13.
+# migration velocity V* = V/U_r should rise monotonically to a steady-state plateau ~ 0.13.
 #   Non-dimensional targets: Re = Ma = 2.5e-3, Ca = 1e-3; ALL property ratios (rho, mu, cv, k) = 0.5.
+#
+# STATUS: NOT yet reproduced. The committed Nx=32 run completes cleanly but is acoustically
+# contaminated and ~3x fast (mean V* ~ 0.4): the very low c_ref below (chosen to keep dt large in this
+# conduction-step-limited creeping run, ~1.2M steps) lets the IC's acoustic ringing swamp the tiny
+# (Ma~1e-5) migration. A faithful run needs c_ref ~ 15 AND a finer grid (~5x the steps, ~day-scale).
 # (Nas-Tryggvason Fig. 3, the finite-Re/Ma test Re=5/Ma=20/Ca=0.01666, is already case_Ma_20.py.)
 #
 # GEOMETRY matches Nas & Tryggvason Fig. 1: periodic in x, no-slip isothermal walls on the

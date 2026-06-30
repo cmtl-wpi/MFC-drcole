@@ -382,9 +382,15 @@ that paper directly, using the same `σ(T)` + conduction + per-fluid-density-pro
 
 - **Fig 2** ([`case_NT_fig2.py`](case_NT_fig2.py)) — the creeping single-drop resolution test
   ($Re=Ma=2.5\times10^{-3}$, $Ca=10^{-3}$, ratios 0.5) in their Fig-1 geometry (periodic-$x$, **no-slip**
-  isothermal-$y$ walls — the conduction wall BC fires on any physical face, not just reflective). $V^*$
-  rises monotonically to a plateau $\approx 0.13$. Creeping flow is conduction-step-limited (~1.2 M steps
-  at 16/$D$); it is the one expensive case here.
+  isothermal-$y$ walls — the conduction wall BC fires on any physical face, not just reflective).
+  Target $V^*\approx 0.13$. **⚠️ Does not yet reproduce it.** The $Nx{=}32$ run completes cleanly but the
+  migration is acoustically contaminated and ~3× fast (mean $V^*\approx 0.4$). Cause is the creeping
+  regime's cost/accuracy tension: at $Re{=}2.5\times10^{-3}$ the run is conduction-step-limited (~1.2 M
+  steps even at 16/$D$, ~5.7 h on one rank since the 32-cell square can't decompose), so the sound speed
+  was dropped to $c_\mathrm{ref}{=}2.5$ to keep dt large — but at that sound speed the IC's acoustic
+  ringing swamps the tiny ($\mathrm{Ma}\sim10^{-5}$) migration. A faithful run needs $c_\mathrm{ref}\sim15$
+  (proven) **and** a finer grid, i.e. ~5× the steps (~day-scale). This is the hard case; the finite-$Re$
+  sweeps below behave far better.
 - **Fig 3** is already `case_Ma_20.py` (same $Re=5,Ma=20,Ca=0.0167$) — see §4.3.
 
 **Single-particle trend claims** (Nas & Tryggvason's *introduction* summarises these from prior
