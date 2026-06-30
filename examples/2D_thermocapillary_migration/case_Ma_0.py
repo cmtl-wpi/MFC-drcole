@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
-# Thermocapillary migration of a 2D drop in the zero-Marangoni limit -- Samareh, Mostaghimi &
-# Moreau, Int. J. Heat Mass Transfer 73 (2014) 616-626, Sec. 4.1.1 / Fig. 5. A neutrally buoyant
-# drop of diameter D = 1 sits in an imposed linear temperature field in a 5D x 7.5D slip-wall box,
-# its center 1.5D above the cold floor. Surface tension falls with temperature
-# (sigma(T) = sigma0 + sigma_T*(T - T_ref), sigma_T < 0), so Marangoni stress drags the interface
-# hot->cold and the drop rises toward the hot wall. With Ma = 0 the temperature is frozen at the
-# imposed profile and Young-Goldstein-Block give the terminal speed
-#     v_YGB = |sigma_T| |gradT| D / (6 mu_b + 9 mu_d) = 8.889e-3.
-# Samareh's converged 2D ratio is v_t / v_YGB ~ 0.80.
-#
-# The imposed field is recovered from the stiffened-gas EOS as T = (p+p_inf)/((gam-1)*rho*cv). A
-# single analytic patch sets the color blob, the drop's Laplace pressure jump, and the density from
-# one shared smooth circle profile eta(x,y), so rho tracks p and the recovered T is exactly the
-# imposed linear field everywhere -- drop included. Both fluids are identical, so capillary stress
-# acts only on the color field. T is shifted up by T0 = 10 (Samareh's T0 = 0) to keep rho positive -- only gradT and
-# sigma_T, which set v_YGB, are physical. Keep `e`-notation out of analytic strings: MFC's IC parser
-# reads `e` as Euler's number.
+# CONTROLLED EXPERIMENT: conventional MFC "patch-per-region" version of case_Ma_0.py (TC1,
+# frozen-T Ma=0). Identical physics/EOS/grid/dt/algorithm to case_Ma_0.py; the ONLY change is the
+# initial-condition layout:
+#   - Patch 1 (bulk): full-box rectangle, analytic density proxy rho_b(y) = rho_coeff/T(y) for
+#                     fluid 1, so the bulk carries the imposed linear T(y) exactly as the single
+#                     patch does.
+#   - Patch 2 (drop): circle, smoothen=T against patch 1, with a CONSTANT (isothermal) drop
+#                     density rho_d = rho_coeff/T_ref -- the textbook two-fluid drop, fluid 2.
+# Both fluids are identical (rho_d = rho_b at the centroid, equal mu/cv/gamma), so there is no jump
+# at t=0. With no conduction the proxy is frozen and advects with the drop; the constant-density drop
+# rides at its initial temperature while the bulk stays stratified, so a temperature jump opens at the
+# interface as the drop rises -- the failure mode the single full-box analytic patch avoids.
 
 import json
 
@@ -26,7 +21,7 @@ W = 5.0 * D
 Ly = 7.5 * D
 y_drop = -Ly / 2 + 1.5 * D
 
-Nx = 64  # cells across the box width (Samareh used 64, 128, 256)
+Nx = 64  # cells across the box width
 dx = W / Nx
 Ny = round(Ly / dx)
 
@@ -45,31 +40,23 @@ rho_coeff = rho_drop * T0
 cv = (p0 + p_inf) / ((gam - 1.0) * rho_coeff)  # closes the EOS so rho(center) = rho_drop
 T_ref = T0 + gradT * y_drop  # sigma = sigma0 at the drop
 
-eps = 1.0e-9  # trace volume fraction of the second phase
-
-# One smooth circle profile eta(x,y) -- ~1 in the drop, ~0 outside -- drives the color field, the
-# Laplace pressure jump, AND the density together. Then the EOS-recovered T is the imposed linear
-# field BY CONSTRUCTION everywhere (drop included): rho tracks p so the (p+p_inf) factors cancel.
-# The jump (sigma/r)*eta stays balanced against the surface-tension force (~sigma*kappa*grad(cf),
-# kappa~1/r), so there is no t=0 acoustic ring. A single patch => no analytic-density leak across
-# patches. Hardcode the drop center/radius as decimals -- a bare `r`/`e` token would be substituted.
-xc_d, yc_d, r_d = 0.0, y_drop, r  # drop center and radius, as literals in the string
-w_if = 0.75 * dx  # interface half-width (~3-cell transition)
+# Drop center/radius (decimals -- a bare r/e token would be substituted by the IC parser)
+xc_d, yc_d, r_d = 0.0, y_drop, r
 laplace = sigma0 / r  # Laplace pressure jump sigma/r
-dist = f"sqrt((x - ({xc_d:.9f}))**2 + (y - ({yc_d:.9f}))**2)"
-eta = f"0.5*(1.0 - tanh(({dist} - {r_d:.9f})/{w_if:.9f}))"
-cf_expr = f"({eta})"
-pres_expr = f"{p0:.9f} + {laplace:.9f}*({eta})"
-# rho = rho_coeff/T * (p+p_inf)/(p0+p_inf), with p = p0 + (sigma/r)*eta, so the recovered T = T(y):
-rho_num = (1.0 - eps) * rho_coeff
-rho_expr = f"{rho_num:.9f}*({p0 + p_inf:.9f} + {laplace:.9f}*({eta}))/({p0 + p_inf:.9f}*({T0} + {gradT:.9f}*y))"
+cb = (gam - 1.0) * cv  # so rho_b(y) = (p0 + p_inf)/(cb*T(y))
 
-# Time stepping: acoustic-CFL limited (migration Mach ~ 4e-4), run to a clear terminal plateau
+# Patch 1 (bulk) carries the imposed gradient analytically; alpha_1 = 1 over the whole patch.
+Texpr = f"({T0:.9f} + {gradT:.9f}*y)"
+bulk_arho1_expr = f"({p0 + p_inf:.9f})/({cb:.9f}*{Texpr})"
+rho_d = (p0 + p_inf) / (cb * T_ref)  # constant isothermal drop density (= bulk density at y_drop)
+vac = 1.0e-8  # absent-phase partial-density floor
+
+# Time stepping: acoustic-CFL limited (no conduction), run to a clear terminal plateau
 rho_min = rho_coeff / (T0 + gradT * Ly / 2.0)  # hot wall: lowest density, max sound speed
 c_max = (gam * (p0 + p_inf) / rho_min) ** 0.5
 t_r = mu / abs(sigma_T * gradT)  # capillary-thermal time = 7.5
 mydt = 0.35 * dx / c_max
-t_step_stop = round(10.0 * t_r / mydt)  # 4 capillary-thermal times
+t_step_stop = round(10.0 * t_r / mydt)
 t_step_save = max(1, t_step_stop // 80)
 
 # Configuration case dictionary
@@ -89,7 +76,7 @@ data = {
     "t_step_start": 0,
     "t_step_stop": t_step_stop,
     "t_step_save": t_step_save,
-    # Simulation Algorithm
+    # Simulation Algorithm (identical to the single-patch parent: mpp_lim=F isolates the IC change)
     "model_eqns": 3,
     "alt_soundspeed": "F",
     "mixture_err": "T",
@@ -105,12 +92,12 @@ data = {
     "riemann_solver": 2,
     "wave_speeds": 1,
     "avg_state": 2,
-    # Slip walls on all sides (Samareh's box)
-    "bc_x%beg": -2,
-    "bc_x%end": -2,
+    # Open (ghost-cell extrapolation) side walls in x; slip walls top/bottom (y) hold the frozen IC.
+    "bc_x%beg": -3,
+    "bc_x%end": -3,
     "bc_y%beg": -2,
     "bc_y%end": -2,
-    "num_patches": 1,
+    "num_patches": 2,
     "num_fluids": 2,
     # Physics: viscosity + temperature-dependent surface tension sigma(T)
     "viscous": "T",
@@ -126,19 +113,17 @@ data = {
     "cons_vars_wrt": "T",
     "cf_wrt": "T",
     "parallel_io": "T",
-    # Fluid 1 (continuous phase)
+    # Fluid 1 (bulk / continuous phase)
     "fluid_pp(1)%gamma": 1.0 / (gam - 1.0),
     "fluid_pp(1)%pi_inf": gam * p_inf / (gam - 1.0),
     "fluid_pp(1)%cv": cv,
     "fluid_pp(1)%Re(1)": 1.0 / mu,
-    # Fluid 2 (identical properties)
+    # Fluid 2 (droplet -- identical properties to fluid 1)
     "fluid_pp(2)%gamma": 1.0 / (gam - 1.0),
     "fluid_pp(2)%pi_inf": gam * p_inf / (gam - 1.0),
     "fluid_pp(2)%cv": cv,
     "fluid_pp(2)%Re(1)": 1.0 / mu,
-    # Single patch over the whole box. The drop lives entirely in the analytic profiles: cf, pres,
-    # and alpha_rho all share the one eta(x,y) above, so rho tracks the (jump-carrying) pressure and
-    # the EOS-recovered T is exactly the imposed linear field everywhere -- drop included, no bump.
+    # Patch 1 -- bulk background (full box). Analytic density carries the linear T(y); alpha_1 = 1.
     "patch_icpp(1)%geometry": 3,
     "patch_icpp(1)%x_centroid": 0.0,
     "patch_icpp(1)%y_centroid": 0.0,
@@ -146,12 +131,29 @@ data = {
     "patch_icpp(1)%length_y": Ly,
     "patch_icpp(1)%vel(1)": 0.0,
     "patch_icpp(1)%vel(2)": 0.0,
-    "patch_icpp(1)%pres": pres_expr,
-    "patch_icpp(1)%alpha_rho(1)": rho_expr,
-    "patch_icpp(1)%alpha_rho(2)": eps,
-    "patch_icpp(1)%alpha(1)": 1.0 - eps,
-    "patch_icpp(1)%alpha(2)": eps,
-    "patch_icpp(1)%cf_val": cf_expr,
+    "patch_icpp(1)%pres": p0,
+    "patch_icpp(1)%alpha_rho(1)": bulk_arho1_expr,
+    "patch_icpp(1)%alpha_rho(2)": vac,
+    "patch_icpp(1)%alpha(1)": 1.0,
+    "patch_icpp(1)%alpha(2)": 0.0,
+    "patch_icpp(1)%cf_val": 0.0,
+    # Patch 2 -- drop (circle), smoothed against patch 1. CONSTANT isothermal drop density rho_d:
+    # the conventional two-fluid drop. This is the patch-per-region setup under test.
+    "patch_icpp(2)%geometry": 2,
+    "patch_icpp(2)%x_centroid": xc_d,
+    "patch_icpp(2)%y_centroid": yc_d,
+    "patch_icpp(2)%radius": r_d,
+    "patch_icpp(2)%smoothen": "T",
+    "patch_icpp(2)%smooth_patch_id": 1,
+    "patch_icpp(2)%smooth_coeff": 0.5,
+    "patch_icpp(2)%vel(1)": 0.0,
+    "patch_icpp(2)%vel(2)": 0.0,
+    "patch_icpp(2)%pres": p0 + laplace,
+    "patch_icpp(2)%alpha_rho(1)": vac,
+    "patch_icpp(2)%alpha_rho(2)": rho_d,
+    "patch_icpp(2)%alpha(1)": 0.0,
+    "patch_icpp(2)%alpha(2)": 1.0,
+    "patch_icpp(2)%cf_val": 1.0,
 }
 
 print(json.dumps(data))
