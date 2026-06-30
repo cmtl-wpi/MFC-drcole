@@ -375,6 +375,37 @@ tiled view per case):
 - TC2: [interface](animations/tc2_fig7_interface.mp4) · [temperature](animations/tc2_fig7_temperature.mp4) · [all variables](animations/tc2_fig7_all_vars.mp4)
 - TC3: [interface](animations/tc3_fig8_interface.mp4) · [temperature](animations/tc3_fig8_temperature.mp4) · [all variables](animations/tc3_fig8_all_vars.mp4)
 
+### 4.6 Nas & Tryggvason (2003) direct validation — Fig 2 + single-particle trends
+
+The TC2 case above is taken from Nas & Tryggvason (*IJMF* **29**, 1117–1135). Two extra pieces validate
+that paper directly, using the same `σ(T)` + conduction + per-fluid-density-proxy machinery (§3):
+
+- **Fig 2** ([`case_NT_fig2.py`](case_NT_fig2.py)) — the creeping single-drop resolution test
+  ($Re=Ma=2.5\times10^{-3}$, $Ca=10^{-3}$, ratios 0.5) in their Fig-1 geometry (periodic-$x$, **no-slip**
+  isothermal-$y$ walls — the conduction wall BC fires on any physical face, not just reflective). $V^*$
+  rises monotonically to a plateau $\approx 0.13$. Creeping flow is conduction-step-limited (~1.2 M steps
+  at 16/$D$); it is the one expensive case here.
+- **Fig 3** is already `case_Ma_20.py` (same $Re=5,Ma=20,Ca=0.0167$) — see §4.3.
+
+**Single-particle trend claims** (Nas & Tryggvason's *introduction* summarises these from prior
+literature — they are not figures in the paper, so [`sweep.py`](sweep.py) generates the curves from
+[`case_sweep.py`](case_sweep.py), parametrized in $Re/Ma/Ca$ and the four property ratios). Run at
+"quick trends-only" fidelity: 16 cells/$D$ in a confined $2D\times4D$ box, peak $V^*$ as the terminal
+metric, "bubble" = a $\rho^*{=}0.1$ light particle (a true 1/25 gas bubble is ~5× costlier here for the
+same qualitative trend). Honest scorecard (`figures/sweep_*.png`):
+
+| Claim (unbounded-domain literature) | MFC quick result | Verdict |
+|---|---|---|
+| drop $V_t$: ↓ with $Ma$, min, then ↑ | monotonic ↓ then flattens (0.133→0.104) | partial — decline + approach-to-min, no upturn |
+| gas bubble $V_t$: ↓ rapidly with $Ca$ | non-monotonic, peak at $Ca\approx0.1$ | **not reproduced** — deformation/confinement under-resolved |
+| gas bubble $V_t$: ↑ very weakly with $Re$ | ~flat, ~7% over $Re\,2$–$20$ | supported — the *weak* dependence is the point |
+| gas bubble $V_t$: ↓ with $Ma$ | clear ↓ (0.259→0.129) | **reproduced** |
+| drop deforms oblate/prolate vs $\rho^*$ | AR grows with $\rho^*$ (1.02→1.04, prolate) | partial — density-dependent, no sign reversal |
+
+The mixed outcome is expected at this fidelity: the velocity-vs-$Ma$ trends (driven by thermal
+advection) come through, while the $Ca$ and deformation trends (driven by interface deformation in an
+*unbounded* domain) need finer grids and a larger box than the quick tier provides.
+
 ---
 
 ## 5. How MFC realises the temperature field
