@@ -31,7 +31,10 @@ NF = _fc("num_fluids_max", 10)  # fluid_pp
 NPR = _fc("num_probes_max", 10)  # probe, acoustic, integral
 NB = _fc("num_bc_patches_max", 10)  # patch_bc
 NUM_PATCHES_MAX = _fc("num_patches_max", 10)  # patch_icpp (Fortran array bound)
-NIB = _fc("num_ib_patches_max", 50000)  # patch_ib (Fortran array bound)
+NIB = _fc("num_ib_patches_max_namelist", 54000)  # patch_ib namelist array bound
+NAF = _fc("num_ib_airfoils_max", 5)  # ib_airfoil (Fortran array bound)
+NSM = _fc("num_stl_models_max", 10)  # stl_models (Fortran array bound)
+NPB = _fc("num_particle_clouds_max", 10)  # particle_cloud (Fortran array bound)
 # Enumeration limits for families not yet converted to IndexedFamily.
 # These are smaller than the Fortran array bounds to keep the registry compact.
 # The CONSTRAINTS dict below uses the Fortran constants for validation.
@@ -170,7 +173,7 @@ def _lookup_hint(name):
 # Schema Validation for Constraints and Dependencies
 # Uses rapidfuzz for "did you mean?" suggestions when typos are detected
 
-_VALID_CONSTRAINT_KEYS = {"choices", "min", "max", "value_labels"}
+_VALID_CONSTRAINT_KEYS = {"choices", "min", "max", "value_labels", "names"}
 _VALID_DEPENDENCY_KEYS = {"when_true", "when_set", "when_value"}
 _VALID_CONDITION_KEYS = {"requires", "recommends", "requires_value"}
 
@@ -200,6 +203,19 @@ def _validate_constraint(param_name: str, constraint: Dict[str, Any]) -> None:
             for key in constraint["value_labels"]:
                 if key not in constraint["choices"]:
                     raise ValueError(f"value_labels key {key!r} for '{param_name}' not in choices {constraint['choices']}")
+    if "names" in constraint:
+        names = constraint["names"]
+        if not isinstance(names, dict):
+            raise ValueError(f"Constraint 'names' for '{param_name}' must be a dict")
+        for name, value in names.items():
+            if not isinstance(name, str) or not re.match(r"^[a-z0-9][a-z0-9_]*$", name):
+                raise ValueError(f"names key {name!r} for '{param_name}' must be a lowercase identifier")
+            if not isinstance(value, int):
+                raise ValueError(f"names value for '{param_name}'/{name!r} must be an int")
+        if len(set(names.values())) != len(names):
+            raise ValueError(f"names for '{param_name}' map two names to the same value")
+        if "choices" in constraint and set(names.values()) != set(constraint["choices"]):
+            raise ValueError(f"names for '{param_name}' must cover exactly its choices {constraint['choices']}")
 
 
 def _validate_dependency(param_name: str, dependency: Dict[str, Any]) -> None:
@@ -280,55 +296,67 @@ CONSTRAINTS = {
     "recon_type": {
         "choices": [1, 2],
         "value_labels": {1: "WENO", 2: "MUSCL"},
+        "names": {"weno": 1, "muscl": 2},
     },
     "muscl_order": {
         "choices": [1, 2],
         "value_labels": {1: "1st order", 2: "2nd order"},
+        "names": {"first_order": 1, "second_order": 2},
     },
     "muscl_lim": {
         "choices": [0, 1, 2, 3, 4, 5],
         "value_labels": {0: "unlimited", 1: "minmod", 2: "MC", 3: "Van Albada", 4: "Van Leer", 5: "SUPERBEE"},
+        "names": {"unlimited": 0, "minmod": 1, "mc": 2, "van_albada": 3, "van_leer": 4, "superbee": 5},
     },
     "int_comp": {
         "choices": [0, 1, 2],
         "value_labels": {0: "off", 1: "THINC", 2: "MTHINC"},
+        "names": {"off": 0, "thinc": 1, "mthinc": 2},
     },
     # Time stepping
     "time_stepper": {
         "choices": [1, 2, 3],
         "value_labels": {1: "RK1 (Forward Euler)", 2: "RK2", 3: "RK3 (SSP)"},
+        "names": {"rk1": 1, "rk2": 2, "rk3": 3},
     },
     # Riemann solver
     "riemann_solver": {
         "choices": [1, 2, 4, 5],
         "value_labels": {1: "HLL", 2: "HLLC", 4: "HLLD", 5: "Lax-Friedrichs"},
+        "names": {"hll": 1, "hllc": 2, "hlld": 4, "lax_friedrichs": 5},
     },
     "wave_speeds": {
         "choices": [1, 2],
         "value_labels": {1: "direct", 2: "pressure"},
+        "names": {"direct": 1, "pressure": 2},
     },
     "avg_state": {
         "choices": [1, 2],
         "value_labels": {1: "Roe", 2: "arithmetic"},
+        "names": {"roe": 1, "arithmetic": 2},
     },
     # Model equations
     "model_eqns": {
         "choices": [1, 2, 3, 4],
         "value_labels": {1: "Gamma-law", 2: "5-Equation", 3: "6-Equation", 4: "4-Equation"},
+        "names": {"gamma_law": 1, "5eq": 2, "6eq": 3, "4eq": 4},
     },
     # Bubbles
     "bubble_model": {
         "choices": [1, 2, 3],
         "value_labels": {1: "Gilmore", 2: "Keller-Miksis", 3: "Rayleigh-Plesset"},
+        "names": {"gilmore": 1, "keller_miksis": 2, "rayleigh_plesset": 3},
     },
     # Output
     "format": {
         "choices": [1, 2],
         "value_labels": {1: "Silo", 2: "binary"},
+        "names": {"silo": 1, "binary": 2},
     },
     "precision": {
         "choices": [1, 2],
         "value_labels": {1: "single", 2: "double"},
+        "names": {"single": 1, "double": 2},
     },
     # Time stepping (must be positive)
     "dt": {"min": 0},
@@ -348,6 +376,7 @@ CONSTRAINTS = {
     "num_fluids": {"min": 1, "max": NF},
     "num_patches": {"min": 0, "max": NUM_PATCHES_MAX},
     "num_ibs": {"min": 0},
+    "ib_neighborhood_radius": {"min": 1},
     "num_source": {"min": 1},
     "num_probes": {"min": 1},
     "num_integrals": {"min": 1},
@@ -500,7 +529,8 @@ def _r(name, ptype, tags=None, desc=None, hint=None, math=None, str_len=None, st
     constraint = CONSTRAINTS.get(name)
     if constraint and "value_labels" in constraint:
         labels = constraint["value_labels"]
-        suffix = ", ".join(f"{v}={labels[v]}" for v in sorted(labels))
+        by_value = {v: n for n, v in constraint.get("names", {}).items()}
+        suffix = ", ".join(f"{v} ('{by_value[v]}')={labels[v]}" if v in by_value else f"{v}={labels[v]}" for v in sorted(labels))
         desc = f"{desc} ({suffix})".strip()
     REGISTRY.register(
         ParamDef(
@@ -605,11 +635,15 @@ def _load():
 
     # Immersed boundary
     _r("num_ibs", INT, {"ib"})
+    _r("num_stl_models", INT, {"ib"})
+    _r("num_particle_clouds", INT, {"ib"})
+    _r("ib_neighborhood_radius", INT, {"ib"})
     _r("ib", LOG, {"ib"})
     _r("collision_model", INT, {"ib"})
     _r("coefficient_of_restitution", REAL, {"ib"})
     _r("collision_time", REAL, {"ib"})
     _r("ib_coefficient_of_friction", REAL, {"ib"})
+    _r("many_ib_patch_parallelism", LOG, {"ib"})
 
     # Probes
     for n in ["num_probes", "num_integrals"]:
@@ -759,13 +793,13 @@ def _load():
     # patch_icpp (10 patches)
     for i in range(1, NP + 1):
         px = f"patch_icpp({i})%"
-        for a in ["geometry", "smooth_patch_id", "hcid", "model_spc"]:
+        for a in ["geometry", "smooth_patch_id", "hcid", "model_id"]:
             _r(f"{px}{a}", INT)
         for a in ["smoothen", "alter_patch"] if i >= 2 else ["smoothen"]:
             _r(f"{px}{a}", LOG)
         for a, sym in [("rho", r"\f$\rho\f$"), ("gamma", r"\f$\gamma\f$"), ("pi_inf", r"\f$\pi_\infty\f$"), ("cv", r"\f$c_v\f$"), ("qv", r"\f$q_v\f$"), ("qvp", r"\f$q'_v\f$")]:
             _r(f"{px}{a}", REAL, math=sym)
-        for a in ["radius", "radii", "epsilon", "beta", "normal", "alpha_rho", "non_axis_sym", "smooth_coeff", "vel", "alpha", "model_threshold"]:
+        for a in ["radius", "radii", "epsilon", "beta", "normal", "alpha_rho", "non_axis_sym", "smooth_coeff", "vel", "alpha"]:
             _r(f"{px}{a}", REAL)
         # Bubble fields
         for a in ["r0", "v0", "p0", "m0"]:
@@ -780,10 +814,6 @@ def _load():
         # Chemistry species
         for j in range(1, 101):
             _r(f"{px}Y({j})", A_REAL, {"chemistry"})
-        _r(f"{px}model_filepath", STR)
-        for t in ["translate", "scale", "rotate"]:
-            for j in range(1, 4):
-                _r(f"{px}model_{t}({j})", REAL)
         for d in ["x", "y", "z"]:
             _r(f"{px}{d}_centroid", REAL)
             _r(f"{px}length_{d}", REAL)
@@ -813,17 +843,24 @@ def _load():
                 _r(f"{px}sph_har_coeff({ll},{mm})", REAL)
 
     # fluid_pp (10 fluids)
+    # Members present in physical_parameters: gamma, pi_inf, Re, cv, qv, qvp, G.
+    # mul0/ss/pv/gamma_v/M_v/mu_v/k_v/cp_v/D_v were removed from the Fortran type
+    # by upstream #1085/#1093 — they must NOT be registered (namelist read would crash).
     for f in range(1, NF + 1):
         px = f"fluid_pp({f})%"
         for a, sym in [("gamma", r"\f$\gamma_k\f$"), ("pi_inf", r"\f$\pi_{\infty,k}\f$"), ("cv", r"\f$c_{v,k}\f$"), ("qv", r"\f$q_{v,k}\f$"), ("qvp", r"\f$q'_{v,k}\f$")]:
             _r(f"{px}{a}", REAL, math=sym)
-        _r(f"{px}mul0", REAL, {"viscosity"}, math=r"\f$\mu_{l,k}\f$")
-        _r(f"{px}ss", REAL, {"surface_tension"}, math=r"\f$\sigma_k\f$")
-        for a in ["pv", "gamma_v", "M_v", "mu_v", "k_v", "cp_v", "D_v"]:
-            _r(f"{px}{a}", REAL, {"bubbles"})
         _r(f"{px}G", REAL, {"elasticity"}, math=r"\f$G_k\f$")
         _r(f"{px}Re(1)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (shear)")
         _r(f"{px}Re(2)", REAL, {"viscosity"}, math=r"\f$\mathrm{Re}_k\f$ (bulk)")
+        _r(f"{px}non_newtonian", LOG, {"viscosity"}, math=r"\mathrm{non\text{-}Newtonian}_k")
+        _r(f"{px}K", REAL, {"viscosity"}, math=r"K_k")
+        _r(f"{px}nn", REAL, {"viscosity"}, math=r"n_k")
+        _r(f"{px}tau0", REAL, {"viscosity"}, math=r"\tau_{0,k}")
+        _r(f"{px}hb_m", REAL, {"viscosity"}, math=r"m_k")
+        _r(f"{px}mu_min", REAL, {"viscosity"}, math=r"\mu_{\min,k}")
+        _r(f"{px}mu_max", REAL, {"viscosity"}, math=r"\mu_{\max,k}")
+        _r(f"{px}mu_bulk", REAL, {"viscosity"}, math=r"\mu_{\mathrm{bulk},k}")
 
     # bub_pp (bubble properties)
     for a, sym in [
@@ -851,25 +888,19 @@ def _load():
         _r(f"bub_pp%{a}", REAL, {"bubbles"}, math=sym)
 
     # patch_ib (immersed boundaries) — registered as indexed family for O(1) lookup.
-    # max_index is None so the parameter registry stays compact (no enumeration).
-    # The Fortran-side upper bound (num_ib_patches_max in m_constants.fpp) is parsed
-    # and enforced by the case_validator, not by max_index here.
+    # max_index=NIB enforces the namelist limit (num_ib_patches_max_namelist); particle beds can
+    # grow patch_ib beyond this at runtime, but those entries are never in the namelist.
     _ib_tags = {"ib"}
     _ib_attrs: Dict[str, tuple] = {}
-    for a in ["geometry", "moving_ibm"]:
+    for a in ["geometry", "moving_ibm", "airfoil_id", "model_id"]:
         _ib_attrs[a] = (INT, _ib_tags)
-    for a, pt in [("radius", REAL), ("theta", REAL), ("slip", LOG), ("c", REAL), ("p", REAL), ("t", REAL), ("m", REAL), ("mass", REAL)]:
+    for a, pt in [("radius", REAL), ("slip", LOG), ("mass", REAL)]:
         _ib_attrs[a] = (pt, _ib_tags)
     for j in range(1, 4):
         _ib_attrs[f"angles({j})"] = (REAL, _ib_tags)
     for d in ["x", "y", "z"]:
         _ib_attrs[f"{d}_centroid"] = (REAL, _ib_tags)
         _ib_attrs[f"length_{d}"] = (REAL, _ib_tags)
-    for a, pt in [("model_filepath", STR), ("model_spc", INT), ("model_threshold", REAL)]:
-        _ib_attrs[a] = (pt, _ib_tags)
-    for t in ["translate", "scale", "rotate"]:
-        for j in range(1, 4):
-            _ib_attrs[f"model_{t}({j})"] = (REAL, _ib_tags)
     for j in range(1, 4):
         _ib_attrs[f"vel({j})"] = (A_REAL, _ib_tags)
         _ib_attrs[f"angular_vel({j})"] = (A_REAL, _ib_tags)
@@ -879,6 +910,58 @@ def _load():
             attrs=_ib_attrs,
             tags=_ib_tags,
             max_index=NIB,
+        )
+    )
+
+    # ib_airfoil — NACA 4-digit airfoil parameters, referenced by patch_ib(i)%airfoil_id
+    _af_tags = {"ib"}
+    _af_attrs: Dict[str, tuple] = {}
+    for a in ["c", "p", "t", "m"]:
+        _af_attrs[a] = (REAL, _af_tags)
+    REGISTRY.register_family(
+        IndexedFamily(
+            base_name="ib_airfoil",
+            attrs=_af_attrs,
+            tags=_af_tags,
+            max_index=NAF,
+        )
+    )
+
+    # stl_models — STL/OBJ model parameters, referenced by patch_ib(i)%model_id
+    _sm_attrs: Dict[str, tuple] = {}
+    _sm_attrs["model_filepath"] = (STR, set())
+    _sm_attrs["model_threshold"] = (REAL, set())
+    for t in ["translate", "scale"]:
+        for j in range(1, 4):
+            _sm_attrs[f"model_{t}({j})"] = (REAL, set())
+    REGISTRY.register_family(
+        IndexedFamily(
+            base_name="stl_models",
+            attrs=_sm_attrs,
+            tags=set(),
+            max_index=NSM,
+        )
+    )
+
+    # particle_cloud — compact bed specification that expands into individual patch_ib spheres/circles at startup
+    _pb_tags = {"ib"}
+    _pb_attrs: Dict[str, tuple] = {}
+    for _d in ["x", "y", "z"]:
+        _pb_attrs[f"{_d}_centroid"] = (REAL, _pb_tags)
+        _pb_attrs[f"length_{_d}"] = (REAL, _pb_tags)
+    _pb_attrs["num_particles"] = (INT, _pb_tags)
+    _pb_attrs["radius"] = (REAL, _pb_tags)
+    _pb_attrs["mass"] = (REAL, _pb_tags)
+    _pb_attrs["min_spacing"] = (REAL, _pb_tags)
+    _pb_attrs["moving_ibm"] = (INT, _pb_tags)
+    _pb_attrs["seed"] = (INT, _pb_tags)
+    _pb_attrs["packing_method"] = (INT, _pb_tags)
+    REGISTRY.register_family(
+        IndexedFamily(
+            base_name="particle_cloud",
+            attrs=_pb_attrs,
+            tags=_pb_tags,
+            max_index=NPB,
         )
     )
 
@@ -966,11 +1049,16 @@ def _load():
             _r(f"simplex_params%perturb_vel_offset({d},{j})", REAL)
 
     # lag_params (Lagrangian bubbles)
+    # Members present in bubbles_lagrange_parameters: solver_approach, cluster_type,
+    # pressure_corrector, smooth_type, heatTransfer_model, massTransfer_model,
+    # write_bubbles, write_bubbles_stats, nBubs_glb, epsilonb, charwidth, valmaxvoid.
+    # T0/Thost/c0/rho0/x0 were removed from the Fortran type by upstream #1085/#1093
+    # — they must NOT be registered (namelist read would crash).
     for a in ["heatTransfer_model", "massTransfer_model", "pressure_corrector", "write_bubbles", "write_bubbles_stats"]:
         _r(f"lag_params%{a}", LOG, {"bubbles"})
     for a in ["solver_approach", "cluster_type", "smooth_type", "nBubs_glb"]:
         _r(f"lag_params%{a}", INT, {"bubbles"})
-    for a in ["epsilonb", "valmaxvoid", "charwidth", "c0", "rho0", "T0", "x0", "Thost"]:
+    for a in ["epsilonb", "valmaxvoid", "charwidth"]:
         _r(f"lag_params%{a}", REAL, {"bubbles"})
 
     # chem_params
@@ -1044,6 +1132,29 @@ FORTRAN_ARRAY_DIMS: dict[str, str] = {
     "mom_wrt": "3",
     "omega_wrt": "3",
     "vel_wrt": "3",
+}
+
+# Derived-type namelist variables whose Fortran declarations come from generated_decls.fpp.
+# Maps variable name -> (fortran_type, dimension_expr_or_None, sim_gpu_declare, doxygen_desc_or_None).
+# sim_gpu_declare=True means the generator emits this variable's $:GPU_DECLARE line
+# alongside its declaration; the variable must then be REMOVED from any grouped
+# GPU_DECLARE list in src/simulation/m_global_parameters.fpp (multiple declare
+# directives accumulate identically in OpenACC and OpenMP).
+TYPED_DECLS: dict[str, tuple] = {
+    "fluid_pp": ("type(physical_parameters)", "num_fluids_max", False, "Per-fluid stiffened-gas EOS parameters, Reynolds numbers, and shear modulus"),
+    "bub_pp": ("type(subgrid_bubble_physical_parameters)", None, False, "Subgrid bubble physical parameters"),
+    "patch_icpp": ("type(ic_patch_parameters)", "num_patches_max", False, "IC patch parameters"),
+    "patch_bc": ("type(bc_patch_parameters)", "num_bc_patches_max", False, "Boundary condition patch parameters"),
+    "patch_ib": ("type(ib_patch_parameters)", "num_ib_patches_max_namelist", True, "Immersed boundary patch parameters"),
+    "ib_airfoil": ("type(ib_airfoil_parameters)", "num_ib_airfoils_max", True, "Per-airfoil NACA user inputs"),
+    "stl_models": ("type(ib_stl_parameters)", "num_stl_models_max", True, "Per-STL model parameters"),
+    "probe": ("type(vec3_dt)", "num_probes_max", False, None),
+    "integral": ("type(integral_parameters)", "num_probes_max", False, None),
+    "acoustic": ("type(acoustic_parameters)", "num_probes_max", True, "Acoustic source parameters"),
+    "chem_params": ("type(chemistry_parameters)", None, True, None),
+    "lag_params": ("type(bubbles_lagrange_parameters)", None, True, "Lagrange bubbles' parameters"),
+    "particle_cloud": ("type(particle_cloud_parameters)", "num_particle_clouds_max", False, "Particle bed specifications"),
+    "simplex_params": ("type(simplex_noise_params)", None, False, None),
 }
 
 
@@ -1141,6 +1252,8 @@ _nv(
     "pi_fac",
 )
 _nv(_PRE_POST, "num_fluids", "weno_order", "recon_type", "muscl_order", "mhd", "nb", "sigR", "igr", "igr_order")
+_nv(_PRE_SIM, "ib_airfoil")
+_nv(_PRE_SIM, "stl_models", "num_stl_models")
 _nv(
     _SIM,
     "dt",
@@ -1197,6 +1310,10 @@ _nv(
     "coefficient_of_restitution",
     "collision_time",
     "ib_coefficient_of_friction",
+    "num_particle_clouds",
+    "ib_neighborhood_radius",
+    "many_ib_patch_parallelism",
+    "particle_cloud",
     "tau_star",
     "cont_damage_s",
     "alpha_bar",
