@@ -93,7 +93,7 @@ module m_global_parameters_common
     $:GPU_DECLARE(create='[qbmm, pi_fac]')
     $:GPU_DECLARE(create='[R0ref]')
     $:GPU_DECLARE(create='[acoustic_source, num_source]')
-    $:GPU_DECLARE(create='[sigma, surface_tension]')
+    $:GPU_DECLARE(create='[sigma, sigma_model, sigma_dTdT, sigma_T_ref, surface_tension]')
     $:GPU_DECLARE(create='[bubbles_lagrange]')
     $:GPU_DECLARE(create='[Bx0]')
     $:GPU_DECLARE(create='[tau_star, cont_damage_s, alpha_bar]')
