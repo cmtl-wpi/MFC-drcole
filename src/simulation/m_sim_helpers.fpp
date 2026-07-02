@@ -43,8 +43,8 @@ contains
 
     !> Computes the cell-centered mixture stiffened-gas temperature from primitive variables: T = ((Gamma_mix + 1)*p +
     !! pi_inf_mix)/mCP, with Gamma_mix = sum(alpha_i*gammas(i)), pi_inf_mix = sum(alpha_i*pi_infs(i)), and mCP =
-    !! sum(alpha_rho_i*cvs(i)*gs_min(i)). Shared by the sigma(T) capillary closure and the bulk thermal-conduction flux so the two
-    !! closures cannot drift apart.
+    !! sum(alpha_rho_i*cvs(i)*gs_min(i)). Used by the bulk thermal-conduction flux; any temperature-dependent closure should
+    !! evaluate T through this helper so closures cannot drift apart.
     function f_compute_mixture_temperature(q_prim_vf, j, k, l) result(T_cell)
 
         $:GPU_ROUTINE(parallelism='[seq]')
@@ -171,7 +171,7 @@ contains
         real(wp), dimension(0:m,0:n,0:p), intent(inout), optional :: vcfl_sf, Rc_sf
         real(wp), dimension(2), intent(in)                        :: Re_l
         integer, intent(in)                                       :: j, k, l
-        real(wp), intent(in), optional                            :: alpha_T  !< Thermal diffusivity k_mix/(rho*cp_mix)
+        real(wp), intent(in), optional                            :: alpha_T  !< Thermal diffusivity k_mix/(rho*cv_mix)
         real(wp)                                                  :: fltr_dtheta
         real(wp)                                                  :: tcfl
 
@@ -211,8 +211,11 @@ contains
             end if
         end if
 
-        ! Thermal-conduction diffusion number dt*alpha_T/dx^2, folded into the viscous
-        ! CFL field as a max so a single stability report covers both diffusive limits
+        ! Thermal-conduction diffusion number 2*d*dt*alpha_T/dx^2 (d = active dimensions),
+        ! folded into the viscous CFL field as a max so a single stability report covers
+        ! both diffusive limits. Unlike vcfl, tcfl is normalized so 1.0 is the true FTCS
+        ! stability limit; isothermal-wall rows are ~1.5x stiffer than the interior, so
+        ! users should keep margin below 1.
         if (thermal_conduction) then
             tcfl = 0._wp
             if (p > 0) then
@@ -220,17 +223,17 @@ contains
                     ! 3D
                     if (grid_geometry == 3) then
                         fltr_dtheta = f_compute_filtered_dtheta(k, l)
-                        tcfl = dt*alpha_T/min(dx(j), dy(k), fltr_dtheta)**2._wp
+                        tcfl = 6._wp*dt*alpha_T/min(dx(j), dy(k), fltr_dtheta)**2._wp
                     else
-                        tcfl = dt*alpha_T/min(dx(j), dy(k), dz(l))**2._wp
+                        tcfl = 6._wp*dt*alpha_T/min(dx(j), dy(k), dz(l))**2._wp
                     end if
                 #:endif
             else if (n > 0) then
                 ! 2D
-                tcfl = dt*alpha_T/min(dx(j), dy(k))**2._wp
+                tcfl = 4._wp*dt*alpha_T/min(dx(j), dy(k))**2._wp
             else
                 ! 1D
-                tcfl = dt*alpha_T/dx(j)**2._wp
+                tcfl = 2._wp*dt*alpha_T/dx(j)**2._wp
             end if
 
             if (viscous) then
@@ -251,7 +254,7 @@ contains
         real(wp), dimension(0:m,0:n,0:p), intent(inout) :: max_dt
         real(wp), dimension(2), intent(in)              :: Re_l
         integer, intent(in)                             :: j, k, l
-        real(wp), intent(in), optional                  :: alpha_T  !< Thermal diffusivity k_mix/(rho*cp_mix)
+        real(wp), intent(in), optional                  :: alpha_T  !< Thermal diffusivity k_mix/(rho*cv_mix)
         real(wp)                                        :: icfl_dt, vcfl_dt, tcfl_dt
         real(wp)                                        :: fltr_dtheta
 
@@ -283,22 +286,22 @@ contains
             end if
         end if
 
-        ! Thermal-conduction dt limit from the diffusion number tcfl = dt*alpha_T/dx^2
+        ! Thermal-conduction dt limit from the diffusion number tcfl = 2*d*dt*alpha_T/dx^2
         if (thermal_conduction) then
             if (p > 0) then
                 ! 3D
                 if (grid_geometry == 3) then
                     fltr_dtheta = f_compute_filtered_dtheta(k, l)
-                    tcfl_dt = cfl_target*(min(dx(j), dy(k), fltr_dtheta)**2._wp)/max(alpha_T, sgm_eps)
+                    tcfl_dt = cfl_target*(min(dx(j), dy(k), fltr_dtheta)**2._wp)/(6._wp*max(alpha_T, sgm_eps))
                 else
-                    tcfl_dt = cfl_target*(min(dx(j), dy(k), dz(l))**2._wp)/max(alpha_T, sgm_eps)
+                    tcfl_dt = cfl_target*(min(dx(j), dy(k), dz(l))**2._wp)/(6._wp*max(alpha_T, sgm_eps))
                 end if
             else if (n > 0) then
                 ! 2D
-                tcfl_dt = cfl_target*(min(dx(j), dy(k))**2._wp)/max(alpha_T, sgm_eps)
+                tcfl_dt = cfl_target*(min(dx(j), dy(k))**2._wp)/(4._wp*max(alpha_T, sgm_eps))
             else
                 ! 1D
-                tcfl_dt = cfl_target*(dx(j)**2._wp)/max(alpha_T, sgm_eps)
+                tcfl_dt = cfl_target*(dx(j)**2._wp)/(2._wp*max(alpha_T, sgm_eps))
             end if
         end if
 

@@ -185,14 +185,14 @@ contains
         real(wp)               :: c                             !< Cell-avg. sound speed
         real(wp)               :: H                             !< Cell-avg. enthalpy
         real(wp), dimension(2) :: Re                            !< Cell-avg. Reynolds numbers
-        real(wp)               :: k_mix, mCP_mix, alpha_T_cell  !< Cell-avg. thermal diffusivity pieces
+        real(wp)               :: k_mix, mCV_mix, alpha_T_cell  !< Cell-avg. thermal diffusivity pieces
         integer                :: i, j, k, l
         integer                :: fl                            !< Fluid loop iterator
 
         ! Computing Stability Criteria at Current Time-step
 
         $:GPU_PARALLEL_LOOP(collapse=3, private='[i, j, k, l, vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv, fl, &
-                            & k_mix, mCP_mix, alpha_T_cell]')
+                            & k_mix, mCV_mix, alpha_T_cell]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -214,14 +214,14 @@ contains
 
                     if (thermal_conduction) then
                         ! Harmonic mixture conductivity (Samareh Eq. 8), consistent with the flux
-                        k_mix = 0._wp; mCP_mix = 0._wp
+                        k_mix = 0._wp; mCV_mix = 0._wp
                         $:GPU_LOOP(parallelism='[seq]')
                         do i = 1, num_fluids
                             k_mix = k_mix + min(max(q_prim_vf(eqn_idx%adv%beg + i - 1)%sf(j, k, l), 0._wp), 1._wp)/max(kappas(i), &
                                                 & sgm_eps)
-                            mCP_mix = mCP_mix + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)*gs_min(i)
+                            mCV_mix = mCV_mix + q_prim_vf(eqn_idx%cont%beg + i - 1)%sf(j, k, l)*cvs(i)
                         end do
-                        alpha_T_cell = 1._wp/max(k_mix, sgm_eps)/max(mCP_mix, sgm_eps)
+                        alpha_T_cell = 1._wp/max(k_mix, sgm_eps)/max(mCV_mix, sgm_eps)
                     end if
 
                     if (viscous .and. thermal_conduction) then
