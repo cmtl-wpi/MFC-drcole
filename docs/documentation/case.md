@@ -537,7 +537,7 @@ Their use is detailed in [Boundary Condition Patches](#boundary-condition-patche
 Tangential velocities require viscosity, `weno_avg = T`, and `bc_[x,y,z]%%beg = -16` to work properly. Normal velocities require `bc_[x,y,z]%%end = -15` or `bc_[x,y,z]%%end = -16` to work properly.
 
 - `bc_[x,y,z]%%ve[1,2,3]` specifies the velocity in the (x,1), (y,2), (z,3) direction applied to `bc_[x,y,z]%%beg` when using `bc_[x,y,z]%%end = -16`.
-Tangential velocities require viscosity, `weno_avg = T`, and `bc_[x,y,z]%%end = 16` to work properly. Normal velocities require `bc_[x,y,z]%%end = -15` or `bc_[x,y,z]%%end = -16` to work properly.
+Tangential velocities require viscosity and `bc_[x,y,z]%%end = -16` to work properly (`weno_avg` need not be `T`, but it must be set consistently with `weno_Re_flux`; see `weno_avg`). Normal velocities require `bc_[x,y,z]%%end = -15` or `bc_[x,y,z]%%end = -16` to work properly.
 
 - `model_eqns` specifies the choice of the multi-component model that is used to formulate the dynamics of the flow using integers from 1 through 3.
 `model_eqns = 1`, `2`, and `3` correspond to \f$\Gamma\f$-\f$\Pi_\infty\f$ model (\cite Johnsen08), 5-equation model (\cite Allaire02), and 6-equation model (\cite Saurel09), respectively.

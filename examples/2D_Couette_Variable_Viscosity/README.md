@@ -81,15 +81,15 @@ viscosity contrast `mu(T0)/mu(T1) ≈ 3.5`.
 ## Running it
 
 ```bash
-# 1. Build (the analytic density IC compiles into pre_process)
-./mfc.sh build -t pre_process -t simulation -j 8
-
-# 2. Run the grid-refinement sweep (each grid in its own runs/n<N>/, one rank,
-#    concurrent). Default grids: Ny = 33, 65, 97.
+# 1. Run the grid-refinement sweep. The first grid is a normal building run
+#    (the analytic density IC compiles into pre_process, so the build is
+#    case-specific); the remaining grids then reuse that binary (--no-build)
+#    and run concurrently, each in its own runs/n<N>/ on one rank.
+#    Default grids: Ny = 33, 65, 97.
 cd examples/2D_Couette_Variable_Viscosity
 ./run_suite.sh                 # or: ./run_suite.sh 32 64 96 128
 
-# 3. Compare to the exact solution; writes summary.json + figures/
+# 2. Compare to the exact solution; writes summary.json + figures/
 python3 validate.py
 ```
 
@@ -148,5 +148,5 @@ cavity case).
 
 The time step is explicit-stability limited: acoustic (`~dy`) on coarse grids and
 **viscous (`~dy^2`)** once `Ny` exceeds ~60. The default sweep stays in the cheap
-range; `Ny = 129` is viscous-CFL limited (~265k steps, hours on a single rank) and
+range; `Ny = 129` is viscous-CFL limited (~221k steps, hours on a single rank) and
 is optional.

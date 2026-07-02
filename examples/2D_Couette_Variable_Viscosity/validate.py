@@ -4,8 +4,8 @@
 This script does NOT run MFC. Run the cases first with run_suite.sh (which leaves
 each grid in runs/n<N>/), then run this to analyze them:
 
-    ./run_suite.sh 32 64 128
-    python3 validate.py            # analyzes runs/n32, runs/n64, runs/n128
+    ./run_suite.sh 32 64 96
+    python3 validate.py            # analyzes runs/n32, runs/n64, runs/n96
 
 For each grid it reads back the steady velocity and temperature profiles MFC
 saved, compares them to the exact coupled-BVP solution from reference.py, reports

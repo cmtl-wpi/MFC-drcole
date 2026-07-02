@@ -1,3 +1,2 @@
 # MFC run outputs and the per-grid run copies live here; regenerate with run_suite.sh.
 runs/
-diag/
