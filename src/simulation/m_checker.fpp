@@ -12,7 +12,7 @@ module m_checker
     use m_mpi_proxy
     use m_helper
     use m_helper_basic
-    use m_constants, only: recon_type_weno, recon_type_muscl, muscl_order_first_order
+    use m_constants, only: recon_type_weno, recon_type_muscl, muscl_order_first_order, BC_PERIODIC
 
     implicit none
 
@@ -147,6 +147,15 @@ contains
             @:PROHIBIT(ib, "thermal_conduction is not supported with immersed boundaries")
             @:PROHIBIT(model_eqns == 1 .or. model_eqns == 4, &
                        & "thermal_conduction requires model_eqns = 2 or 3 (mixture stiffened-gas temperature)")
+
+            ! Periodic faces become MPI neighbor links under domain decomposition (bc >= 0), so the
+            ! isothermal guard in s_apply_thermal_conduction_bc would fire on 1 rank but not on many
+            #:for X in ['x', 'y', 'z']
+                @:PROHIBIT(bc_${X}$%isothermal_in .and. bc_${X}$%beg == BC_PERIODIC, &
+                           & "bc_${X}$%isothermal_in is not supported on a periodic boundary (bc_${X}$%beg = -1)")
+                @:PROHIBIT(bc_${X}$%isothermal_out .and. bc_${X}$%end == BC_PERIODIC, &
+                           & "bc_${X}$%isothermal_out is not supported on a periodic boundary (bc_${X}$%end = -1)")
+            #:endfor
 
             do i = 1, num_fluids
                 @:PROHIBIT(fluid_pp(i)%cv <= 0._wp, &

@@ -1578,6 +1578,9 @@ class CaseValidator:
                 # The chemistry path applies isothermal walls inside the wall BC routines; bulk conduction imposes the Dirichlet temperature at any boundary type
                 self.prohibit(not thermal_conduction and bc_beg not in wall_bcs, f"Isothermal In (bc_{dir}%isothermal_in) requires a wall. Set bc_{dir}%beg to -15 (slip) or -16 (no-slip).")
 
+                # Periodic faces become MPI neighbor links under domain decomposition, so no wall temperature can be imposed there
+                self.prohibit(bc_beg == -1, f"Isothermal In (bc_{dir}%isothermal_in) is not supported on a periodic boundary (bc_{dir}%beg = -1).")
+
                 # Check that the wall temperature is defined and physically valid (> 0 K)
                 tw_in = self.get(f"bc_{dir}%Twall_in")
                 self.prohibit(tw_in is None, f"Isothermal In (bc_{dir}%isothermal_in) requires a wall temperature to be set (e.g., bc_{dir}%Twall_in).")
@@ -1593,6 +1596,9 @@ class CaseValidator:
 
                 # The chemistry path applies isothermal walls inside the wall BC routines; bulk conduction imposes the Dirichlet temperature at any boundary type
                 self.prohibit(not thermal_conduction and bc_end not in wall_bcs, f"Isothermal Out (bc_{dir}%isothermal_out) requires a wall. Set bc_{dir}%end to -15 (slip) or -16 (no-slip).")
+
+                # Periodic faces become MPI neighbor links under domain decomposition, so no wall temperature can be imposed there
+                self.prohibit(bc_end == -1, f"Isothermal Out (bc_{dir}%isothermal_out) is not supported on a periodic boundary (bc_{dir}%end = -1).")
 
                 # Check that the wall temperature is defined and physically valid (> 0 K)
                 tw_out = self.get(f"bc_{dir}%Twall_out")
