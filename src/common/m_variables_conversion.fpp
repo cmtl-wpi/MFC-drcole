@@ -1247,7 +1247,6 @@ contains
 
 #ifdef MFC_SIMULATION
         @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas)
-        @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
         @:DEALLOCATE(visc_models, visc_cs, visc_ds)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
@@ -1257,7 +1256,6 @@ contains
         end if
 #else
         @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc, kappas)
-        @:DEALLOCATE(gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps, Gs_vc)
         @:DEALLOCATE(visc_models, visc_cs, visc_ds)
         if (bubbles_euler) then
             @:DEALLOCATE(bubrs_vc)
