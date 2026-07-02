@@ -746,7 +746,7 @@ class CaseValidator:
         sigma_dTdT = self.get("sigma_dTdT")
         sigma_T_ref = self.get("sigma_T_ref")
 
-        if not surface_tension and sigma is None and sigma_model is None:
+        if not surface_tension and sigma is None and sigma_model is None and sigma_dTdT is None and sigma_T_ref is None:
             return
 
         self.prohibit(surface_tension and sigma is None, "sigma must be set if surface_tension is enabled")
@@ -767,6 +767,10 @@ class CaseValidator:
         self.prohibit(
             sigma_model == 1 and sigma_dTdT is None,
             "sigma_model = 1 (thermal Marangoni) requires sigma_dTdT (dsigma/dT) to be set",
+        )
+        self.prohibit(
+            sigma_model == 1 and sigma_T_ref is None,
+            "sigma_model = 1 (thermal Marangoni) requires sigma_T_ref (reference temperature) to be set",
         )
         # Temperature is recovered from the stiffened-gas EOS, which divides by the
         # mixture heat capacity sum(alpha*rho*cv*gamma); cv must be set for both fluids.
