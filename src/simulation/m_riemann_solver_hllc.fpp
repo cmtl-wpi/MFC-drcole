@@ -64,9 +64,11 @@ contains
             real(wp), dimension(num_species) :: Ys_L, Ys_R, Xs_L, Xs_R, Gamma_iL, Gamma_iR, Cp_iL, Cp_iR
             real(wp), dimension(num_species) :: Yi_avg, Phi_avg, h_iL, h_iR, h_avg_2
         #:endif
-        real(wp)               :: Cp_avg, Cv_avg, T_avg, c_sum_Yi_Phi, eps
-        real(wp)               :: T_L, T_R
-        real(wp)               :: mCP_L, mCP_R      !< mixture heat capacity for the Arrhenius mu(T) temperature
+        real(wp) :: Cp_avg, Cv_avg, T_avg, c_sum_Yi_Phi, eps
+        real(wp) :: T_L, T_R
+        real(wp) :: mCP_L, mCP_R  !< mixture heat capacity for the Arrhenius mu(T) temperature
+        !> caps the Arrhenius exponent so exp stays finite in single precision (log(huge) ~ 88)
+        real(wp), parameter    :: visc_exp_arg_cap = 50._wp
         real(wp)               :: MW_L, MW_R
         real(wp)               :: R_gas_L, R_gas_R
         real(wp)               :: Cp_L, Cp_R
@@ -252,11 +254,11 @@ contains
                                             ! fluids with visc_model == 1; Res_gs stores the constant 1/mu for all other cases.
                                             if (i == 1 .and. viscous_T_dependent .and. visc_models(Re_idx(i, q)) == 1) then
                                                 Re_L(i) = qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + Re_idx(i, &
-                                                     & q))*exp(visc_cs(Re_idx(i, q)) + visc_ds(Re_idx(i, q))/max(T_L, &
-                                                     & sgm_eps)) + Re_L(i)
+                                                     & q))*exp(min(visc_cs(Re_idx(i, q)) + visc_ds(Re_idx(i, q))/max(T_L, &
+                                                     & sgm_eps), visc_exp_arg_cap)) + Re_L(i)
                                                 Re_R(i) = qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%E + Re_idx(i, &
-                                                     & q))*exp(visc_cs(Re_idx(i, q)) + visc_ds(Re_idx(i, q))/max(T_R, &
-                                                     & sgm_eps)) + Re_R(i)
+                                                     & q))*exp(min(visc_cs(Re_idx(i, q)) + visc_ds(Re_idx(i, q))/max(T_R, &
+                                                     & sgm_eps), visc_exp_arg_cap)) + Re_R(i)
                                             else
                                                 Re_L(i) = qL_prim_rsx_vf(${SF('')}$, eqn_idx%E + Re_idx(i, q))/Res_gs(i, &
                                                      & q) + Re_L(i)

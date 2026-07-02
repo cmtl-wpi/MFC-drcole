@@ -175,9 +175,13 @@ PHYSICS_DOCS = {
         "math": r"\mu_k(T) = \exp\!\left(C_{\mu,k} + D_{\mu,k}/T\right)",
         "explanation": (
             "Per-fluid Arrhenius viscosity fluid_pp(i)%visc_model=1 sets mu = exp(visc_c + visc_d/T) "
-            "in the HLLC shear-Re construction, with temperature from the stiffened-gas EOS (needs cv > 0). "
+            "in the HLLC shear-Re construction, with temperature from the mixture stiffened-gas EOS, "
+            "so cv > 0 is required for every fluid. Each visc_model=1 fluid needs Re(1) > 0 (else it "
+            "never enters the viscous flux) and both visc_c and visc_d set. "
             "Currently requires viscous = T, riemann_solver = 2 (HLLC), model_eqns = 3, and is not "
-            "supported with chemistry. visc_model = 0 keeps the constant-Re behavior."
+            "supported with chemistry, cyl_coord, non-Newtonian (Herschel-Bulkley) fluids, or "
+            "CFL-based time stepping (the viscous dt limit does not yet see mu(T)). "
+            "visc_model = 0 keeps the constant-Re behavior."
         ),
     },
     "check_hypoelasticity": {
@@ -1099,27 +1103,56 @@ class CaseValidator:
         ]
         for flag, reason in incompatible:
             self.prohibit(self.get(flag, "F") == "T", f"thermal_conduction is not supported with {flag}: {reason}")
+
     def check_visc_model(self):
         """Checks constraints on the temperature-dependent (Arrhenius) viscosity model fluid_pp(i)%visc_model"""
         viscous = self.get("viscous", "F") == "T"
         chemistry = self.get("chemistry", "F") == "T"
+        cyl_coord = self.get("cyl_coord", "F") == "T"
+        cfl_adap_dt = self.get("cfl_adap_dt", "F") == "T"
+        cfl_const_dt = self.get("cfl_const_dt", "F") == "T"
         riemann_solver = self.get("riemann_solver")
         model_eqns = self.get("model_eqns")
         num_fluids = self.get("num_fluids") or 1
 
+        any_visc_t = False
         for i in range(1, num_fluids + 1):
             visc_model = self.get(f"fluid_pp({i})%visc_model")
             if visc_model is None:
                 continue
             self.prohibit(visc_model not in (0, 1), f"fluid_pp({i})%visc_model must be 0 (constant) or 1 (Arrhenius mu=exp(C+D/T))")
             if visc_model == 1:
-                cv = self.get(f"fluid_pp({i})%cv")
+                any_visc_t = True
                 self.prohibit(not viscous, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires viscous = T")
-                self.prohibit(cv is not None and cv <= 0, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires cv > 0")
                 self.prohibit(chemistry, f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) is not supported with chemistry")
                 self.prohibit(
                     riemann_solver != 2 or model_eqns != 3,
                     f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) currently requires riemann_solver=2 (HLLC) and model_eqns=3",
+                )
+                re1 = self.get(f"fluid_pp({i})%Re(1)")
+                self.prohibit(
+                    re1 is None or re1 <= 0,
+                    f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires fluid_pp({i})%Re(1) > 0 so the fluid enters the viscous flux",
+                )
+                visc_c = self.get(f"fluid_pp({i})%visc_c")
+                visc_d = self.get(f"fluid_pp({i})%visc_d")
+                self.prohibit(
+                    visc_c is None or visc_d is None,
+                    f"fluid_pp({i})%visc_model=1 (Arrhenius mu(T)) requires both fluid_pp({i})%visc_c and fluid_pp({i})%visc_d to be set",
+                )
+
+        if any_visc_t:
+            self.prohibit(cyl_coord, "fluid_pp visc_model=1 (Arrhenius mu(T)) is not supported with cyl_coord")
+            self.prohibit(
+                cfl_adap_dt or cfl_const_dt,
+                "fluid_pp visc_model=1 (Arrhenius mu(T)) is not supported with CFL-based time stepping (the viscous dt limit does not yet see mu(T))",
+            )
+            for i in range(1, num_fluids + 1):
+                cv = self.get(f"fluid_pp({i})%cv")
+                self.prohibit(cv is None or cv <= 0, f"fluid_pp visc_model=1 (Arrhenius mu(T)) requires fluid_pp({i})%cv > 0 for every fluid to evaluate the mixture temperature")
+                self.prohibit(
+                    self.get(f"fluid_pp({i})%non_newtonian", "F") == "T",
+                    f"fluid_pp visc_model=1 (Arrhenius mu(T)) is not supported with non-Newtonian (Herschel-Bulkley) fluids (fluid_pp({i}))",
                 )
 
     def check_mhd_simulation(self):

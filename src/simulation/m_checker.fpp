@@ -167,23 +167,42 @@ contains
         end if
 
     end subroutine s_check_inputs_thermal_conduction
+
     !> Checks constraints on the temperature-dependent (Arrhenius) viscosity model
     impure subroutine s_check_inputs_visc_model
 
+        logical :: any_visc_T
         integer :: i
+
+        any_visc_T = .false.
 
         do i = 1, num_fluids
             @:PROHIBIT(fluid_pp(i)%visc_model < 0 .or. fluid_pp(i)%visc_model > 1, &
                        & "fluid_pp visc_model must be 0 (constant) or 1 (Arrhenius mu = exp(C + D/T))")
             if (fluid_pp(i)%visc_model == 1) then
+                any_visc_T = .true.
                 @:PROHIBIT(.not. viscous, "fluid_pp visc_model = 1 (Arrhenius mu(T)) requires viscous = T")
-                @:PROHIBIT(fluid_pp(i)%cv <= 0._wp, &
-                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) requires cv > 0 for the EOS temperature")
                 @:PROHIBIT(chemistry, "fluid_pp visc_model = 1 (Arrhenius mu(T)) is not supported with chemistry")
                 @:PROHIBIT(riemann_solver /= 2 .or. model_eqns /= 3, &
                            & "fluid_pp visc_model = 1 (Arrhenius mu(T)) currently requires riemann_solver = 2 (HLLC) and model_eqns = 3")
+                @:PROHIBIT(f_is_default(fluid_pp(i)%Re(1)) .or. fluid_pp(i)%Re(1) <= 0._wp, &
+                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) requires fluid_pp(i)%Re(1) > 0 so the fluid enters the viscous flux")
+                @:PROHIBIT(f_is_default(fluid_pp(i)%visc_c) .or. f_is_default(fluid_pp(i)%visc_d), &
+                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) requires both visc_c and visc_d to be set")
             end if
         end do
+
+        if (any_visc_T) then
+            @:PROHIBIT(cyl_coord, "fluid_pp visc_model = 1 (Arrhenius mu(T)) is not supported with cyl_coord")
+            @:PROHIBIT(cfl_adap_dt .or. cfl_const_dt, &
+                       & "fluid_pp visc_model = 1 (Arrhenius mu(T)) is not supported with CFL-based time stepping (the viscous dt limit does not yet see mu(T))")
+            do i = 1, num_fluids
+                @:PROHIBIT(fluid_pp(i)%cv <= 0._wp, &
+                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) requires fluid_pp(i)%cv > 0 for every fluid to evaluate the mixture temperature")
+                @:PROHIBIT(fluid_pp(i)%non_newtonian, &
+                           & "fluid_pp visc_model = 1 (Arrhenius mu(T)) is not supported with non-Newtonian (Herschel-Bulkley) fluids")
+            end do
+        end if
 
     end subroutine s_check_inputs_visc_model
 
