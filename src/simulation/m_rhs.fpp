@@ -140,15 +140,17 @@ contains
             end do
         end if
 
-        ! Allocate q_prim_qp for the scalar variables past the advection block, skipping the
-        ! passive scalars (color function, hyper-cleaning psi) that are
-        ! aliased to their identical conservative counterparts below.
-        do l = eqn_idx%adv%end + 1, sys_size
-            if (surface_tension .and. l == eqn_idx%c) cycle
-            if (hyper_cleaning .and. l == eqn_idx%psi) cycle
-            @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
-                       & idwbuff(3)%beg:idwbuff(3)%end))
-        end do
+        if (surface_tension) then
+            do l = eqn_idx%adv%end + 1, eqn_idx%c - 1
+                @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
+                           & idwbuff(3)%beg:idwbuff(3)%end))
+            end do
+        else
+            do l = eqn_idx%adv%end + 1, sys_size
+                @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
+                           & idwbuff(3)%beg:idwbuff(3)%end))
+            end do
+        end if
 
         if (.not. igr) then
             @:ACC_SETUP_VFs(q_cons_qp, q_prim_qp)
