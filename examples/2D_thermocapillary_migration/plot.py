@@ -10,10 +10,16 @@
             sweep (smaller Ma -> closer to the invariant-T limit), with a linear extrapolation to Ma=0.
             Calls measure.py per run dir; skips runs that have no snapshots yet.
 
-  fields    A derived field from one run (writes <case_dir>/viz/<field>_<step>.png):
+  recon     figures/case1_recon.png -- TC1 late-time droop vs reconstruction scheme at a fixed grid.
+            Reads runs/recon/*; run.py does not produce those runs, so set them up by hand.
+
+  fields    A derived field from one run:
               temperature    EOS-recovered T field + centerline profile vs the frozen initial linear T
+                             (writes figures/temperature_<step>.png)
               sigma          sigma(T) field + sigma along the interface vs angle (the Marangoni driver)
+                             (writes <case_dir>/viz/sigma_interface_<step>.png)
               recirculation  drop-frame streamlines (colored by speed) + cell-resolved vorticity
+                             (writes figures/case1_zero_marangoni_2D_recirculation.png/.pdf)
             Temperature is not stored by MFC; it is recovered per cell from the stiffened-gas EOS
                 T = (p + p_inf) / ((gamma - 1) * rho * cv),    p from the conserved internal energy.
 
@@ -24,6 +30,7 @@ disagree with the data. Conserved layout (model_eqns=3, num_fluids=2): 0,1 = par
 Usage (no subcommand runs `samareh`, the headline overlays -- the usual rebuild):
     python3 plot.py [samareh]
     python3 plot.py ma
+    python3 plot.py recon
     python3 plot.py fields [case_dir] [temperature|sigma|recirculation] [step]
         (fields' step defaults to the last snapshot; recirculation's 3rd arg is a t/tau target.)
     python3 plot.py clean [--force]
@@ -44,7 +51,6 @@ matplotlib.use("Agg")
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNS = os.path.join(HERE, "runs")
@@ -64,6 +70,7 @@ def read_namelist(path):
 
 
 # samareh: the two headline validation overlays
+
 
 def color_weighted_vy(run_dir):
     """Per-snapshot color-weighted lab-frame y-velocity history of a slip-wall run.
@@ -105,25 +112,67 @@ def v_ygb_ratio(out):
 # Nas & Tryggvason U*(t*) transient, digitized BY EYE from Samareh Fig 7 (the red open triangles; the
 # two Samareh grids nearly coincide with it). Accuracy ~ +/-0.005 in U*. Anchors match the paper text:
 # broad peak ~0.131 at t*~4-5, terminal ~0.10 at t*=20 (the fine grid is within 1.7% of N&T).
-NAS_TRYGGVASON = np.array([
-    (0.0, 0.0), (1.0, 0.055), (2.0, 0.100), (3.0, 0.122), (4.0, 0.130), (5.0, 0.131), (6.0, 0.128),
-    (7.0, 0.124), (8.0, 0.120), (10.0, 0.114), (12.0, 0.110), (14.0, 0.106), (16.0, 0.103),
-    (18.0, 0.101), (20.0, 0.0995)])
+NAS_TRYGGVASON = np.array(
+    [
+        (0.0, 0.0),
+        (1.0, 0.055),
+        (2.0, 0.100),
+        (3.0, 0.122),
+        (4.0, 0.130),
+        (5.0, 0.131),
+        (6.0, 0.128),
+        (7.0, 0.124),
+        (8.0, 0.120),
+        (10.0, 0.114),
+        (12.0, 0.110),
+        (14.0, 0.106),
+        (16.0, 0.103),
+        (18.0, 0.101),
+        (20.0, 0.0995),
+    ]
+)
 
 # Samareh Fig 5(d) VOF curve (sharp-interface analogue of MFC), digitized by eye from the published
 # raster (~ +/-0.02 in v/v_YGB); his invariant-T plateau holds flat ~0.82-0.84 out to t/t_r = 10.
-SAMAREH_VOF = np.array([
-    (0.0, 0.0), (0.12, 0.42), (0.28, 0.70), (0.45, 0.80), (0.7, 0.815), (1.0, 0.82), (2.0, 0.825),
-    (3.0, 0.83), (4.0, 0.83), (5.0, 0.835), (6.0, 0.83), (7.0, 0.835), (8.0, 0.838), (9.0, 0.835),
-    (10.0, 0.84)])
+SAMAREH_VOF = np.array(
+    [
+        (0.0, 0.0),
+        (0.12, 0.42),
+        (0.28, 0.70),
+        (0.45, 0.80),
+        (0.7, 0.815),
+        (1.0, 0.82),
+        (2.0, 0.825),
+        (3.0, 0.83),
+        (4.0, 0.83),
+        (5.0, 0.835),
+        (6.0, 0.83),
+        (7.0, 0.835),
+        (8.0, 0.838),
+        (9.0, 0.835),
+        (10.0, 0.84),
+    ]
+)
 
-# Seaborn aesthetic (whitegrid + notebook context). Applied via rc_context in each plot; the
-# explicit per-curve colors set below (frozen reds, conduction blues) are preserved on top of it.
+# Plot aesthetic (ticks style, paper-context font sizes at 1.3x), plain matplotlib rcParams.
+# Applied via rc_context in each plot; the explicit per-curve colors set below are preserved on top.
 PLATE_STYLE = {
-    **sns.axes_style("ticks"),
-    **sns.plotting_context("paper", font_scale=1.3),
+    "font.size": 12.5,
+    "axes.labelsize": 12.5,
+    "axes.titlesize": 12.5,
+    "xtick.labelsize": 11.5,
+    "ytick.labelsize": 11.5,
+    "legend.fontsize": 11.5,
+    "axes.edgecolor": "0.15",
+    "axes.labelcolor": "0.15",
+    "text.color": "0.15",
+    "xtick.color": "0.15",
+    "ytick.color": "0.15",
+    "xtick.direction": "out",
+    "ytick.direction": "out",
     "figure.facecolor": "white",
-    "axes.spines.top": False, "axes.spines.right": False,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
 }
 
 
@@ -141,24 +190,18 @@ def read_case_Ma(run_dir):
 
 
 def samareh_fig5():
-    """TC1, Fig 5: grid-convergence sweeps of both the frozen-T (Ma=0) and bulk-conduction (Ma=0.1)
-    cases, each at several cells/D, plotted against Samareh's VOF curve.
+    """TC1, Fig 5: the bulk-conduction (Ma=0.001) grid-convergence sweep that `run.py fig5`
+    produces, plotted against Samareh's VOF curve.
 
-    Frozen-T pins the imposed linear T field through density (no energy transport); conduction evolves
-    the coupled energy equation. Each case is its own color family (frozen reds, conduction blues),
-    shaded light->dark = coarse->fine, so the rise/overshoot and the late-time droop can be read as a
-    function of resolution. Each curve labels its own cells/D and run length, read from its case copy.
+    Shaded light->dark = coarse->fine, so the rise/overshoot and the late-time droop can be read
+    as a function of resolution. Each curve labels its own cells/D and Ma, read from its case copy.
     """
-    # (run dir, color); missing runs are skipped. box width = 5D, so cells/D = (m+1)/5, read per run.
-    # Grid convergence for BOTH cases: frozen-T (Ma=0) in reds, conduction (Ma=0.1) in blues;
-    # within each family light->dark = coarse->fine (12.8, 25.6, 51.2 cells/D).
+    # (run dir, color): run.py fig5's variant names; missing runs are skipped.
+    # box width = 5D, so cells/D = (m+1)/5, read per run; light->dark = coarse->fine.
     runs = [
-        ("tc1/frozen/w064", "#fc9272"),            # frozen-T (Ma=0):     12.8 cells/D
-        ("tc1/frozen/w128", "#ef3b2c"),            #                      25.6 cells/D
-        ("tc1/frozen/w256", "#a50f15"),            #                      51.2 cells/D
-        ("tc1/ma0p1/w064/sc050", "#9ecae1"),       # conduction (Ma=0.1): 12.8 cells/D
-        ("tc1/ma0p1/w128/sc050", "#4292c6"),       #                      25.6 cells/D
-        ("tc1/ma0p1/w256/sc050", "#08306b"),       #                      51.2 cells/D
+        ("tc1/ma0p001/w064/sc050", "#9ecae1"),  # 12.8 cells/D
+        ("tc1/ma0p001/w128/sc050", "#4292c6"),  # 25.6 cells/D
+        ("tc1/ma0p001/w256/sc050", "#08306b"),  # 51.2 cells/D
     ]
     series = []
     for name, color in runs:
@@ -182,10 +225,8 @@ def samareh_fig5():
         return
     with plt.rc_context(PLATE_STYLE):
         fig, ax = plt.subplots(figsize=(7.0, 5.0), constrained_layout=True)
-        ax.plot(SAMAREH_VOF[:, 0], SAMAREH_VOF[:, 1], "s--", color="0.0", ms=5.0, mfc="none", mew=1.3,
-                lw=1.0, label=r"Samareh Fig 5(d), VOF ($Ma=0$, digitized)")
-        ax.axhline(1.0, color="0.3", lw=1.1, ls="--", zorder=1,
-                   label=r"$u_{\mathrm{YGB}}$ (analytic terminal, $\approx 8.89{\times}10^{-3}$)")
+        ax.plot(SAMAREH_VOF[:, 0], SAMAREH_VOF[:, 1], "s--", color="0.0", ms=5.0, mfc="none", mew=1.3, lw=1.0, label=r"Samareh Fig 5(d), VOF ($Ma=0$, digitized)")
+        ax.axhline(1.0, color="0.3", lw=1.1, ls="--", zorder=1, label=r"$u_{\mathrm{YGB}}$ (analytic terminal, $\approx 8.89{\times}10^{-3}$)")
         for x, y, color, label in series:
             ax.plot(x, y, "-", color=color, lw=1.7, alpha=0.95, solid_capstyle="round", label=label)
         ax.set_xlim(0.0, 10.0)
@@ -193,9 +234,7 @@ def samareh_fig5():
         ax.set_xlabel(r"$t / t_r$")
         ax.set_ylabel(r"rise velocity   $u / u_{\mathrm{YGB}}$")
         ax.set_title(r"2D thermocapillary rise: grid convergence", fontsize=13, loc="left")
-        ax.legend(loc="lower left", fontsize=9, frameon=False, ncol=2,
-                  columnspacing=1.2, handlelength=1.6)
-        sns.despine(ax=ax)
+        ax.legend(loc="lower left", fontsize=9, frameon=False, ncol=2, columnspacing=1.2, handlelength=1.6)
         dst = os.path.join(FIGS, "case1_fig5.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)
@@ -206,8 +245,7 @@ def samareh_fig7():
     """TC2, Fig 7 (Re=5, Ma=20, Ca=0.01666): MFC migration vs the digitized Nas & Tryggvason transient."""
     with plt.rc_context(PLATE_STYLE):
         fig, ax = plt.subplots(figsize=(7.0, 5.0), constrained_layout=True)
-        ax.plot(NAS_TRYGGVASON[:, 0], NAS_TRYGGVASON[:, 1], "^--", color="0.0", ms=6.5, mfc="none", mew=1.3, lw=1.0,
-                zorder=5, label="Nas & Tryggvason (digitized)")
+        ax.plot(NAS_TRYGGVASON[:, 0], NAS_TRYGGVASON[:, 1], "^--", color="0.0", ms=6.5, mfc="none", mew=1.3, lw=1.0, zorder=5, label="Nas & Tryggvason (digitized)")
         plotted = False
         for name, nx, color in [("tc2/w064", 64, "#4C72B0"), ("tc2/w128", 128, "#DD8452")]:
             out = color_weighted_vy(os.path.join(RUNS, name))
@@ -230,8 +268,7 @@ def samareh_fig7():
             t_r = mu_b / marangoni_stress
             ts, us = t / t_r, u_lab / U_r
 
-            ax.plot(ts, us, "o--", color=color, ms=3.5, mew=0, lw=0.9, alpha=0.6, zorder=3,
-                    label=f"MFC {nx} cells/width ({nx // 2}/$D$)")
+            ax.plot(ts, us, "o--", color=color, ms=3.5, mew=0, lw=0.9, alpha=0.6, zorder=3, label=f"MFC {nx} cells/width ({nx // 2}/$D$)")
             plotted = True
         if not plotted:
             print("  fig7: no runs found")
@@ -276,7 +313,8 @@ def cmd_samareh(argv):
 SAMAREH_RATIO = 0.80  # Samareh's converged 2D cylinder ratio (Fig 5)
 
 # (Ma, run dir) -- the conduction Ma -> 0 convergence sweep (all w128, slip-wall, tr=2.0).
-# Nested-tree paths; these w128 Ma points are not yet on disk (aspirational sweep).
+# run.py does NOT produce these runs: set each up by hand (copy case_Ma_0p001.py into the run
+# dir with `Ma = <value>` edited) before using `plot.py ma`. Missing runs are skipped.
 MA_SWEEP = [
     (0.30, "tc1/ma0p30/w128/sc050"),
     (0.10, "tc1/ma0p10/w128/sc050"),
@@ -289,7 +327,9 @@ def measure_run(run_dir):
     """Run measure.py on a run dir; return its RESULT_JSON dict, or None if not ready."""
     proc = subprocess.run(
         [sys.executable, os.path.join(HERE, "measure.py"), run_dir],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     for line in proc.stdout.splitlines():
         if line.startswith("RESULT_JSON "):
@@ -306,7 +346,9 @@ def cmd_ma(argv):
             print(f"Ma={ma:<5} {name}: no result yet")
             continue
         points.append((ma, result["ratio_plateau"]))
-        print(f"Ma={ma:<5} plateau={result['ratio_plateau']:+.3f}  final={result['ratio_final']:+.3f}  drift={result['slope_per_tr']:+.3f}/t_r  ran {result['t_end_tr']:.2f} t_r  rises={result['rises']}")
+        print(
+            f"Ma={ma:<5} plateau={result['ratio_plateau']:+.3f}  final={result['ratio_final']:+.3f}  drift={result['slope_per_tr']:+.3f}/t_r  ran {result['t_end_tr']:.2f} t_r  rises={result['rises']}"
+        )
     if not points:
         sys.exit("no runs measured yet -- let the sweep produce snapshots first")
 
@@ -340,6 +382,7 @@ def cmd_ma(argv):
 
 # fields: a derived field from one run
 
+
 def load_field_case(case_dir):
     """Read the grid, EOS constants, and snapshot list for one run into a namespace."""
     P = read_namelist(os.path.join(case_dir, "simulation.inp"))
@@ -360,10 +403,26 @@ def load_field_case(case_dir):
     viz_dir = os.path.join(case_dir, "viz")
     os.makedirs(viz_dir, exist_ok=True)
     return SimpleNamespace(
-        P=P, p=p, nx=nx, ny=ny, ncell=ncell, dt=p("dt"), cv=p("fluid_pp(1)%cv"),
-        gamma_mfc=gamma_mfc, pi_inf_mfc=pi_inf_mfc, gamma=gamma, p_inf=p_inf,
-        restart_dir=restart_dir, xb=xb, yb=yb, x=0.5 * (xb[:-1] + xb[1:]), y=0.5 * (yb[:-1] + yb[1:]),
-        steps=steps, nvars=nvars, c_idx=nvars - 1, viz_dir=viz_dir,
+        P=P,
+        p=p,
+        nx=nx,
+        ny=ny,
+        ncell=ncell,
+        dt=p("dt"),
+        cv=p("fluid_pp(1)%cv"),
+        gamma_mfc=gamma_mfc,
+        pi_inf_mfc=pi_inf_mfc,
+        gamma=gamma,
+        p_inf=p_inf,
+        restart_dir=restart_dir,
+        xb=xb,
+        yb=yb,
+        x=0.5 * (xb[:-1] + xb[1:]),
+        y=0.5 * (yb[:-1] + yb[1:]),
+        steps=steps,
+        nvars=nvars,
+        c_idx=nvars - 1,
+        viz_dir=viz_dir,
     )
 
 
@@ -544,17 +603,18 @@ def cmd_fields(argv):
 
 # clean: remove orphaned figures (figures no current script produces)
 
-# Figures the scripts here legitimately produce -- KEEP IN SYNC with the savefig calls above and with
-# compare_tc3_visc.py. `clean` deletes any other .png/.pdf in figures/ as a stale orphan; source files
-# (.tex, etc.) and PRECIOUS run data (restart_data/case.py/*.inp) are never touched.
+# Figures the scripts here legitimately produce -- KEEP IN SYNC with the savefig calls above.
+# `clean` deletes any other .png/.pdf in figures/ as a stale orphan; source files (.tex, etc.)
+# and PRECIOUS run data (restart_data/case.py/*.inp) are never touched.
 KEEP_FIGURES = {
-    "case1_fig5.png",                                # samareh
-    "case2_fig7.png",                                # samareh
-    "tc1_ma_convergence.png",                        # ma
-    "case1_zero_marangoni_2D_recirculation.png",     # fields recirculation
+    "case1_fig5.png",  # samareh
+    "case2_fig7.png",  # samareh
+    "tc1_ma_convergence.png",  # ma
+    "case1_recon.png",  # recon
+    "case1_zero_marangoni_2D_recirculation.png",  # fields recirculation
     "case1_zero_marangoni_2D_recirculation.pdf",
-    "case3_large_marangoni_mu_of_T_validation.png",  # compare_tc3_visc.py
-    "mechanism_schematic.png", "mechanism_schematic.pdf",  # TikZ schematic (source: mechanism_schematic.tex)
+    "mechanism_schematic.png",
+    "mechanism_schematic.pdf",  # TikZ schematic (source: mechanism_schematic.tex)
 }
 KEEP_FIGURE_PATTERNS = [re.compile(r"^temperature_\d+\.png$")]  # fields temperature, one per step
 
@@ -567,9 +627,7 @@ def cmd_clean(argv):
         print("figures/: nothing to clean (directory absent)")
         return
     orphans = [
-        f for f in sorted(os.listdir(FIGS))
-        if os.path.isfile(os.path.join(FIGS, f)) and f.endswith((".png", ".pdf"))
-        and f not in KEEP_FIGURES and not any(p.match(f) for p in KEEP_FIGURE_PATTERNS)
+        f for f in sorted(os.listdir(FIGS)) if os.path.isfile(os.path.join(FIGS, f)) and f.endswith((".png", ".pdf")) and f not in KEEP_FIGURES and not any(p.match(f) for p in KEEP_FIGURE_PATTERNS)
     ]
     if not orphans:
         print("figures/: no orphaned figures")
@@ -585,10 +643,10 @@ def cmd_clean(argv):
 # The droop is interface-band smearing during advection, so a less-diffusive / interface-compressing
 # scheme reduces it -- shown here at fixed dx (no grid refinement), isolating the scheme's diffusion.
 RECON_RUNS = [
-    ("recon/muscl", "MUSCL (Van Leer)", "#dd8452"),          # 2nd-order, most diffusive
+    ("recon/muscl", "MUSCL (Van Leer)", "#dd8452"),  # 2nd-order, most diffusive
     ("recon/weno5", "WENO5 (baseline)", "#4c72b0"),
     ("recon/wenoz", "WENO-Z", "#8172b3"),
-    ("recon/weno7", "WENO7", "#55a868"),                      # higher order, less diffusive
+    ("recon/weno7", "WENO7", "#55a868"),  # higher order, less diffusive
     ("recon/muscl_thinc", "MUSCL + THINC (int_comp)", "#c44e52"),  # active interface compression
 ]
 
@@ -615,8 +673,7 @@ def samareh_recon():
         return
     with plt.rc_context(PLATE_STYLE):
         fig, ax = plt.subplots(figsize=(7.0, 5.0), constrained_layout=True)
-        ax.plot(SAMAREH_VOF[:, 0], SAMAREH_VOF[:, 1], "s--", color="0.0", ms=5.0, mfc="none", mew=1.3,
-                lw=1.0, label=r"Samareh Fig 5(d), VOF ($Ma=0$)")
+        ax.plot(SAMAREH_VOF[:, 0], SAMAREH_VOF[:, 1], "s--", color="0.0", ms=5.0, mfc="none", mew=1.3, lw=1.0, label=r"Samareh Fig 5(d), VOF ($Ma=0$)")
         ax.axhline(1.0, color="0.4", lw=1.0, ls="--", zorder=1, label=r"$u_{\mathrm{YGB}}$")
         for x, y, color, label in series:
             ax.plot(x, y, "-", color=color, lw=1.7, alpha=0.95, solid_capstyle="round", label=label)
@@ -624,11 +681,8 @@ def samareh_recon():
         ax.set_ylim(0.0, 1.05)
         ax.set_xlabel(r"$t / t_r$")
         ax.set_ylabel(r"rise velocity   $u / u_{\mathrm{YGB}}$")
-        ax.set_title(r"late-time droop vs reconstruction ($Ma=0.1$, 12.8 cells/$D$, fixed grid)",
-                     fontsize=12, loc="left")
-        ax.legend(loc="lower left", fontsize=9, frameon=False, ncol=2,
-                  columnspacing=1.2, handlelength=1.6)
-        sns.despine(ax=ax)
+        ax.set_title(r"late-time droop vs reconstruction ($Ma=0.1$, 12.8 cells/$D$, fixed grid)", fontsize=12, loc="left")
+        ax.legend(loc="lower left", fontsize=9, frameon=False, ncol=2, columnspacing=1.2, handlelength=1.6)
         dst = os.path.join(FIGS, "case1_recon.png")
         fig.savefig(dst, dpi=200)
         plt.close(fig)

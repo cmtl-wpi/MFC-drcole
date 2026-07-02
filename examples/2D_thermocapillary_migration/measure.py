@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Measure a thermocapillary drop's rise from MFC restart data, for all three validation cases.
+"""Measure a thermocapillary drop's rise from MFC restart data, for both validation cases.
 
-One tool, three reporting modes (auto-detected from the domain, or forced with a 2nd argument):
+One tool, two reporting modes (auto-detected from the domain, or forced with a 2nd argument):
 
   fig5  (case_Ma_0p001.py, Samareh Sec 4.1.1 / Fig 5) -- v/v_YGB vs t/t_r. The drop rises in +y and is
         tracked by its color function. In the slip-wall box (Samareh's geometry, default) the box is
@@ -12,18 +12,16 @@ One tool, three reporting modes (auto-detected from the domain, or forced with a
   fig7  (case_Ma_20.py, Sec 4.1.2 / Fig 7, Nas & Tryggvason) -- U*=U/U_r vs t*=t/t_r, with
         U_r=|sigma_T gradT| r0/mu_b and t_r=mu_b/|sigma_T gradT|. Reports the overshoot peak and the
         terminal (final-t_r-window) value. Compare the peak against ~0.13.
-  tc3   (case_Ma_1723.py, Sec 4.2 / Figs 8,13, LMS experiment) -- dimensional SI: rise velocity (mm/s)
-        vs distance from the cold wall (mm). Reports the peak rise speed.
 
-Mode auto-detection uses the rise-axis extent Ly: tc3 is SI (Ly ~ 0.045 m << 1), fig5 is Ly=7.5D,
-fig7 is Ly=4D. Pass fig5|fig7|tc3 as the 2nd argument to override.
+Mode auto-detection uses the rise-axis extent Ly: fig5 is Ly=7.5D, fig7 is Ly=4D. Pass
+fig5|fig7 as the 2nd argument to override.
 
 All run-dependent constants come from simulation.inp / pre_process.inp so this can't silently
 disagree with the data. The conserved-variable layout is (model_eqns=3, num_fluids=2,
 surface_tension): index 0,1 = partial densities, 3 = y-momentum, and the color function is the last
 conserved variable.
 
-Usage:  python3 measure.py [case_dir] [fig5|fig7|tc3]
+Usage:  python3 measure.py [case_dir] [fig5|fig7]
 Writes: <case_dir>/viz/<mode>*.png  and prints a JSON summary line (tag: RESULT_JSON).
 """
 
@@ -42,7 +40,7 @@ import numpy as np
 case_dir = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))
 mode_arg = sys.argv[2].lower() if len(sys.argv) > 2 else None
 
-R = 0.5  # droplet radius (D = 1) -- the non-dimensional cases use D=1; tc3 reads its own scales
+R = 0.5  # droplet radius (D = 1)
 
 
 def read_namelist(path):
@@ -74,10 +72,8 @@ Ly = param("y_domain%end") - param("y_domain%beg")  # rise-axis extent
 dim = 3 if int(param("p")) > 0 else 2
 
 # Mode: explicit 2nd arg, else auto-detect from the rise-axis extent.
-if mode_arg in ("fig5", "fig7", "tc3"):
+if mode_arg in ("fig5", "fig7"):
     mode = mode_arg
-elif Ly < 0.5:
-    mode = "tc3"  # SI metres (cell ~ 0.045 m)
 elif Ly > 6.0:
     mode = "fig5"  # 7.5D box
 else:
@@ -126,7 +122,7 @@ if "patch_icpp(2)%y_centroid" in patches:
     y_drop0 = param("patch_icpp(2)%y_centroid", patches)
 else:
     y_drop0 = float(y_centroid[0])
-assert abs(y_centroid[0] - y_drop0) < 0.1 * R * (1.0 if mode != "tc3" else Ly / 0.045), f"drop not at patch centroid at t=0 ({y_centroid[0]:.3g} vs {y_drop0:.3g}) -- check layout"
+assert abs(y_centroid[0] - y_drop0) < 0.1 * R, f"drop not at patch centroid at t=0 ({y_centroid[0]:.3g} vs {y_drop0:.3g}) -- check layout"
 
 
 def reference_scales():
@@ -233,7 +229,7 @@ if mode == "fig5":
         "t_end_tr": float(times[-1] / t_r),
     }
 
-elif mode == "fig7":
+else:  # fig7
     mu_b, sigma_T, gradT, _, U_r, t_r = reference_scales()
     NAS_TRYGGVASON_PEAK = 0.13
     t_star, U_star = times / t_r, u_lab / U_r
@@ -280,40 +276,6 @@ elif mode == "fig7":
         "nas_tryggvason_peak": NAS_TRYGGVASON_PEAK,
         "rises": bool(y_centroid[-1] > y_centroid[0]),
         "t_end_tr": float(t_star[-1]),
-    }
-
-else:  # tc3 -- dimensional SI: rise velocity (mm/s) vs distance from the cold wall (mm)
-    y_cold = param("y_domain%beg")
-    dist_mm = (y_centroid - y_cold) * 1e3
-    vrise_mms = u_lab * 1e3
-    t_ms = times * 1e3
-    peak = float(vrise_mms.max()) if len(vrise_mms) else 0.0
-    print(f"[tc3] nx={nx} ny={ny} nz={nz}  cells={cells}  nvars={nvars}  snapshots={len(steps)}")
-    print(f"run length = {t_ms[-1]:.2f} ms   drop rose {dist_mm[0]:.1f} -> {dist_mm[-1]:.1f} mm from cold wall")
-    print(f"peak rise velocity = {peak:.3f} mm/s   [experiment Fig 8 peak ~ 2-3 mm/s]")
-    fig, ax = plt.subplots(figsize=(7.2, 4.6))
-    ax.plot(dist_mm, vrise_mms, "o-", color="C0", ms=3, lw=1.0, label="MFC")
-    ax.set_xlabel("Distance from cold wall (mm)")
-    ax.set_ylabel("Rise velocity (mm/s)")
-    ax.set_title("TC3: large-Ma migration (Samareh Fig 8/13) -- MFC")
-    ax.grid(alpha=0.3)
-    ax.legend(loc="best", fontsize=9)
-    fig.tight_layout()
-    out_png = os.path.join(viz_dir, "tc3_rise_velocity.png")
-    fig.savefig(out_png, dpi=150)
-    print(f"saved figure -> {out_png}")
-    summary = {
-        "mode": "tc3",
-        "nx": nx,
-        "ny": ny,
-        "nz": nz,
-        "cells": cells,
-        "snapshots": len(steps),
-        "t_end_ms": float(t_ms[-1]),
-        "dist_start_mm": float(dist_mm[0]),
-        "dist_end_mm": float(dist_mm[-1]),
-        "peak_rise_velocity_mms": peak,
-        "experiment_peak_mms": "2-3 (Fig 8)",
     }
 
 print("RESULT_JSON " + json.dumps(summary))

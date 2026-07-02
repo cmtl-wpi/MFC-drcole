@@ -69,7 +69,7 @@ rho_min = rho_coeff / (T0 + gradT * Ly / 2.0)  # hot wall: lowest density, max s
 c_max = (gam * (p0 + p_inf) / rho_min) ** 0.5
 t_r = mu / abs(sigma_T * gradT)  # capillary-thermal time = 7.5
 mydt = 0.35 * dx / c_max
-t_step_stop = round(10.0 * t_r / mydt)  # 4 capillary-thermal times
+t_step_stop = round(10.0 * t_r / mydt)  # 10 capillary-thermal times
 t_step_save = max(1, t_step_stop // 80)
 
 # Configuration case dictionary

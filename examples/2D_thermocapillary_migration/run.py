@@ -8,18 +8,16 @@ The overlay figures are regenerated at the end.
 Targets:
   fig5  case_Ma_0p001.py -- 2D zero-Ma rise, grid convergence (v/v_YGB -> ~0.80)
   fig7  case_Ma_20.py    -- 2D low-Ma migration (U*/U_r, peak ~0.13)
-  tc3   3D case_Ma_1723  -- 3D large-Ma + mu(T)
   all   fig5 + fig7
 
 Usage (invokes mpirun -- run from a normal shell):
-    python3 run.py <fig5|fig7|tc3|all> [run|remeasure]   (default: fig5 run)
+    python3 run.py <fig5|fig7|all> [run|remeasure]   (default: fig5 run)
 
   run        run each variant, then measure and plot
   remeasure  re-measure existing runs/ and replot, WITHOUT running any simulation
 
 The canonical case files have no grid knob, so a variant's grid is set by copying the case
 into its run dir and rewriting its `Nx = <n>` line; the committed case is never touched.
-Runs are pinned off cores 0-15 with MPI binding disabled (safe on the shared server).
 """
 
 import json
@@ -33,9 +31,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 RUNS = os.path.join(HERE, "runs")
 RESULTS = os.path.join(HERE, "results")
-
-PIN = ["taskset", "-c", "16-255"]  # keep off cores 0-15 (a neighbour's job may live there)
-NOBIND = {"OMPI_MCA_hwloc_base_binding_policy": "none"}  # don't let prterun pin to cores
 
 # Per target: the case file, the measure.py mode, the summary file, and the grid variants to run.
 # Each variant is (run-dir name, MPI ranks, Nx override or None for the case default). Summary
@@ -60,29 +55,20 @@ TARGETS = {
             ("tc2/w128", 16, 128),
         ],
     ),
-    "tc3": dict(
-        case="../3D_thermocapillary_migration/case_Ma_1723.py",
-        mode="tc3",
-        summary="tc3_summary.json",
-        variants=[
-            ("tc3/run", 16, None),  # set ranks/Nx to match your grid before running
-        ],
-    ),
 }
 
 # Headline numbers to show per mode in the end-of-run table.
 TABLE_KEYS = {
     "fig5": ("cells_per_D", "ratio_plateau", "overshoot", "ratio_final"),
     "fig7": ("cells_per_D", "peak", "t_peak_tr", "terminal"),
-    "tc3": ("cells", "dist_end_mm", "peak_rise_velocity_mms"),
 }
 
 
 def run_variant(case_file, name, ranks, nx):
     """Run one variant in a fresh runs/<name>/ dir. Returns True on success.
 
-    The case is copied in (basename only, so a ../ source lands flat); if nx is given, the
-    copy's `Nx = <n>` line is rewritten. The committed case file is never touched.
+    The case is copied in; if nx is given, the copy's `Nx = <n>` line is rewritten. The
+    committed case file is never touched.
     """
     wd = os.path.join(RUNS, name)
     if os.path.isdir(wd):
@@ -100,9 +86,8 @@ def run_variant(case_file, name, ranks, nx):
     print(f"\n>>> {name}: {os.path.basename(case_file)} ranks={ranks} Nx={nx or 'default'}", flush=True)
     rel = os.path.relpath(dst, REPO)
     p = subprocess.run(
-        PIN + ["./mfc.sh", "run", rel, "-n", str(ranks)],
+        ["./mfc.sh", "run", rel, "-n", str(ranks)],
         cwd=REPO,
-        env={**os.environ, **NOBIND},
         capture_output=True,
         text=True,
         check=False,

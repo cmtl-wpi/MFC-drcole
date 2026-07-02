@@ -6,8 +6,9 @@
 # but here a finite thermal conductivity (small Marangoni number Ma) + isothermal gradient walls
 # actively HOLD T near the imposed linear profile against the drop's own advection -- the frozen
 # proxy decays once the drop starts to move, conduction restores it. As Ma -> 0 this approaches
-# Samareh's invariant-T limit (v_t / v_YGB ~ 0.80). Ma is very small here (deep limit), so dt is
-# conduction-limited (dt ~ Ma) and the run is long -- coarse grids only are practical.
+# Samareh's invariant-T limit (v_t / v_YGB ~ 0.80). At Ma = 0.1 the two dt limits are comparable:
+# the acoustic CFL governs at Nx = 64, and the explicit-conduction limit (dt ~ Ma*dx^2) takes over
+# on finer grids.
 #
 # MFC is compressible, so a temperature gradient IS a density gradient: at uniform pressure the EOS
 # gives T = (p+p_inf)/((gam-1)*rho*cv), so rho(y) = rho_coeff/T(y) encodes the imposed field. Both
@@ -77,7 +78,7 @@ def T_of_y(y):
     return T0 + gradT * y
 
 
-# Time stepping: min(acoustic CFL, explicit-conduction limit). Small Ma => conduction-limited dt.
+# Time stepping: min(acoustic CFL, explicit-conduction limit). Acoustic-limited at Nx = 64.
 rho_min = rho_coeff / (T0 + gradT * Ly / 2.0)  # hot wall: lowest density, max sound speed
 c_max = (gam * (p0 + p_inf) / rho_min) ** 0.5
 t_r = mu / G  # capillary-thermal time = 7.5

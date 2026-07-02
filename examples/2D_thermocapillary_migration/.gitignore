@@ -1,4 +1,4 @@
-# Raw simulation output (large; reproducible via run_validation.py). Keep results/ (figures + JSON).
+# Raw simulation output (large; reproducible via run.py). Keep results/ (figures + JSON).
 runs/
 __pycache__/
 *.pyc
