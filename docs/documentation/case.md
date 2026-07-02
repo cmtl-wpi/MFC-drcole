@@ -443,6 +443,8 @@ Details of implementation of viscosity in MFC can be found in \cite Coralic15.
 
 - `fluid_pp(i)%%G` is required for `hypoelasticity`.
 
+- `fluid_pp(i)%%k_therm` defines the thermal conductivity of $i$-th fluid and is required for every fluid when `thermal_conduction` is enabled.
+
 > **Stored-form parameters:** The values `gamma`, `pi_inf`, and `Re(1)`/`Re(2)` are **not** the raw physical quantities. MFC expects transformed stored forms:
 > - `gamma` = \f$1/(\gamma-1)\f$, not \f$\gamma\f$ itself
 > - `pi_inf` = \f$\gamma\,\pi_\infty / (\gamma - 1)\f$, not \f$\pi_\infty\f$ itself
@@ -1119,7 +1121,7 @@ When ``cyl_coord = 'T'`` is set in 2D the following constraints must be met:
 | `bc_[x,y,z]%%Twall_in`         | Real    | Temperature [K] of the entrance isothermal wall.                            |
 | `bc_[x,y,z]%%Twall_out`        | Real    | Temperature [K] of the exit isothermal wall.                                |
 
-This boundary condition can be used for fixed-temperature (isothermal) walls at the domain extremities. It is exclusively available for reacting flows and requires chemistry to be enabled. It properly evaluates heat and species fluxes at the interface when ``chemistry = 'T'``, ``chem_params%%diffusion = 'T'``, and the corresponding domain boundary is set to a slip wall (`bc_[x,y,z]%%[beg,end]` = -15) or a no-slip wall (`bc_[x,y,z]%%[beg,end]` = -16).
+This boundary condition imposes a fixed temperature (isothermal boundary) at the domain extremities. It requires a heat-conduction model to act on the prescribed temperature: either bulk thermal conduction (``thermal_conduction = 'T'``) or reacting flow with species diffusion (``chemistry = 'T'`` and ``chem_params%%diffusion = 'T'``). With chemistry, it properly evaluates heat and species fluxes at the interface, and the corresponding domain boundary must be set to a slip wall (`bc_[x,y,z]%%[beg,end]` = -15) or a no-slip wall (`bc_[x,y,z]%%[beg,end]` = -16). With `thermal_conduction`, the prescribed temperature enters the conductive flux as a Dirichlet condition and any non-periodic boundary type is accepted. In both cases, a periodic boundary (`bc_[x,y,z]%%[beg,end]` = -1) cannot be isothermal, and the corresponding wall temperature (`Twall_in`/`Twall_out`) must be set to a strictly positive value.
 
 
 

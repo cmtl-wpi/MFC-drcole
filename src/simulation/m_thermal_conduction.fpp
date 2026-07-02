@@ -60,7 +60,7 @@ contains
 
     !> Overwrite the ghost-cell temperature at isothermal boundaries with a Dirichlet reflection T_ghost = 2*Twall - T_interior, so
     !! the face temperature equals Twall and the conductive flux through the boundary is set by the prescribed wall temperature.
-    !! Mirrors the chemistry q_T_sf isothermal handling in m_boundary_common.
+    !! Mirrors the chemistry q_T_sf isothermal handling in m_boundary_primitives.
     !!
     !! MPI: each isothermal overwrite is applied ONLY on a rank that actually owns the PHYSICAL domain face -- i.e. when the
     !! per-rank bc code is negative (bc%beg/end < 0). On an interior rank the corresponding bc holds the neighbour rank id (>= 0)
