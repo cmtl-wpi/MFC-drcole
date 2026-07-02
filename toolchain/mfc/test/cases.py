@@ -447,9 +447,23 @@ def list_cases() -> typing.List[TestCaseBuilder]:
             cases.append(define_case_d(stack, ["grcbc z"], {}))
             stack.pop()
 
-    def alter_capillary():
+    def alter_capillary(dimInfo):
         stack.push("", {"patch_icpp(1)%cf_val": 1, "patch_icpp(2)%cf_val": 0, "patch_icpp(3)%cf_val": 1, "sigma": 1, "model_eqns": 3, "surface_tension": "T"})
         cases.append(define_case_d(stack, ["capillary=T", "model_eqns=3"], {}))
+        if len(dimInfo[0]) == 2:
+            cases.append(
+                define_case_d(
+                    stack,
+                    ["capillary=T", "model_eqns=3", "sigma_model=1"],
+                    {
+                        "sigma_model": 1,
+                        "sigma_T_ref": 2.0,
+                        "sigma_dTdT": -0.1,
+                        "fluid_pp(1)%cv": 1.0,
+                        "fluid_pp(2)%cv": 2.0,
+                    },
+                )
+            )
         stack.pop()
 
     def alter_weno(dimInfo):
@@ -617,7 +631,7 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                 )
 
                 if len(dimInfo[0]) > 1:
-                    alter_capillary()
+                    alter_capillary(dimInfo)
 
             alter_riemann_solvers(num_fluids)
             alter_low_Mach_correction()
