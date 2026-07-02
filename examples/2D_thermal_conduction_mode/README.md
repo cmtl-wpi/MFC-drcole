@@ -41,5 +41,8 @@ decay, and writes `figures/heat_2d_mode.png` + `summary.json`.
 |------|----------------|-----------|-------|
 | 128² | peak $L_\infty$ **0.34**, $L_2$ 0.20 | 0.17 | isotropic decay rate matches to **3.7 %** |
 
+*(Numbers predate the cv-based diffusive-`dt` retune; rerunning `case.py` +
+`validate.py` regenerates them along with `summary.json` and `figures/`.)*
+
 ![setup](diagrams/setup_2d_mode.png)
 ![2D mode](figures/heat_2d_mode.png)

@@ -18,7 +18,8 @@ inv = 1.0 / (2.0 * sigma0**2)
 Nx = Ny = Nz = 95
 dx = L / (Nx + 1)
 c0 = (gam * (p0 + p_inf)) ** 0.5
-dt = min(0.4 * dx / c0, 0.35 * dx**2 / (6.0 * alpha))
+# stability needs the cv-based diffusivity k/(rho*cv) = gam*alpha, not the cp-based alpha that sets the decay rate
+dt = min(0.4 * dx / c0, 0.35 * dx**2 / (6.0 * gam * alpha))
 t_end = ((2.0 * sigma0) ** 2 - sigma0**2) / (2.0 * alpha)  # run until sigma doubles
 Nt = int(round(t_end / dt))
 

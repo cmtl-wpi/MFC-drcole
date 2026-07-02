@@ -31,23 +31,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIG = os.path.join(HERE, "figures")
 SUMMARY = os.path.join(HERE, "summary.json")
 
-# Physical constants -- mirror case.py
-L, ALPHA = 1.0, 0.05
-TWALL, AMP = 10.0, 3.0
-KW = 2.0 * math.pi / L  # periodic single-mode wavenumber
+# IC constants -- mirror the analytic patch expression in case.py (everything
+# else -- grid, domain, EOS, k_therm -- comes from simulation.inp)
+T0, AMP = 10.0, 3.0  # background temperature, mode amplitude
 
 
-def exact_2d_mode(X, Y, t):
-    rate = ALPHA * 2.0 * KW**2
-    return TWALL + AMP * np.sin(KW * X) * np.sin(KW * Y) * math.exp(-rate * t)
+def exact_2d_mode(X, Y, t, kw, alpha):
+    rate = alpha * 2.0 * kw**2
+    return T0 + AMP * np.sin(kw * X) * np.sin(kw * Y) * math.exp(-rate * t)
 
 
 def read_run(rundir):
     """Read one run's settings and saved data from rundir.
 
     Returns: the time step, the grid size, the cell-center coordinates, the list
-    of saved step numbers, and a load(step) function that hands back the raw field
-    array for that step.
+    of saved step numbers, a load(step) function that hands back the raw field
+    array for that step, and the parsed simulation.inp dictionary.
     """
     inp = {}
     for line in open(os.path.join(rundir, "simulation.inp")):
@@ -75,23 +74,22 @@ def read_run(rundir):
         a = np.fromfile(os.path.join(rd, f"lustre_{s}.dat"), np.float64)
         return a.reshape(a.size // ncell, p, n, m)  # x innermost
 
-    return dt, (m, n, p), (xc, yc, zc), steps, load
+    return dt, (m, n, p), (xc, yc, zc), steps, load, inp
 
 
 def ndims_of(fields):
     return sum(1 for d in fields.shape[1:] if d > 1)
 
 
-def temperature(fields):
+def temperature(fields, g, p_inf, cv):
     """Recover temperature from MFC's raw conserved fields via the stiffened-gas
-    EOS: back out the pressure, then T = (p + p_inf) / ((gam - 1)*rho*cv).
+    EOS: back out the pressure, then T = (p + p_inf) / ((g - 1)*rho*cv).
     """
     nd = ndims_of(fields)
-    gam, p_inf, cv = 2.0, 100.0, 12.5
     rho, E = fields[0], fields[1 + nd]
     ke = 0.5 * sum((fields[1 + i] / rho) ** 2 for i in range(nd))
-    pres = (gam - 1.0) * rho * (E / rho - ke) - gam * p_inf
-    return ((pres + p_inf) / ((gam - 1.0) * rho * cv)).squeeze()
+    pres = (g - 1.0) * rho * (E / rho - ke) - g * p_inf
+    return ((pres + p_inf) / ((g - 1.0) * rho * cv)).squeeze()
 
 
 def velocity_mag(fields):
@@ -112,23 +110,36 @@ def main():
     rd = os.path.join(HERE, "restart_data")
     if not os.path.isdir(rd):
         raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/2D_thermal_conduction_mode/case.py -n 8")
-    dt, (m, n, _), (xc, yc, _), steps, load = read_run(HERE)
+    dt, (m, n, _), (xc, yc, _), steps, load, inp = read_run(HERE)
+    # EOS + conduction constants from simulation.inp (MFC stores gamma as 1/(g-1)
+    # and pi_inf as g*p_inf/(g-1), so physical p_inf = pi_inf_stored*(g-1)/g)
+    g = 1.0 + 1.0 / float(inp["fluid_pp(1)%gamma"])
+    p_inf = float(inp["fluid_pp(1)%pi_inf"]) * (g - 1.0) / g
+    cv = float(inp["fluid_pp(1)%cv"])
+    k_therm = float(inp["fluid_pp(1)%k_therm"])
+    L = float(inp["x_domain%end"]) - float(inp["x_domain%beg"])
+    kw = 2.0 * math.pi / L  # periodic single-mode wavenumber
+    # background density from the step-0 fields: p is uniform at t=0, so rho*T is
+    # uniform and equals rho0*T0 (the analytic-patch normalization in case.py)
+    f0 = load(steps[0])
+    rho0 = float((f0[0].squeeze() * temperature(f0, g, p_inf, cv)).mean()) / T0
+    alpha = k_therm / (rho0 * g * cv)  # decay-rate diffusivity k/(rho*cp), cp = g*cv
     X, Y = np.meshgrid(xc, yc, indexing="ij")  # [m,n]
     t = np.array([s * dt for s in steps])
-    rate_an = ALPHA * 2.0 * KW**2
+    rate_an = alpha * 2.0 * kw**2
     L1s, L2s, Lis, amp, umax = [], [], [], [], 0.0
     field_last = ex_last = None
     # per step: error norms vs analytic, plus the mode amplitude (projection of
     # (T - T0) onto sin*sin) whose exponential decay gives the cooling rate.
     for i, s in enumerate(steps):
         fields = load(s)
-        T = np.transpose(temperature(fields), (1, 0))  # [y,x]->[x,y]
-        ex = exact_2d_mode(X, Y, t[i])
+        T = np.transpose(temperature(fields, g, p_inf, cv), (1, 0))  # [y,x]->[x,y]
+        ex = exact_2d_mode(X, Y, t[i], kw, alpha)
         nr = norms(T, ex)
         L1s.append(nr["L1"])
         L2s.append(nr["L2"])
         Lis.append(nr["Linf"])
-        amp.append(((T - TWALL) * np.sin(KW * X) * np.sin(KW * Y)).sum())
+        amp.append(((T - T0) * np.sin(kw * X) * np.sin(kw * Y)).sum())
         umax = max(umax, float(velocity_mag(fields).max()))
         if i == len(steps) - 1:
             field_last, ex_last = T, ex
@@ -172,11 +183,8 @@ def main():
     fig.savefig(os.path.join(FIG, "heat_2d_mode.png"), dpi=130)
     plt.close(fig)
     print(f"  2D mode: peak L∞={Lis.max():.3e}  final L2={L2s[-1]:.3e}  rate {rate:.3f} vs {rate_an:.3f} ({rate_err:.2f}%)  max|u|={umax:.1e}")
-    json.dump(
-        {"heat_2d_mode": {"N": int(m), "max_u": umax, "measured_rate": rate, "analytic_rate": rate_an, "rate_error_pct": rate_err, "Linf_peak": float(Lis.max()), "L2_final": float(L2s[-1])}},
-        open(SUMMARY, "w"),
-        indent=2,
-    )
+    out = {"heat_2d_mode": {"N": int(m), "max_u": umax, "measured_rate": rate, "analytic_rate": rate_an, "rate_error_pct": rate_err, "Linf_peak": float(Lis.max()), "L2_final": float(L2s[-1])}}
+    open(SUMMARY, "w").write(json.dumps(out, indent=2) + "\n")
     print(f"  wrote {os.path.relpath(os.path.join(FIG, 'heat_2d_mode.png'), HERE)}, summary.json")
 
 

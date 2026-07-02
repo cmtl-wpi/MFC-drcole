@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Schematic of the 2D_Thermal_Conduction_Flatplate case setup: domain, boundary
-conditions, initial state, and key parameters. Values mirror case.py.
+conditions, initial state, and key parameters. Values are imported from case.py
+so they cannot drift.
 
     python3 examples/2D_Thermal_Conduction_Flatplate/case_schematic.py
 """
 
 import os
+import sys
 
 import matplotlib
 import numpy as np
@@ -13,22 +15,24 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, Rectangle
-from scipy.special import erf
+from scipy.special import erf, erfinv
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import case  # noqa: E402  # the case definition is the single source of truth
 
-# -- setup values (mirror case.py) --
-L = 50.0  # domain size [mm]  (0.05 m)
-ncell = 199  # cells per direction
-T_inf, T_wall = 1125.0, 600.0
-p_atm = 101325.0
-gam, R_air = 1.4, 287.0
-k_air = 0.07
-Re = 100000
-rho_inf = p_atm / (R_air * T_inf)
-cp = gam * R_air / (gam - 1.0)
+# -- setup values (from case.py) --
+L = case.Lx * 1e3  # domain size [mm]
+ncell = case.m_cells + 1  # cells per direction
+T_inf, T_wall = case.T0, case.case["bc_y%Twall_in"]
+gam, R_air = case.c_gamma, case.R_air
+k_air = case.k_air
+Re = case.case["fluid_pp(1)%Re(1)"]
+rho_inf = case.rho0
+cp = case.cp
 rho_film = rho_inf * T_inf / (0.5 * (T_inf + T_wall))
 alpha_film = k_air / (rho_film * cp)
+d99_mm = 2.0 * erfinv(0.99) * np.sqrt(alpha_film * case.t_end) * 1e3  # theta = 0.99 depth
 
 cmap = plt.cm.inferno
 c_free = cmap(0.999)  # free-stream (hot) color
@@ -52,7 +56,7 @@ ax.plot([0, L], [band, band], "w--", lw=1.0, zorder=3)
 # -- bottom: the flat plate (no-slip isothermal wall) --
 ax.add_patch(Rectangle((0, -2.6), L, 2.6, facecolor="0.8", edgecolor="k", hatch="////", lw=1.5, zorder=4))
 ax.plot([0, L], [0, 0], "k-", lw=3.0, zorder=5)
-ax.text(L / 2, -6.6, "Flat plate — no-slip isothermal wall,  $T_{wall}=600$ K   (bc_y%beg = −16)", ha="center", va="center", fontsize=10.5, fontweight="bold")
+ax.text(L / 2, -6.6, f"Flat plate — no-slip isothermal wall,  $T_{{wall}}={T_wall:.0f}$ K   (bc_y%beg = −16)", ha="center", va="center", fontsize=10.5, fontweight="bold")
 
 # -- edge boundary-condition arrows --
 # left edge: subsonic inflow (arrows pointing in, +x)
@@ -74,7 +78,7 @@ ax.text(L / 2, L + 9.0, "Outflow  (bc_y%end = −3)", ha="center", va="center", 
 ax.text(
     L / 2,
     L * 0.62,
-    "Initial condition ($t=0$)\nQuiescent:  $u=v=0$\n$T_\\infty=1125$ K,  $p=1$ atm\n(uniform)",
+    f"Initial condition ($t=0$)\nQuiescent:  $u=v=0$\n$T_\\infty={T_inf:.0f}$ K,  $p=1$ atm\n(uniform)",
     ha="center",
     va="center",
     fontsize=11,
@@ -83,7 +87,7 @@ ax.text(
 
 # -- thermal-layer callout --
 ax.annotate(
-    "Thermal boundary layer\n$\\delta_T=\\sqrt{\\alpha t}\\approx 3$ mm at 5 ms\n(uniform in $x$, grows in time)",
+    f"Thermal boundary layer\n$\\delta_{{99}}=2\\sqrt{{\\alpha t}}\\,\\mathrm{{erf}}^{{-1}}(0.99)\\approx {d99_mm:.1f}$ mm at {case.t_end * 1e3:.0f} ms\n(uniform in $x$, grows in time)",
     xy=(L * 0.80, band * 0.5),
     xytext=(L * 0.62, band + 9.5),
     fontsize=9.5,
@@ -110,16 +114,16 @@ axp.axis("off")
 lines = [
     ("Geometry", ""),
     ("  domain", f"{L:.0f} × {L:.0f} mm"),
-    ("  grid", f"{ncell}×{ncell} cells  (Δ = {L / (ncell + 1):.3f} mm)"),
+    ("  grid", f"{ncell}×{ncell} cells  (Δ = {L / ncell:.3f} mm)"),
     ("Fluid — air (ideal gas)", ""),
-    ("  γ,  R", "1.4,  287 J/(kg·K)"),
-    ("  cp,  cv", f"{cp:.0f},  {R_air / (gam - 1):.0f} J/(kg·K)"),
+    ("  γ,  R", f"{gam},  {R_air:.0f} J/(kg·K)"),
+    ("  cp,  cv", f"{cp:.0f},  {case.cv:.0f} J/(kg·K)"),
     ("  π∞ (stiffened gas)", "0"),
     ("Free stream", ""),
-    ("  T∞,  p", "1125 K,  1 atm"),
+    ("  T∞,  p", f"{T_inf:.0f} K,  1 atm"),
     ("  ρ∞", f"{rho_inf:.3f} kg/m³"),
     ("Wall", ""),
-    ("  T_wall", "600 K   (ΔT = 525 K)"),
+    ("  T_wall", f"{T_wall:.0f} K   (ΔT = {T_inf - T_wall:.0f} K)"),
     ("Conduction (Fourier)", ""),
     ("  k", f"{k_air} W/(m·K)"),
     ("  α_film", f"{alpha_film:.2e} m²/s"),
@@ -127,8 +131,8 @@ lines = [
     ("  Re", f"{Re:,}"),
     ("Numerics", ""),
     ("  model_eqns / scheme", "2 / WENO5 + HLLC"),
-    ("  dt,  t_end", "1.12e−7 s,  5 ms"),
-    ("  steps,  saves", "≈44 600,  10"),
+    ("  dt,  t_end", f"{case.dt:.3g} s,  {case.t_end * 1e3:.0f} ms"),
+    ("  steps,  saves", f"{case.t_step_stop:,},  {case.t_step_stop // case.t_step_save}"),
     ("Features", ""),
     ("  thermal_conduction", "T"),
     ("  chemistry", "F"),

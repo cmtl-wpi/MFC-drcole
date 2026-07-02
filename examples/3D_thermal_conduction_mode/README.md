@@ -24,19 +24,23 @@ order (2nd in space, 3rd in time) is masked by this floor.
 ## Run
 
 ```bash
-./mfc.sh run examples/3D_thermal_conduction_mode/case.py -n 16
+./mfc.sh run examples/3D_thermal_conduction_mode/case.py -n 8
 python3 examples/3D_thermal_conduction_mode/validate.py
 ```
 
 `validate.py` reads the in-place `restart_data/`, recovers $T$, compares to the
-exact field (the figure slices the cube at $z=L/2$), fits the isotropic cooling
-rate, and writes `figures/heat_3d_mode.png` + `summary.json`.
+exact field (the figure slices the cube at the $z=L/4$ antinode plane; $z=L/2$
+is a node of $\sin(kz)$), fits the isotropic cooling rate, and writes
+`figures/heat_3d_mode.png` + `summary.json`.
 
 ## Result
 
 | Grid | Error vs exact | `max\|u\|` | Notes |
 |------|----------------|-----------|-------|
 | 64³ | peak $L_\infty$ **0.32**, $L_2$ 0.11 | 0.17 | isotropic decay rate matches to **3.1 %** |
+
+*(Numbers predate the cv-based diffusive-`dt` retune; rerunning `case.py` +
+`validate.py` regenerates them along with `summary.json` and `figures/`.)*
 
 ![setup](diagrams/setup_3d_mode.png)
 ![3D mode](figures/heat_3d_mode.png)

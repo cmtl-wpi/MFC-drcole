@@ -26,7 +26,7 @@ order (2nd in space, 3rd in time) is masked by this floor.
 ## Run
 
 ```bash
-./mfc.sh run examples/3D_thermal_conduction_hotspot/case.py -n 16
+./mfc.sh run examples/3D_thermal_conduction_hotspot/case.py -n 12
 python3 examples/3D_thermal_conduction_hotspot/validate.py
 ```
 
@@ -39,6 +39,9 @@ profile), and writes `figures/heat_3d_hotspot.png` + `summary.json`.
 | Grid | Error vs exact | `max\|u\|` | Notes |
 |------|----------------|-----------|-------|
 | 96³ | $L_2$ **0.014**, $L_\infty$ 0.11 | 0.24 | x/y/z center lines collapse → no directional bias |
+
+*(Numbers predate the cv-based diffusive-`dt` retune; rerunning `case.py` +
+`validate.py` regenerates them along with `summary.json` and `figures/`.)*
 
 ![setup](diagrams/setup_3d_hotspot.png)
 ![3D hot spot](figures/heat_3d_hotspot.png)

@@ -32,22 +32,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIG = os.path.join(HERE, "figures")
 SUMMARY = os.path.join(HERE, "summary.json")
 
-# Physical constants -- mirror case.py
-L, ALPHA = 1.0, 0.05
-TWALL, AMP = 10.0, 3.0  # 1D Dirichlet sine: Twall + AMP*sin(pi x/L)
-KAPPA = math.pi / L
+# IC amplitude -- mirrors the analytic patch expression in case.py (everything
+# else -- grid, domain, EOS, k_therm, Twall -- comes from simulation.inp)
+AMP = 3.0  # 1D Dirichlet sine: Twall + AMP*sin(pi x/L)
 
 
-def exact_1d(x, t):
-    return TWALL + AMP * np.sin(KAPPA * x) * math.exp(-ALPHA * KAPPA**2 * t)
+def exact_1d(x, t, Twall, kappa, alpha):
+    return Twall + AMP * np.sin(kappa * x) * math.exp(-alpha * kappa**2 * t)
 
 
 def read_run(rundir):
     """Read one run's settings and saved data from rundir.
 
     Returns: the time step, the grid size, the cell-center coordinates, the list
-    of saved step numbers, and a load(step) function that hands back the raw field
-    array for that step.
+    of saved step numbers, a load(step) function that hands back the raw field
+    array for that step, and the parsed simulation.inp dictionary.
     """
     inp = {}
     for line in open(os.path.join(rundir, "simulation.inp")):
@@ -76,24 +75,23 @@ def read_run(rundir):
         a = np.fromfile(os.path.join(rd, f"lustre_{s}.dat"), np.float64)
         return a.reshape(a.size // ncell, p, n, m)  # x innermost
 
-    return dt, (m, n, p), (xc, yc, zc), steps, load
+    return dt, (m, n, p), (xc, yc, zc), steps, load, inp
 
 
 def ndims_of(fields):
     return sum(1 for d in fields.shape[1:] if d > 1)
 
 
-def temperature(fields):
+def temperature(fields, g, p_inf, cv):
     """Recover temperature from MFC's raw conserved fields via the stiffened-gas
     EOS. MFC carried density and energy, so back out the pressure and then
-    T = (p + p_inf) / ((gam - 1)*rho*cv).
+    T = (p + p_inf) / ((g - 1)*rho*cv).
     """
     nd = ndims_of(fields)
-    gam, p_inf, cv = 2.0, 100.0, 12.5
     rho, E = fields[0], fields[1 + nd]
     ke = 0.5 * sum((fields[1 + i] / rho) ** 2 for i in range(nd))
-    pres = (gam - 1.0) * rho * (E / rho - ke) - gam * p_inf
-    return ((pres + p_inf) / ((gam - 1.0) * rho * cv)).squeeze()
+    pres = (g - 1.0) * rho * (E / rho - ke) - g * p_inf
+    return ((pres + p_inf) / ((g - 1.0) * rho * cv)).squeeze()
 
 
 def velocity_mag(fields):
@@ -116,11 +114,25 @@ def main():
     rd = os.path.join(HERE, "restart_data")
     if not os.path.isdir(rd):
         raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/1D_thermal_conduction/case.py -n 4")
-    dt, (m, _, _), (xc, _, _), steps, load = read_run(HERE)
+    dt, (m, _, _), (xc, _, _), steps, load, inp = read_run(HERE)
+    # EOS + conduction constants from simulation.inp (MFC stores gamma as 1/(g-1)
+    # and pi_inf as g*p_inf/(g-1), so physical p_inf = pi_inf_stored*(g-1)/g)
+    g = 1.0 + 1.0 / float(inp["fluid_pp(1)%gamma"])
+    p_inf = float(inp["fluid_pp(1)%pi_inf"]) * (g - 1.0) / g
+    cv = float(inp["fluid_pp(1)%cv"])
+    k_therm = float(inp["fluid_pp(1)%k_therm"])
+    Twall = float(inp["bc_x%twall_in"])
+    L = float(inp["x_domain%end"]) - float(inp["x_domain%beg"])
+    kappa = math.pi / L
+    # background density from the step-0 fields: p is uniform at t=0, so rho*T is
+    # uniform and equals rho0*Twall (the analytic-patch normalization in case.py)
+    f0 = load(steps[0])
+    rho0 = float((f0[0].squeeze() * temperature(f0, g, p_inf, cv)).mean()) / Twall
+    alpha = k_therm / (rho0 * g * cv)  # decay-rate diffusivity k/(rho*cp), cp = g*cv
     t = np.array([s * dt for s in steps])
-    nums = [temperature(load(s)) for s in steps]
+    nums = [temperature(load(s), g, p_inf, cv) for s in steps]
     umax = max(float(np.atleast_1d(velocity_mag(load(s))).max()) for s in steps)
-    nrm = [norms(nu, exact_1d(xc, ti)) for nu, ti in zip(nums, t)]
+    nrm = [norms(nu, exact_1d(xc, ti, Twall, kappa, alpha)) for nu, ti in zip(nums, t)]
     L2 = np.array([d["L2"] for d in nrm])
     Li = np.array([d["Linf"] for d in nrm])
     out = {
@@ -141,7 +153,7 @@ def main():
     tcol = plt.cm.viridis(np.linspace(0.12, 0.88, len(idx)))
     xf = np.linspace(0, L, 400)
     for c, j in zip(tcol, idx):
-        axT.plot(xf, exact_1d(xf, t[j]), "-", color=c, lw=1.6, zorder=1)
+        axT.plot(xf, exact_1d(xf, t[j], Twall, kappa, alpha), "-", color=c, lw=1.6, zorder=1)
         axT.plot(xc[::8], nums[j][::8], "o", color=c, ms=4, mfc="none", mew=1.1, zorder=2)
     axT.legend(
         [Line2D([], [], color="0.3", lw=1.6), Line2D([], [], color="0.3", marker="o", ls="none", mfc="none")],
@@ -160,7 +172,7 @@ def main():
     os.makedirs(FIG, exist_ok=True)
     fig.savefig(os.path.join(FIG, "heat_1d.png"), dpi=130)
     plt.close(fig)
-    json.dump({"heat_1d": out}, open(SUMMARY, "w"), indent=2)
+    open(SUMMARY, "w").write(json.dumps({"heat_1d": out}, indent=2) + "\n")
     print(f"  wrote {os.path.relpath(os.path.join(FIG, 'heat_1d.png'), HERE)}, summary.json")
 
 

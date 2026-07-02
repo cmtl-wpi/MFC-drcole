@@ -5,7 +5,7 @@ A sine wave in a triply-periodic cube, T0 + A sin(kx) sin(ky) sin(kz), k = 2*pi/
 cooling evenly in every direction as exp(-3 alpha k^2 t). This script does NOT run
 MFC -- run the case first, then run this to analyze the result:
 
-  ./mfc.sh run examples/3D_thermal_conduction_mode/case.py -n 16
+  ./mfc.sh run examples/3D_thermal_conduction_mode/case.py -n 8
   python3 examples/3D_thermal_conduction_mode/validate.py
 
 It recovers temperature from the EOS, compares to the exact solution, fits the
@@ -31,23 +31,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIG = os.path.join(HERE, "figures")
 SUMMARY = os.path.join(HERE, "summary.json")
 
-# Physical constants -- mirror case.py
-L, ALPHA = 1.0, 0.05
-TWALL, AMP = 10.0, 3.0
-KW = 2.0 * math.pi / L  # periodic single-mode wavenumber
+# IC constants -- mirror the analytic patch expression in case.py (everything
+# else -- grid, domain, EOS, k_therm -- comes from simulation.inp)
+T0, AMP = 10.0, 3.0  # background temperature, mode amplitude
 
 
-def exact_3d_mode(X, Y, Z, t):
-    rate = ALPHA * 3.0 * KW**2
-    return TWALL + AMP * np.sin(KW * X) * np.sin(KW * Y) * np.sin(KW * Z) * math.exp(-rate * t)
+def exact_3d_mode(X, Y, Z, t, kw, alpha):
+    rate = alpha * 3.0 * kw**2
+    return T0 + AMP * np.sin(kw * X) * np.sin(kw * Y) * np.sin(kw * Z) * math.exp(-rate * t)
 
 
 def read_run(rundir):
     """Read one run's settings and saved data from rundir.
 
     Returns: the time step, the grid size, the cell-center coordinates, the list
-    of saved step numbers, and a load(step) function that hands back the raw field
-    array for that step.
+    of saved step numbers, a load(step) function that hands back the raw field
+    array for that step, and the parsed simulation.inp dictionary.
     """
     inp = {}
     for line in open(os.path.join(rundir, "simulation.inp")):
@@ -75,23 +74,22 @@ def read_run(rundir):
         a = np.fromfile(os.path.join(rd, f"lustre_{s}.dat"), np.float64)
         return a.reshape(a.size // ncell, p, n, m)  # x innermost
 
-    return dt, (m, n, p), (xc, yc, zc), steps, load
+    return dt, (m, n, p), (xc, yc, zc), steps, load, inp
 
 
 def ndims_of(fields):
     return sum(1 for d in fields.shape[1:] if d > 1)
 
 
-def temperature(fields):
+def temperature(fields, g, p_inf, cv):
     """Recover temperature from MFC's raw conserved fields via the stiffened-gas
-    EOS: back out the pressure, then T = (p + p_inf) / ((gam - 1)*rho*cv).
+    EOS: back out the pressure, then T = (p + p_inf) / ((g - 1)*rho*cv).
     """
     nd = ndims_of(fields)
-    gam, p_inf, cv = 2.0, 100.0, 12.5
     rho, E = fields[0], fields[1 + nd]
     ke = 0.5 * sum((fields[1 + i] / rho) ** 2 for i in range(nd))
-    pres = (gam - 1.0) * rho * (E / rho - ke) - gam * p_inf
-    return ((pres + p_inf) / ((gam - 1.0) * rho * cv)).squeeze()
+    pres = (g - 1.0) * rho * (E / rho - ke) - g * p_inf
+    return ((pres + p_inf) / ((g - 1.0) * rho * cv)).squeeze()
 
 
 def velocity_mag(fields):
@@ -111,24 +109,37 @@ def norms(num, ex):
 def main():
     rd = os.path.join(HERE, "restart_data")
     if not os.path.isdir(rd):
-        raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/3D_thermal_conduction_mode/case.py -n 16")
-    dt, (m, n, p), (xc, yc, zc), steps, load = read_run(HERE)
+        raise SystemExit("no restart_data/ here -- run first:\n  ./mfc.sh run examples/3D_thermal_conduction_mode/case.py -n 8")
+    dt, (m, n, p), (xc, yc, zc), steps, load, inp = read_run(HERE)
+    # EOS + conduction constants from simulation.inp (MFC stores gamma as 1/(g-1)
+    # and pi_inf as g*p_inf/(g-1), so physical p_inf = pi_inf_stored*(g-1)/g)
+    g = 1.0 + 1.0 / float(inp["fluid_pp(1)%gamma"])
+    p_inf = float(inp["fluid_pp(1)%pi_inf"]) * (g - 1.0) / g
+    cv = float(inp["fluid_pp(1)%cv"])
+    k_therm = float(inp["fluid_pp(1)%k_therm"])
+    L = float(inp["x_domain%end"]) - float(inp["x_domain%beg"])
+    kw = 2.0 * math.pi / L  # periodic single-mode wavenumber
+    # background density from the step-0 fields: p is uniform at t=0, so rho*T is
+    # uniform and equals rho0*T0 (the analytic-patch normalization in case.py)
+    f0 = load(steps[0])
+    rho0 = float((f0[0].squeeze() * temperature(f0, g, p_inf, cv)).mean()) / T0
+    alpha = k_therm / (rho0 * g * cv)  # decay-rate diffusivity k/(rho*cp), cp = g*cv
     X, Y, Z = np.meshgrid(xc, yc, zc, indexing="ij")
     t = np.array([s * dt for s in steps])
-    rate_an = ALPHA * 3.0 * KW**2
+    rate_an = alpha * 3.0 * kw**2
     L1s, L2s, Lis, amp, umax = [], [], [], [], 0.0
     field_last = ex_last = None
     # per step: error norms vs analytic, plus the mode amplitude (projection of
     # (T - T0) onto sin*sin*sin) whose exponential decay gives the cooling rate.
     for i, s in enumerate(steps):
         fields = load(s)
-        T = np.transpose(temperature(fields), (2, 1, 0))  # [z,y,x]->[x,y,z]
-        ex = exact_3d_mode(X, Y, Z, t[i])
+        T = np.transpose(temperature(fields, g, p_inf, cv), (2, 1, 0))  # [z,y,x]->[x,y,z]
+        ex = exact_3d_mode(X, Y, Z, t[i], kw, alpha)
         nr = norms(T, ex)
         L1s.append(nr["L1"])
         L2s.append(nr["L2"])
         Lis.append(nr["Linf"])
-        amp.append(((T - TWALL) * np.sin(KW * X) * np.sin(KW * Y) * np.sin(KW * Z)).sum())
+        amp.append(((T - T0) * np.sin(kw * X) * np.sin(kw * Y) * np.sin(kw * Z)).sum())
         umax = max(umax, float(velocity_mag(fields).max()))
         if i == len(steps) - 1:
             field_last, ex_last = T, ex
@@ -138,20 +149,20 @@ def main():
 
     fig = plt.figure(figsize=(14, 8))
     gs = fig.add_gridspec(2, 3, height_ratios=[1.2, 1.0])
-    kz = p // 2
+    kz = p // 4  # probe the antinode plane (z=L/4); z=L/2 is a node of sin(kz)
     vmin, vmax = float(ex_last[:, :, kz].min()), float(ex_last[:, :, kz].max())
     ax0 = fig.add_subplot(gs[0, 0])
     ax0.pcolormesh(xc, yc, field_last[:, :, kz].T, vmin=vmin, vmax=vmax, cmap="inferno", shading="auto")
-    ax0.set(title=f"MFC  T(x,y, z=L/2),  t={t[-1]:.3f}", xlabel="x", ylabel="y", aspect="equal")
+    ax0.set(title=f"MFC  T(x,y, z=L/4),  t={t[-1]:.3f}", xlabel="x", ylabel="y", aspect="equal")
     ax1 = fig.add_subplot(gs[0, 1])
     im = ax1.pcolormesh(xc, yc, ex_last[:, :, kz].T, vmin=vmin, vmax=vmax, cmap="inferno", shading="auto")
     ax1.set(title="analytic", xlabel="x", ylabel="y", aspect="equal")
     fig.colorbar(im, ax=[ax0, ax1], shrink=0.8, label="T")
-    jy = n // 2
+    jy = n // 4  # probe the antinode (y=L/4); y=L/2 is a node of sin(ky)
     ax2 = fig.add_subplot(gs[0, 2])
     ax2.plot(xc, ex_last[:, jy, kz], "k-", lw=2, label="analytic")
     ax2.plot(xc[::3], field_last[::3, jy, kz], "C3o", ms=4, mfc="none", label="MFC")
-    ax2.set(title="center line  y=z=L/2", xlabel="x", ylabel="T")
+    ax2.set(title="line  y=z=L/4 (antinode)", xlabel="x", ylabel="T")
     ax2.legend(fontsize=9)
     ax3 = fig.add_subplot(gs[1, 0])
     ax3.semilogy(t, L1s, "C0-o", ms=3, label="L1")
@@ -173,11 +184,8 @@ def main():
     fig.savefig(os.path.join(FIG, "heat_3d_mode.png"), dpi=130)
     plt.close(fig)
     print(f"  3D mode: peak L∞={Lis.max():.3e}  final L2={L2s[-1]:.3e}  rate {rate:.3f} vs {rate_an:.3f} ({rate_err:.2f}%)  max|u|={umax:.1e}")
-    json.dump(
-        {"heat_3d_mode": {"N": int(m), "max_u": umax, "measured_rate": rate, "analytic_rate": rate_an, "rate_error_pct": rate_err, "Linf_peak": float(Lis.max()), "L2_final": float(L2s[-1])}},
-        open(SUMMARY, "w"),
-        indent=2,
-    )
+    out = {"heat_3d_mode": {"N": int(m), "max_u": umax, "measured_rate": rate, "analytic_rate": rate_an, "rate_error_pct": rate_err, "Linf_peak": float(Lis.max()), "L2_final": float(L2s[-1])}}
+    open(SUMMARY, "w").write(json.dumps(out, indent=2) + "\n")
     print(f"  wrote {os.path.relpath(os.path.join(FIG, 'heat_3d_mode.png'), HERE)}, summary.json")
 
 

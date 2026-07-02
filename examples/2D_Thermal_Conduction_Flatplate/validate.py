@@ -9,16 +9,17 @@ self-similar solution is
     (T(y,t) - T_wall) / (T_inf - T_wall) = erf( y / (2*sqrt(alpha*t)) ),
     alpha = k / (rho*cp).
 
-This script reads the conserved-variable restart files directly (the same
-[var, y, x] global layout that verify_2d_conduction.py uses), derives the
-EOS temperature, and overlays the erf solution. Grid / dt / EOS are read from
-simulation.inp so the script stays correct if the case is retuned.
+This script reads the conserved-variable restart files directly ([var, y, x]
+global layout), derives the EOS temperature, and overlays the erf solution.
+Grid / dt / EOS are read from simulation.inp so the script stays correct if
+the case is retuned.
 
-    ./mfc.sh run examples/2D_Thermal_Conduction_Flatplate/case.py -n 4
-    python3 examples/2D_Thermal_Conduction_Flatplate/validate_conduction.py
+    ./mfc.sh run examples/2D_Thermal_Conduction_Flatplate/case.py -n 16
+    python3 examples/2D_Thermal_Conduction_Flatplate/validate.py
 """
 
 import glob
+import json
 import math
 import os
 import re
@@ -156,7 +157,19 @@ def main():
     print(f"\n  max|u| at final time = {u_last.max():.3f} m/s")
     print(f"  peak x-inhomogeneity  = {Tspread.max():.2f} K")
     print(f"  mean rms error vs erf(alpha_film) = {np.mean(rms_all):.2f} K ({100 * np.mean(rms_all) / (T_inf - T_wall):.1f}% of ΔT)")
-    print("  wrote validation_field.png, validation_profiles.png")
+    out = {
+        "flatplate": {
+            "N": ncx,
+            "T_inf": T_inf,
+            "T_wall": T_wall,
+            "alpha_film": alpha_film,
+            "mean_rms_vs_erf_K": float(np.mean(rms_all)),
+            "mean_rms_pct_of_dT": float(100 * np.mean(rms_all) / (T_inf - T_wall)),
+            "max_u_final": float(u_last.max()),
+        }
+    }
+    open(os.path.join(HERE, "summary.json"), "w").write(json.dumps(out, indent=2) + "\n")
+    print("  wrote validation_field.png, validation_profiles.png, summary.json")
 
 
 if __name__ == "__main__":

@@ -4,9 +4,9 @@
 This case is the thermal_conduction counterpart of 2D_Thermal_Flatplate.
 Instead of chemistry + chem_params%diffusion for heat conduction, it uses the
 standalone thermal_conduction feature (Fourier's law -k*grad(T)) with the
-mixture stiffened-gas EOS temperature. All other physics -- domain, grid,
-boundary conditions, viscous, and initial state -- are kept identical so the
-two cases can be directly compared.
+mixture stiffened-gas EOS temperature. The domain, boundary conditions,
+viscous setup, and initial state match that case so the two can be compared
+(the grid differs: 500x500 here vs 700x700 there).
 
 Physical setup:
   - 2D square domain, 0.05 m x 0.05 m
@@ -41,20 +41,21 @@ T0 = 1125.0  # K (free-stream temperature)
 # Thermal conductivity of air near 1000 K
 k_air = 0.07  # W/(m*K)
 
-# Grid: 499 x 499 cells (isotropic dx ~ 1.00e-4 m)
+# Grid: 500 x 500 cells (m = n = 499; isotropic dx = 1.0e-4 m)
 m_cells = 499
 n_cells = 499
 
 # Acoustic CFL limit: c = sqrt(gamma*R*T) ~ 672 m/s
 c_sound = (c_gamma * R_air * T0) ** 0.5  # ~ 672 m/s
-dx = Lx / m_cells  # ~ 1.00e-4 m
-dt_acoustic = 0.3 * dx / c_sound  # ~ 4.47e-8 s
+dx = Lx / (m_cells + 1)  # = 1.0e-4 m
+dt_acoustic = 0.3 * dx / c_sound  # ~ 4.46e-8 s
 
 # Diffusion CFL limit: alpha = k/(rho*cp), rho = p/(R*T)
 rho0 = p0 / (R_air * T0)  # ~ 0.314 kg/m^3
 cp = c_gamma * R_air / (c_gamma - 1.0)  # ~ 1004.5 J/(kg*K)
 alpha_T = k_air / (rho0 * cp)  # ~ 2.22e-4 m^2/s
-dt_diff = 0.3 * dx**2 / (4.0 * alpha_T)  # ~ 3.39e-6 s  (not limiting)
+# stability needs the cv-based diffusivity k/(rho*cv) = gamma*alpha_T, not the cp-based alpha_T that sets the decay rate
+dt_diff = 0.3 * dx**2 / (4.0 * c_gamma * alpha_T)  # ~ 2.41e-6 s  (not limiting)
 
 dt = min(dt_acoustic, dt_diff)  # acoustic-CFL limited
 

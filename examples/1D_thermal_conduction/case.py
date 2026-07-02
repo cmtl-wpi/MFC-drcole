@@ -17,7 +17,8 @@ kappa = math.pi / L
 Nx = 255
 dx = L / (Nx + 1)
 c0 = (gam * (p0 + p_inf)) ** 0.5
-dt = min(0.4 * dx / c0, 0.35 * dx**2 / (2.0 * alpha))
+# stability needs the cv-based diffusivity k/(rho*cv) = gam*alpha, not the cp-based alpha that sets the decay rate
+dt = min(0.4 * dx / c0, 0.35 * dx**2 / (2.0 * gam * alpha))
 t_end = 1.5 / (alpha * kappa**2)
 Nt = int(round(t_end / dt))
 

@@ -1,0 +1,13 @@
+# MFC run artifacts (this case runs in place; rerun ./mfc.sh run case.py to regenerate).
+# Keep case.py, case_schematic.py, validate.py, README.md, case_setup.png, summary.json.
+restart_data/
+silo_hdf5/
+D/
+*.inp
+*.dat
+*.inf
+MFC.out
+MFC.sh
+__pycache__/
+validation_field.png
+validation_profiles.png

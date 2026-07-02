@@ -41,6 +41,8 @@ the EOS, compares to the exact solution, and writes `figures/heat_1d.png` +
 | 256 | peak $L_\infty$ **0.25**, $L_2$ 0.11 | 0.054 | $\approx 3.7\%$ of the amplitude $A=3$ |
 
 Matches the analytic solution to within the few-percent physics floor.
+*(Numbers predate the cv-based diffusive-`dt` retune; rerunning `case.py` +
+`validate.py` regenerates them along with `summary.json` and `figures/`.)*
 
 ![setup](diagrams/setup_1d.png)
 ![1D heat](figures/heat_1d.png)
