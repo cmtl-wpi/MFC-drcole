@@ -692,6 +692,24 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                         )
                     stack.pop()
 
+                if len(dimInfo[0]) == 1:
+                    cases.append(
+                        define_case_d(
+                            stack,
+                            "Thermal Conduction",
+                            {
+                                "thermal_conduction": "T",
+                                "dt": 2e-07,
+                                "fluid_pp(1)%cv": 1.0,
+                                "fluid_pp(1)%k_therm": 1.0,
+                                "bc_x%isothermal_in": "T",
+                                "bc_x%Twall_in": 2.0,
+                                "bc_x%isothermal_out": "T",
+                                "bc_x%Twall_out": 3.0,
+                            },
+                        )
+                    )
+
             if num_fluids == 2:
                 stack.push(
                     "Viscous",
