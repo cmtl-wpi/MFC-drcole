@@ -90,9 +90,11 @@ def main():
     normals = n
     write_ply(out, V, normals, faces)
     ext = V.max(0) - V.min(0)
+    ctr = 0.5 * (V.max(0) + V.min(0))
+    rmax = np.linalg.norm(V - ctr, axis=1).max()
     print(f"ts={ts} field={sys.argv[3] if len(sys.argv)>3 else 'alpha1'} "
           f"grid={G.shape} verts={len(V)} faces={len(faces)} "
-          f"bbox(units)={ext.round(3)} center={(V.max(0)+V.min(0)).round(3)/2}")
+          f"bbox(units)={ext.round(3)} rmax={rmax:.3f}")
 
 if __name__ == "__main__":
     main()

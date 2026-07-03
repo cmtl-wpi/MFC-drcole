@@ -23,9 +23,14 @@ obj.location = (0, 0, 0)
 bpy.context.view_layer.objects.active = obj
 bpy.ops.object.shade_smooth()   # custom split normals from the PLY drive shading
 
+import os
 bb = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
 zmin = min(v.z for v in bb)
 r = max(v.length for v in bb)          # bounding-sphere radius (centered at origin)
+# MFC_FIXED_R: lock camera + ground scale across an animation so the drop grows/
+# shrinks in frame instead of the camera zooming to fit each frame.
+if os.environ.get("MFC_FIXED_R"):
+    r = float(os.environ["MFC_FIXED_R"]); zmin = -r
 size = 2 * r
 
 # --- material (style: glass | frosted | opaque) ---
