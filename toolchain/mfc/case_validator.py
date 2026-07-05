@@ -764,7 +764,12 @@ class CaseValidator:
         self.prohibit(surface_tension and sigma is not None and sigma < 0, "sigma must be greater than or equal to zero")
         self.prohibit(sigma is not None and not surface_tension, "sigma is set but surface_tension is not enabled")
         self.prohibit(surface_tension and model_eqns not in [2, 3], "The surface tension model requires model_eqns = 2 or model_eqns = 3")
-        self.prohibit(surface_tension and num_fluids != 2, "The surface tension model requires num_fluids = 2")
+        # PROTOTYPE relaxation (2026-07-05, davis): the surface-tension force is
+        # color-function (cf) based and independent of num_fluids, so it is valid
+        # for a num_fluids=3 anti-merge experiment. NOTE: int_comp/THINC is still
+        # 2-fluid-only, so such cases must run with int_comp=0. Revert this line
+        # (require num_fluids == 2) for production use.
+        self.prohibit(surface_tension and num_fluids not in (2, 3), "The surface tension model requires num_fluids = 2 or 3")
 
         # Thermal Marangoni: linear sigma(T) closure (sigma_model = 1)
         self.prohibit(

@@ -8,7 +8,7 @@ acoustic-wave tracer) on the x-y midplane, with the color interface c=0.5 contou
 
 Conserved layout (model_eqns=3, num_fluids=2, surface_tension; nvars=11): 0,1 = partial densities,
 2,3,4 = x/y/z-momentum, 5 = total energy, 6,7 = volume fractions, 8,9 = phasic internal energies,
-10 = color. All read from each run's simulation.inp so it can't silently mis-slice.
+10 = color. All read from each run's simulation.inp so it can't silently slice wrongly.
 
 Usage:  python3 diag_fields.py <run_dir> [step]   (step defaults to last snapshot)
 """
