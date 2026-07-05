@@ -1678,11 +1678,16 @@ contains
             end if
         end if
 
-        if (surface_tension) then
-            call s_compute_capillary_source_flux(vel_src_rsx_vf, flux_src_vf, norm_dir, isx, isy, isz)
-        end if
-
         call s_finalize_riemann_solver(flux_vf, flux_src_vf, flux_gsrc_vf, norm_dir)
+
+        ! Capillary source fluxes are accumulated into the physical-layout
+        ! flux_src_vf/flux_gsrc_vf, so this must run AFTER the finalize step,
+        ! which overwrites flux_gsrc_vf from the reshaped work array for
+        ! cylindrical runs (the axisymmetric capillary geometric source would
+        ! otherwise be discarded).
+        if (surface_tension) then
+            call s_compute_capillary_source_flux(vel_src_rsx_vf, flux_src_vf, flux_gsrc_vf, norm_dir, isx, isy, isz)
+        end if
 
     end subroutine s_hllc_riemann_solver
 

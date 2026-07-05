@@ -70,11 +70,25 @@ contains
 
     end subroutine s_initialize_surface_tension_module
 
-    !> Compute the capillary source flux from reconstructed color-gradient fields
-    subroutine s_compute_capillary_source_flux(vSrc_rsx_vf, flux_src_vf, id, isx, isy, isz)
+    !> Compute the capillary source flux from reconstructed color-gradient fields.
+    !! For axisymmetric cylindrical coordinates (cyl_coord, p = 0) the y-direction
+    !! pass additionally accumulates the capillary geometric source flux, which
+    !! m_rhs applies as rhs -= (G(k-1) + G(k))/(2 y_cc(k)). In that convention
+    !! (mirroring the inviscid p_Star treatment in the HLLC solver):
+    !!   G_x = Omega_rx,  G_r = Omega_rr - Omega_tt,  G_E = (u . Omega)_r + sigma*|grad c|*v
+    !! with the azimuthal (hoop) capillary stress Omega_tt = -sigma*|grad c|
+    !! (the interface normal has no azimuthal component in axisymmetry). Note
+    !! Omega_rr - Omega_tt = sigma*w_r^2/|grad c|, which vanishes smoothly at the
+    !! axis. Without these terms the capillary force is missing the azimuthal
+    !! principal curvature: a static sphere then holds sigma/R instead of
+    !! 2*sigma/R and violently accelerates where the interface crosses near-axis
+    !! cells. Must be called AFTER s_finalize_riemann_solver, which overwrites
+    !! flux_gsrc_vf from the reshaped work array for cylindrical runs.
+    subroutine s_compute_capillary_source_flux(vSrc_rsx_vf, flux_src_vf, flux_gsrc_vf, id, isx, isy, isz)
 
         real(wp), dimension(-1:,-1:,-1:,1:), intent(in)        :: vSrc_rsx_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: flux_src_vf
+        type(scalar_field), dimension(sys_size), intent(inout) :: flux_gsrc_vf
         integer, intent(in)                                    :: id
         type(int_bounds_info), intent(in)                      :: isx, isy, isz
 
@@ -175,6 +189,23 @@ contains
 
                                 flux_src_vf(eqn_idx%E)%sf(j, k, l) = flux_src_vf(eqn_idx%E)%sf(j, k, &
                                             & l) + sigma_face*c_divs(num_dims + 1)%sf(j, k, l)*vSrc_rsx_vf(j, k, l, 2)
+
+                                ! Axisymmetric capillary geometric source (see header note).
+                                if (cyl_coord) then
+                                    flux_gsrc_vf(eqn_idx%mom%beg)%sf(j, k, l) = flux_gsrc_vf(eqn_idx%mom%beg)%sf(j, k, &
+                                                & l) + Omega(2, 1)
+
+                                    flux_gsrc_vf(eqn_idx%mom%beg + 1)%sf(j, k, l) = flux_gsrc_vf(eqn_idx%mom%beg + 1)%sf(j, k, &
+                                                & l) + Omega(2, 2) + sigma_face*normW
+
+                                    do i = 1, num_dims
+                                        flux_gsrc_vf(eqn_idx%E)%sf(j, k, l) = flux_gsrc_vf(eqn_idx%E)%sf(j, k, &
+                                                    & l) + Omega(2, i)*vSrc_rsx_vf(j, k, l, i)
+                                    end do
+
+                                    flux_gsrc_vf(eqn_idx%E)%sf(j, k, l) = flux_gsrc_vf(eqn_idx%E)%sf(j, k, &
+                                                & l) + sigma_face*normW*vSrc_rsx_vf(j, k, l, 2)
+                                end if
                             end if
                         end do
                     end do

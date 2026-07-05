@@ -765,6 +765,11 @@ class CaseValidator:
         self.prohibit(sigma is not None and not surface_tension, "sigma is set but surface_tension is not enabled")
         self.prohibit(surface_tension and model_eqns not in [2, 3], "The surface tension model requires model_eqns = 2 or model_eqns = 3")
         self.prohibit(surface_tension and num_fluids != 2, "The surface tension model requires num_fluids = 2")
+        # Axisymmetric (cyl_coord, p = 0) is supported: the capillary geometric
+        # source (azimuthal/hoop stress) is added in m_surface_tension. Full 3D
+        # cylindrical (p > 0) lacks the theta-direction capillary metric terms.
+        self.prohibit(surface_tension and self.get("cyl_coord", "F") == "T" and self.get("p", 0) is not None and self.get("p", 0) > 0,
+                      "The surface tension model supports cylindrical coordinates only in 2D axisymmetry (p = 0)")
 
         # Thermal Marangoni: linear sigma(T) closure (sigma_model = 1)
         self.prohibit(
