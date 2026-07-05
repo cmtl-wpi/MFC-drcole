@@ -120,5 +120,6 @@ fp-stability-logs/
 
 # gas-film-drainage bouncing design docs (override the global *.md ignore)
 !docs/gas_film_drainage_bouncing/*.md
+!examples/2D_axisym_droplet_coalescence/*.md
 # simulation run output living under examples/ (silo/restart data, ~91GB)
 examples/*/runs/
