@@ -115,8 +115,11 @@ contains
                        & "amr does not support Riemann-extrapolation boundary conditions (bc = -4): they alter the WENO coefficient rows near the boundary, which the fine-block reconstruction cannot inherit correctly")
             @:PROHIBIT(num_fluids > 1 .and. (.not. mpp_lim) .and. (.not. bubbles_lagrange), &
                        & "amr with num_fluids > 1 requires mpp_lim (its volume-fraction clamp+renormalize maintains coarse/fine alpha consistency); Lagrangian bubbles are exempt (their alphas sum to the local liquid fraction and prolong without the sum-to-one closure)")
-            @:PROHIBIT(surface_tension, &
-                       & "amr does not support surface_tension: the capillary force depends on the interface normal (grad-c direction), which the conservative-linearly-prolonged fine ghost color cannot reproduce consistently with the coarse solver across a 2:1 coarse/fine boundary - a growing spurious seam current results")
+            ! EXPERIMENT (amr-st containment, PR 1628): the surface_tension gate is
+            ! lifted here to characterize a contained-interface case (interface kept far
+            ! from the 2:1 seam so |grad-c| < capillary_cutoff in the seam band, where the
+            ! inconsistent-normal seam current has nothing to act on). Do NOT upstream
+            ! without the containment guard discussed in the PR.
             ! hypoelasticity is supported: stress components prolong via the generic conservative-linear
             ! path and the swap/restore recomputes the spacing-dependent FD coefficients per grid
             @:PROHIBIT(hyperelasticity, "amr does not support hyperelasticity")

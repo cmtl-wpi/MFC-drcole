@@ -1427,9 +1427,12 @@ class CaseValidator:
             "(its volume-fraction clamp+renormalize maintains coarse/fine alpha consistency); "
             "Lagrangian bubbles are exempt (their alphas sum to the local liquid fraction)",
         )
+        # EXPERIMENT (amr-st containment, PR 1628): surface_tension gate lifted here to
+        # match the lifted Fortran gate (m_checker.fpp) for the contained-interface study.
+        # hyperelasticity stays gated. Do NOT upstream without the containment guard.
         self.prohibit(
-            surface_tension or hyperelasticity,
-            "amr does not support surface-tension/hyperelasticity",
+            hyperelasticity,
+            "amr does not support hyperelasticity",
         )
         self.prohibit(
             mhd and (self.get("n", 0) or 0) > 0,
