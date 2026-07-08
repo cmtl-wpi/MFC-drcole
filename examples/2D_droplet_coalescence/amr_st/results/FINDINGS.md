@@ -84,22 +84,34 @@ band (control) — isolates any current the seam ADDS from the ambient parasitic
 reaches ±1.5R anyway. Coarse and AMR share the identical 320² base grid, so the band is
 identical in cell indices.
 
-Result (AMR at t/τ=0.16 so far; coarse/finished):
+The AMR **seam-band max|u| plateaus flat** almost immediately and stays there
+(t/τ = 0.06 / 0.12 / 0.18 / 0.24 / 0.30 / 0.34 → 0.018 / 0.020 / 0.024 / 0.022 / 0.022 /
+0.021 m/s) — no growth. Meanwhile the uniform-coarse parasitic flow keeps developing, so
+the AMR-seam / coarse-same-band ratio *falls* over time:
 
-| quantity | value |
-|---|---|
-| uniform-coarse domain parasitic current (2τ) | ~1.0 U_σ ≈ 0.48 m/s, plateauing (growth 2.1→1.58) |
-| AMR seam-band max\|u\| | 0.023 m/s |
-| uniform-coarse **same-band** max\|u\| (control) | 0.032 m/s |
-| **AMR / coarse-same-band** | **0.71×** (AMR is *lower*) |
-| AMR seam growth (2nd/1st half) | 0.95 (**non-growing**) |
-| containment audit (cf dist to {0,1} in band) | 2.7e-11 (**pass**) |
-| Laplace jump error | 0.07% (coarse), 0.7% (amr) |
+| quantity | t/τ=0.16 | t/τ=0.34 |
+|---|---|---|
+| AMR seam-band max\|u\| | 0.023 m/s | 0.021 m/s (**flat**) |
+| uniform-coarse **same-band** max\|u\| (control) | 0.032 m/s | 0.042 m/s (rising) |
+| **AMR / coarse-same-band** | 0.71× | **0.49×** |
+| AMR seam growth (2nd/1st half) | 0.95 | 1.06 (**non-growing**) |
+| containment audit (cf dist to {0,1} in band) | 2.7e-11 | 2.7e-11 (**pass**) |
 
-**The AMR block introduces no seam current.** Its seam-band velocity is at/below the
-uniform run's ambient parasitic flow in the same region (the fine block resolves the
-interface better, so *less* parasitic flow spreads to ±1.5R), non-growing, with cf exactly
-{0,1} at the seam — the opposite of the §7.1 27–540× growing failure. This supports the
-containment hypothesis. **Caveat:** the AMR run is at t/τ=0.16 of 2τ; the full run (grinding
-~6h at np=1) is needed to confirm the ratio stays O(1) through the parasitic plateau.
-Verdict artifact: `results/summary.json`; overlay `results/figures/phase1_overlay.png`.
+(uniform-coarse domain parasitic current reaches ~1.0 U_σ ≈ 0.48 m/s at 2τ, plateauing;
+Laplace jump error 0.07% coarse / 0.7% amr.)
+
+**Reduced-config caveat (fine run).** The uniform-fine (R/100) run developed a
+near-cavitation spot (ρ→~0 spikes the viscous CFL) and its adaptive dt collapsed to ~4e-10
+at t/τ≈1.6, so it was stopped there (context-only; 79 saves kept). This is a low-c_l=12 +
+low-pressure artifact at R/100, not a containment issue — the **coarse** run (R/50, which
+the verdict is built on) completed a clean 2τ, and the **AMR** run's dt is coarse-level-
+controlled (R/50) so it runs stably at 2.6e-8. Watch the AMR fine block (also R/100) for
+the same spot; so far (t/τ=0.5) it is healthy and the containment audit holds.
+
+**The AMR block introduces no seam current.** Its seam-band velocity is a flat plateau
+at/below the uniform run's ambient parasitic flow in the same region (the fine block
+resolves the interface better, so *less* parasitic flow spreads to ±1.5R), non-growing,
+with cf exactly {0,1} at the seam — the opposite of the §7.1 27–540× growing failure. The
+containment hypothesis is **supported**. The flat plateau is established by t/τ≈0.06 and
+holds through 0.34 (verified); the full 2τ run (grinding ~5h at np=1) extends it. Verdict
+artifact: `results/summary.json`; overlay `results/figures/phase1_overlay.png`.
