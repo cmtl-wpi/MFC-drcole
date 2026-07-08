@@ -213,6 +213,7 @@ contains
         type(integer_field), dimension(1:num_dims,1:2), intent(in) :: bc_type
         type(int_bounds_info)                                      :: isx, isy, isz
         integer                                                    :: j, k, l, i
+        integer                                                    :: jcb, jce, kcb, kce, lcb, lce
 
         isx%beg = -1; isy%beg = 0; isz%beg = 0
 
@@ -220,11 +221,24 @@ contains
 
         isx%end = m; isy%end = n; isz%end = p
 
+        ! c_divs compute bounds: the interior on the coarse grid; extended into the ghost
+        ! shell during the AMR fine advance so the fine block's c_divs ghosts are recomputed
+        ! from the (prolonged, halo-valid) color function. The coarse-decomposition MPI halo
+        ! below is then skipped -- only block-owning ranks reach the fine advance, so it would
+        ! deadlock, and its ghost-extrapolation is wrong across the block's internal rank seam.
+        ! One cell inside idwbuff keeps the +-1 color reads in range. Mirrors m_igr.fpp:306.
+        jcb = 0; jce = m; kcb = 0; kce = n; lcb = 0; lce = p
+        if (amr_in_fine_advance) then
+            jcb = idwbuff(1)%beg + 1; jce = idwbuff(1)%end - 1
+            if (n > 0) then; kcb = idwbuff(2)%beg + 1; kce = idwbuff(2)%end - 1; end if
+            if (p > 0) then; lcb = idwbuff(3)%beg + 1; lce = idwbuff(3)%end - 1; end if
+        end if
+
         ! compute gradient components
         $:GPU_PARALLEL_LOOP(collapse=3)
-        do l = 0, p
-            do k = 0, n
-                do j = 0, m
+        do l = lcb, lce
+            do k = kcb, kce
+                do j = jcb, jce
                     c_divs(1)%sf(j, k, l) = 1._wp/(x_cc(j + 1) - x_cc(j - 1))*(q_prim_vf(eqn_idx%c)%sf(j + 1, k, &
                            & l) - q_prim_vf(eqn_idx%c)%sf(j - 1, k, l))
                 end do
@@ -233,9 +247,9 @@ contains
         $:END_GPU_PARALLEL_LOOP()
 
         $:GPU_PARALLEL_LOOP(collapse=3)
-        do l = 0, p
-            do k = 0, n
-                do j = 0, m
+        do l = lcb, lce
+            do k = kcb, kce
+                do j = jcb, jce
                     c_divs(2)%sf(j, k, l) = 1._wp/(y_cc(k + 1) - y_cc(k - 1))*(q_prim_vf(eqn_idx%c)%sf(j, k + 1, &
                            & l) - q_prim_vf(eqn_idx%c)%sf(j, k - 1, l))
                 end do
@@ -245,9 +259,9 @@ contains
 
         if (p > 0) then
             $:GPU_PARALLEL_LOOP(collapse=3)
-            do l = 0, p
-                do k = 0, n
-                    do j = 0, m
+            do l = lcb, lce
+                do k = kcb, kce
+                    do j = jcb, jce
                         c_divs(3)%sf(j, k, l) = 1._wp/(z_cc(l + 1) - z_cc(l - 1))*(q_prim_vf(eqn_idx%c)%sf(j, k, &
                                & l + 1) - q_prim_vf(eqn_idx%c)%sf(j, k, l - 1))
                     end do
@@ -257,9 +271,9 @@ contains
         end if
 
         $:GPU_PARALLEL_LOOP(collapse=3)
-        do l = 0, p
-            do k = 0, n
-                do j = 0, m
+        do l = lcb, lce
+            do k = kcb, kce
+                do j = jcb, jce
                     c_divs(num_dims + 1)%sf(j, k, l) = 0._wp
                     $:GPU_LOOP(parallelism='[seq]')
                     do i = 1, num_dims
@@ -272,7 +286,10 @@ contains
         end do
         $:END_GPU_PARALLEL_LOOP()
 
-        call s_populate_capillary_buffers(c_divs, bc_type, bc_xyz_info(bc_x, bc_y, bc_z))
+        ! fine advance: c_divs ghosts were recomputed above from the prolonged color, so the
+        ! coarse-decomposition halo/BC populate is neither needed nor valid here.
+        if (.not. amr_in_fine_advance) &
+            call s_populate_capillary_buffers(c_divs, bc_type, bc_xyz_info(bc_x, bc_y, bc_z))
 
         iv%beg = 1; iv%end = num_dims + 1
 
