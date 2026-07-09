@@ -627,6 +627,8 @@ def _load():
     _r("sigma_model", INT, {"surface_tension"})
     _r("sigma_T_ref", REAL, {"surface_tension"})
     _r("sigma_dTdT", REAL, {"surface_tension"})
+    _r("surfactant", LOG, {"surface_tension"})
+    _r("sigma_dGamma", REAL, {"surface_tension"})
 
     # Bulk thermal conduction
     _r("thermal_conduction", LOG, {"thermal_conduction"})
@@ -833,6 +835,7 @@ def _load():
             _r(f"{px}a({j})", REAL)
         _r(f"{px}pres", A_REAL, math=r"\f$p\f$")
         _r(f"{px}cf_val", A_REAL)
+        _r(f"{px}surf_val", A_REAL)
         # MHD fields
         for a, sym in [("Bx", r"\f$B_x\f$"), ("By", r"\f$B_y\f$"), ("Bz", r"\f$B_z\f$")]:
             _r(f"{px}{a}", A_REAL, {"mhd"}, math=sym)
@@ -1236,6 +1239,8 @@ _nv(
     "sigma_model",
     "sigma_T_ref",
     "sigma_dTdT",
+    "surfactant",
+    "sigma_dGamma",
     "adv_n",
     "hypoelasticity",
     "hyperelasticity",

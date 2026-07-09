@@ -538,6 +538,12 @@ contains
                                                 & eqn_idx%c) + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%c))*s_S
                                 end if
 
+                                ! INTERFACIAL SURFACTANT FLUX (conservative advection of Gamma*|grad c|)
+                                if (surfactant) then
+                                    flux_rsx_vf(${SF('')}$, eqn_idx%surf) = (xi_M*qL_prim_rsx_vf(${SF('')}$, &
+                                                & eqn_idx%surf) + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%surf))*s_S
+                                end if
+
                                 ! Geometrical source flux for cylindrical coordinates
                                 #:if (NORM_DIR == 2)
                                     if (cyl_coord) then
@@ -1577,6 +1583,14 @@ contains
                                     flux_rsx_vf(${SF('')}$, eqn_idx%c) = xi_M*qL_prim_rsx_vf(${SF('')}$, &
                                                 & eqn_idx%c)*(vel_L(dir_idx(1)) + s_M*xi_L_m1) &
                                                 & + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%c)*(vel_R(dir_idx(1)) + s_P*xi_R_m1)
+                                end if
+
+                                ! INTERFACIAL SURFACTANT FLUX (conservative advection of Gamma*|grad c|)
+                                if (surfactant) then
+                                    flux_rsx_vf(${SF('')}$, eqn_idx%surf) = xi_M*qL_prim_rsx_vf(${SF('')}$, &
+                                                & eqn_idx%surf)*(vel_L(dir_idx(1)) + s_M*xi_L_m1) &
+                                                & + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, &
+                                                & eqn_idx%surf)*(vel_R(dir_idx(1)) + s_P*xi_R_m1)
                                 end if
 
                                 ! Hyperelastic reference map flux for material deformation tracking

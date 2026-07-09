@@ -145,6 +145,7 @@ contains
         ! aliased to their identical conservative counterparts below.
         do l = eqn_idx%adv%end + 1, sys_size
             if (surface_tension .and. l == eqn_idx%c) cycle
+            if (surfactant .and. l == eqn_idx%surf) cycle
             if (hyper_cleaning .and. l == eqn_idx%psi) cycle
             @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                        & idwbuff(3)%beg:idwbuff(3)%end))
@@ -176,6 +177,12 @@ contains
             q_prim_qp%vf(eqn_idx%c)%sf => q_cons_qp%vf(eqn_idx%c)%sf
             $:GPU_ENTER_DATA(copyin='[q_prim_qp%vf(eqn_idx%c)%sf]')
             $:GPU_ENTER_DATA(attach='[q_prim_qp%vf(eqn_idx%c)%sf]')
+        end if
+
+        if (surfactant) then
+            q_prim_qp%vf(eqn_idx%surf)%sf => q_cons_qp%vf(eqn_idx%surf)%sf
+            $:GPU_ENTER_DATA(copyin='[q_prim_qp%vf(eqn_idx%surf)%sf]')
+            $:GPU_ENTER_DATA(attach='[q_prim_qp%vf(eqn_idx%surf)%sf]')
         end if
 
         if (hyper_cleaning) then

@@ -150,6 +150,7 @@ module m_derived_types
         integer               :: gamma    !< Specific heat ratio function (model_eqns=1)
         integer               :: pi_inf   !< Liquid stiffness function (model_eqns=1)
         integer               :: c        !< Color function equation
+        integer               :: surf     !< Interfacial surfactant equation
         integer               :: damage   !< Damage variable equation
         integer               :: psi      !< Psi variable equation
     end type eqn_idx_info
@@ -307,6 +308,7 @@ module m_derived_types
         real(wp) :: m0  !< Bubble velocity
         integer :: hcid  !< Hardcoded initial condition ID
         real(wp) :: cf_val  !< Color function value
+        real(wp) :: surf_val  !< Interfacial surfactant surface concentration
         real(wp) :: Y(1:num_species)  !< Species mass fractions
 
         ! STL/OBJ model patch: index into the shared stl_models(:) table

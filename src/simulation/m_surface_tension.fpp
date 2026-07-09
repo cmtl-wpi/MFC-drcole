@@ -114,7 +114,7 @@ contains
 
                         if (normW > capillary_cutoff) then
                             sigma_face = sigma
-                            if (sigma_model == 1) sigma_face = (c_sigma(j, k, l) + c_sigma(j + 1, k, l))/2._wp
+                            if (sigma_model /= 0) sigma_face = (c_sigma(j, k, l) + c_sigma(j + 1, k, l))/2._wp
 
                             @:compute_capillary_stress_tensor(sigma_face)
 
@@ -161,7 +161,7 @@ contains
 
                             if (normW > capillary_cutoff) then
                                 sigma_face = sigma
-                                if (sigma_model == 1) sigma_face = (c_sigma(j, k, l) + c_sigma(j, k + 1, l))/2._wp
+                                if (sigma_model /= 0) sigma_face = (c_sigma(j, k, l) + c_sigma(j, k + 1, l))/2._wp
 
                                 @:compute_capillary_stress_tensor(sigma_face)
 
@@ -208,7 +208,7 @@ contains
 
                             if (normW > capillary_cutoff) then
                                 sigma_face = sigma
-                                if (sigma_model == 1) sigma_face = (c_sigma(j, k, l) + c_sigma(j, k, l + 1))/2._wp
+                                if (sigma_model /= 0) sigma_face = (c_sigma(j, k, l) + c_sigma(j, k, l + 1))/2._wp
 
                                 @:compute_capillary_stress_tensor(sigma_face)
 
@@ -239,7 +239,7 @@ contains
         type(integer_field), dimension(1:num_dims,1:2), intent(in) :: bc_type
         type(int_bounds_info)                                      :: isx, isy, isz
         integer                                                    :: j, k, l, i
-        real(wp)                                                   :: T_cell
+        real(wp)                                                   :: T_cell, normc, Gamma_surf
 
         isx%beg = -1; isy%beg = 0; isz%beg = 0
 
@@ -306,18 +306,33 @@ contains
         ! reconstruct gradient components at cell boundaries
         call s_reconstruct_cell_boundary_values_capillary(c_divs, gL_x, gR_x, i)
 
-        ! Linear thermal closure sigma(T): compute cell-centered surface tension over the
-        ! full buffer range. Temperature is recovered from the mixture stiffened-gas EOS
-        ! (T = ((gamma_mix + 1)*p + pi_inf_mix)/mCP, with mCP = sum(alpha*rho*cv*gamma)).
-        ! q_prim_vf ghost cells are already populated, so no extra halo exchange is needed;
-        ! the face value is later formed by averaging adjacent cells.
-        if (sigma_model == 1) then
-            $:GPU_PARALLEL_LOOP(collapse=3, private='[T_cell]')
+        ! Variable surface-tension closures fill the cell-centered field c_sigma over the full
+        ! buffer range; contributions are additive so closures compose. The face value used by
+        ! the capillary force is later formed by averaging adjacent cells. q_prim_vf ghost cells
+        ! are already populated, so no extra halo exchange is needed.
+        !   sigma_model == 1: linear thermal closure sigma(T) = sigma + dsigma/dT*(T - T_ref),
+        !     T recovered from the mixture stiffened-gas EOS
+        !     (T = ((gamma_mix + 1)*p + pi_inf_mix)/mCP, mCP = sum(alpha*rho*cv*gamma)).
+        !   sigma_model == 2: linear solutocapillary closure sigma(Gamma) = sigma + dsigma/dGamma*Gamma,
+        !     interfacial concentration Gamma = (Gamma*|grad c|)/|grad c| recovered on the interface
+        !     band (|grad c| > capillary_cutoff); off-band cells keep the clean value sigma.
+        if (sigma_model /= 0) then
+            $:GPU_PARALLEL_LOOP(collapse=3, private='[T_cell, normc, Gamma_surf]')
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
                     do j = idwbuff(1)%beg, idwbuff(1)%end
-                        T_cell = f_compute_mixture_temperature(q_prim_vf, j, k, l)
-                        c_sigma(j, k, l) = sigma + sigma_dTdT*(T_cell - sigma_T_ref)
+                        c_sigma(j, k, l) = sigma
+                        if (sigma_model == 1) then
+                            T_cell = f_compute_mixture_temperature(q_prim_vf, j, k, l)
+                            c_sigma(j, k, l) = c_sigma(j, k, l) + sigma_dTdT*(T_cell - sigma_T_ref)
+                        end if
+                        if (sigma_model == 2) then
+                            normc = c_divs(num_dims + 1)%sf(j, k, l)
+                            if (normc > capillary_cutoff) then
+                                Gamma_surf = q_prim_vf(eqn_idx%surf)%sf(j, k, l)/normc
+                                c_sigma(j, k, l) = c_sigma(j, k, l) + sigma_dGamma*Gamma_surf
+                            end if
+                        end if
                     end do
                 end do
             end do
