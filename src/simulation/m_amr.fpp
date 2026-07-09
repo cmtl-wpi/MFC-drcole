@@ -2390,7 +2390,7 @@ contains
     !! stp on unpack (identity for stp fields). No-op with a single block / no adjacent pairs (incl. every np=1 case, untiled).
     impure subroutine s_amr_fine_fine_halo()
 
-        integer               :: xb, yb, d, rX, rY, i, cnt, xm(3), ym(3), tsz, ierr
+        integer               :: xb, yb, d, rX, rY, i, cnt, xm(3), ym(3), mm(3), tsz, ierr
         real(wp), allocatable :: xbuf(:), ybuf(:)
 
         if (.not. amr) return
@@ -2418,11 +2418,15 @@ contains
                 if (proc_rank /= rX .and. proc_rank /= rY) cycle
                 xm(1) = amr_slots(xb)%m; xm(2) = amr_slots(xb)%n; xm(3) = amr_slots(xb)%p
                 ym(1) = amr_slots(yb)%m; ym(2) = amr_slots(yb)%n; ym(3) = amr_slots(yb)%p
-                ! transverse fine size (dims /= d); xb and yb share it (exact-match seam)
+                ! transverse fine size (dims /= d); xb and yb share it exactly (exact-match seam). Size the buffer from the
+                ! block THIS rank OWNS: lazy owned-only slot allocation leaves a non-owned slot's m/n/p = -1, so computing tsz
+                ! from xb's dims on the yb-owner gives tsz = 0 -> cnt = 0 and a truncated Sendrecv against the xb-owner.
+                mm = xm
+                if (proc_rank == rY .and. rX /= rY) mm = ym
                 tsz = 1
-                if (d /= 1) tsz = tsz*(xm(1) + 1)
-                if (d /= 2 .and. n_glb > 0) tsz = tsz*(xm(2) + 1)
-                if (d /= 3 .and. p_glb > 0) tsz = tsz*(xm(3) + 1)
+                if (d /= 1) tsz = tsz*(mm(1) + 1)
+                if (d /= 2 .and. n_glb > 0) tsz = tsz*(mm(2) + 1)
+                if (d /= 3 .and. p_glb > 0) tsz = tsz*(mm(3) + 1)
                 cnt = sys_size*buff_size*tsz
                 allocate (xbuf(cnt), ybuf(cnt))
                 if (rX == rY) then  ! same rank owns both: pack each near-seam interior, unpack into the other's seam ghost
