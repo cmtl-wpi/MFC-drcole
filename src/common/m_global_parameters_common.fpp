@@ -101,6 +101,7 @@ module m_global_parameters_common
     ! thermal_conduction is a runtime flag (not a case-optimization param), so it must be acc-declared
     ! unconditionally -- the CFL acc routines in m_sim_helpers read it and need it present on device.
     $:GPU_DECLARE(create='[thermal_conduction]')
+    $:GPU_DECLARE(create='[synthetic_turbulence, num_turbulent_sources, synth_U_inf]')
     #:if not MFC_CASE_OPTIMIZATION
         $:GPU_DECLARE(create='[num_dims, num_vels, weno_polyn, weno_order]')
         $:GPU_DECLARE(create='[weno_num_stencils, num_fluids, wenojs]')

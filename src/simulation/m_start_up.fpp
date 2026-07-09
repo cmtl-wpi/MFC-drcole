@@ -19,6 +19,7 @@ module m_start_up
     use m_riemann_solvers
     use m_cbc
     use m_boundary_common
+    use m_boundary_io
     use m_acoustic_src
     use m_rhs
     use m_chemistry
@@ -898,7 +899,7 @@ contains
                 call s_write_ib_state_file(0)
             end if
         end if
-        if (bodyForces) call s_initialize_body_forces_module()
+        if (bodyForces .or. synthetic_turbulence) call s_initialize_body_forces_module()
         if (acoustic_source) call s_precalculate_acoustic_spatial_sources()
 
         ! Initialize the Temperature cache.
@@ -1105,7 +1106,7 @@ contains
 
         if (surface_tension) call s_finalize_surface_tension_module()
         if (thermal_conduction) call s_finalize_thermal_conduction_module()
-        if (bodyForces) call s_finalize_body_forces_module()
+        if (bodyForces .or. synthetic_turbulence) call s_finalize_body_forces_module()
         if (ib) call s_finalize_ibm_module()
 
         call s_mpi_finalize()
