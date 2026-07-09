@@ -168,6 +168,7 @@ DESCRIPTIONS = {
     "sigma_dTdT": "dsigma/dT slope for the linear sigma(T) closure",
     "surfactant": "Enable insoluble interfacial surfactant transport (solutocapillary Marangoni)",
     "sigma_dGamma": "dsigma/dGamma slope for the linear solutocapillary closure sigma(Gamma)",
+    "surf_diff": "Interfacial (tangential) surfactant diffusivity D_s; 0 = infinite surface Peclet",
     "Bx0": "Background magnetic field in x-direction",
     "relax": "Enable relaxation terms",
     "adv_n": "Enable advection of number density",

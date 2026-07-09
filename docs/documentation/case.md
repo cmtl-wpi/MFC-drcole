@@ -511,6 +511,7 @@ See @ref equations "Equations" for the mathematical models these parameters cont
 | `sigma_dTdT`               | Real    | dsigma/dT slope for the linear sigma(T) closure |
 | `surfactant`               | Logical | Activate insoluble interfacial surfactant transport (solutocapillary Marangoni) |
 | `sigma_dGamma`             | Real    | dsigma/dGamma slope for the linear solutocapillary closure sigma(Gamma) |
+| `surf_diff`                | Real    | Interfacial (tangential) surfactant diffusivity; 0 = infinite surface Peclet |
 | `viscous`                  | Logical | Activate viscosity |
 | `hypoelasticity`           | Logical | Activate hypoelasticity* |
 | `pre_stress`               | Logical | Enable pre-stress initialization for hypoelasticity |
@@ -613,7 +614,7 @@ This option requires `weno_Re_flux` to be true because cell boundary values are 
 
 - `sigma_model` selects the surface tension closure. With `sigma_model = 0` (default) the coefficient is the constant `sigma`. With `sigma_model = 1` the thermal Marangoni closure \f$\sigma(T) = \sigma + (\mathrm{d}\sigma/\mathrm{d}T)\,(T - T_\mathrm{ref})\f$ is used, where the slope `sigma_dTdT` (typically negative) and the reference temperature `sigma_T_ref` must be set. Temperature is recovered from the stiffened-gas equation of state, so each fluid's `cv` must be set to a positive value. With `sigma_model = 2` the solutocapillary closure \f$\sigma(\Gamma) = \sigma + (\mathrm{d}\sigma/\mathrm{d}\Gamma)\,\Gamma\f$ is used, where the slope `sigma_dGamma` (typically negative) must be set and `surfactant` must be enabled. In every case the tangential Marangoni force emerges directly from the spatial variation of the capillary stress tensor; no additional source term is introduced.
 
-- `surfactant` activates transport of an insoluble interfacial surfactant when set to ``'T'``. Requires `surface_tension`. The surfactant is carried as a conserved smeared area-density \f$\tilde\Gamma = \Gamma\,|\nabla c|\f$ that is advected with the flow; the interfacial concentration \f$\Gamma = \tilde\Gamma/|\nabla c|\f$ is recovered on the interface band and drives the `sigma_model = 2` closure. The per-patch initial value is set with `patch_icpp(i)%%surf_val` (constant or an analytic expression), analogous to `cf_val`.
+- `surfactant` activates transport of an insoluble interfacial surfactant when set to ``'T'``. Requires `surface_tension`. The surfactant is carried as a conserved smeared area-density \f$\tilde\Gamma = \Gamma\,|\nabla c|\f$ that is advected with the flow; the interfacial concentration \f$\Gamma = \tilde\Gamma/|\nabla c|\f$ is recovered on the interface band and drives the `sigma_model = 2` closure. The per-patch initial value is set with `patch_icpp(i)%%surf_val` (constant or an analytic expression), analogous to `cf_val`. Setting `surf_diff` > 0 adds tangential (interfacial) diffusion of the surfactant, \f$\nabla\!\cdot(D_s(\mathbf I - \mathbf n\otimes\mathbf n)\nabla\tilde\Gamma)\f$, projected onto the interface so the surfactant diffuses only along it; `surf_diff` = 0 (default) is the infinite-surface-Peclet limit. The explicit diffusion sets a time-step limit \f$\mathrm{d}t \lesssim \mathrm{d}x^2/(2\,d\,D_s)\f$ in \f$d\f$ dimensions.
 
 - `viscous` activates viscosity when set to ``'T'``. Requires `Re(1)` and `Re(2)` to be set.
 

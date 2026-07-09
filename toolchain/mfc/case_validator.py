@@ -799,9 +799,18 @@ class CaseValidator:
         # Solutocapillary Marangoni: insoluble interfacial surfactant transport
         surfactant = self.get("surfactant", "F") == "T"
         sigma_dGamma = self.get("sigma_dGamma")
+        surf_diff = self.get("surf_diff")
         self.prohibit(
             surfactant and not surface_tension,
             "surfactant requires surface_tension to be enabled",
+        )
+        self.prohibit(
+            surf_diff is not None and not surfactant,
+            "surf_diff requires surfactant to be enabled",
+        )
+        self.prohibit(
+            surf_diff is not None and surf_diff < 0,
+            "surf_diff (interfacial surfactant diffusivity) must be non-negative",
         )
         self.prohibit(
             sigma_model == 2 and not surfactant,
