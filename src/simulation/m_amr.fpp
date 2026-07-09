@@ -399,6 +399,12 @@ contains
             else
                 call s_amr_tile_box(blk_lo, blk_hi, tiled, nt, amr_max_blocks, capt)
             end if
+            ! capt=1: the block needs more sub-blocks than amr_max_blocks slots to tile (each must fit amr_maxc_fit =
+            ! min-over-ranks local half-extent, which SHRINKS as ranks are added). Dropping the excess tiles would leave part
+            ! of the tagged region unrefined - a SILENT wrong answer - so abort. capt is replicated (same inputs on every rank).
+            if (capt == 1) call s_mpi_abort('amr block needs more than amr_max_blocks sub-block slots to tile at this rank ' &
+                & // 'count (each sub-block must fit amr_maxc_fit = min-over-ranks local half-extent); ' &
+                & // 'raise amr_max_blocks or use fewer ranks')
             amr_num_blocks = nt
             ! set the block regions FIRST so the owner assignment (which reads amr_region_*_all) can run BEFORE the owner-dependent
             ! geometry - otherwise s_set_amr_fine_geometry would size the whole-block owner from a stale (default) amr_block_owner
