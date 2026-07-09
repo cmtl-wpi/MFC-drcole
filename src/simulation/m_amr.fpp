@@ -2357,8 +2357,11 @@ contains
 
     end function f_amr_seam
 
-    !> Pack (dir=+1) / unpack (dir=-1) the fine cells of slot's q_cons over [dlo:dhi] in dim d, full transverse, all sys_size, in a
-    !! fixed (i, d-index, transverse) order so a packer and unpacker with matching extents align cell-for-cell. Host arrays.
+    !> Pack (dir=+1) / unpack (dir=-1) the fine cells of slot's q_cons over [dlo:dhi] in dim d, all sys_size, in a fixed (i,
+    !! d-index, transverse) order so a packer and unpacker with matching extents align cell-for-cell. The transverse extent is
+    !! ghost-INCLUSIVE for transverse dims < d and interior for dims > d: run dim-ordered (x->y->z) with a barrier between phases,
+    !! this carries an already-exchanged lower-dim ghost into the next dim's seam so edge/corner ghosts fill by composition (mirrors
+    !! the base-grid s_mpi_sendrecv_variables_buffers). Host arrays.
     impure subroutine s_amr_fine_slice(slot, d, dlo, dhi, buf, dir)
 
         integer, intent(in)     :: slot, d, dlo, dhi, dir
@@ -2370,9 +2373,13 @@ contains
         do i = 1, sys_size
             do c = dlo, dhi
                 #:for D, TA, TB in [(1, 2, 3), (2, 1, 3), (3, 1, 2)]
+                    #:set ALO = '-buff_size' if TA < D else '0'
+                    #:set AHI = 'fm({}) + buff_size'.format(TA) if TA < D else 'fm({})'.format(TA)
+                    #:set BLO = '-buff_size' if TB < D else '0'
+                    #:set BHI = 'fm({}) + buff_size'.format(TB) if TB < D else 'fm({})'.format(TB)
                     if (d == ${D}$) then
-                        do b = 0, fm(${TB}$)
-                            do a = 0, fm(${TA}$)
+                        do b = ${BLO}$, ${BHI}$
+                            do a = ${ALO}$, ${AHI}$
                                 idx = idx + 1
                                 #:set IDX = {1: '(c, a, b)', 2: '(a, c, b)', 3: '(a, b, c)'}[D]
                                 if (dir == 1) then
@@ -2389,11 +2396,14 @@ contains
 
     end subroutine s_amr_fine_slice
 
-    !> Block-to-block fine-fine halo (max_grid_size tiling): overwrite each sub-block's seam ghost cells (faces shared with an
-    !! ADJACENT sub-block) with the neighbour's stage-entry fine interior, so the shared fine flux matches on both sides
-    !! (coarse-prolonged seam ghosts would be non-conservative). For each seam pair (xb below, yb above, dim d) the two owners
-    !! exchange the buff_size-deep near-seam interior (MPI_Sendrecv, or a local copy when one rank owns both). Buffer is wp, cast to
-    !! stp on unpack (identity for stp fields). No-op with a single block / no adjacent pairs (incl. every np=1 case, untiled).
+    !> Block-to-block fine-fine halo (max_grid_size tiling): overwrite each sub-block's seam ghost cells with the neighbour's
+    !! stage-entry fine interior, so the shared fine flux matches on both sides (coarse-prolonged seam ghosts would be
+    !! non-conservative). For each seam pair (xb below, yb above, dim d) the two owners exchange the buff_size-deep near-seam
+    !! interior (MPI_Sendrecv, or a local copy when one rank owns both). Runs the seams DIM-ORDERED (x->y->z) with a barrier between
+    !! phases, and s_amr_fine_slice packs a ghost-inclusive transverse extent for the already-exchanged lower dims, so the
+    !! edge/corner ghosts a 2x2 (2D) or 3D tiling leaves between diagonally-adjacent sub-blocks fill by composition (a face-only
+    !! exchange would leave those coarse-prolonged, breaking np-independence). Buffer is wp, cast to stp on unpack (identity for stp
+    !! fields). No-op with a single block / no adjacent pairs (incl. every np=1 case, untiled).
     impure subroutine s_amr_fine_fine_halo()
 
         integer               :: xb, yb, d, rX, rY, i, cnt, xm(3), ym(3), mm(3), tsz, ierr
@@ -2412,51 +2422,56 @@ contains
             end if
         end do
 
-        do xb = 1, amr_num_blocks
-            do yb = 1, amr_num_blocks
-                if (xb == yb) cycle
-                d = 0
-                if (f_amr_seam(xb, yb, 1)) d = 1
-                if (n_glb > 0) then; if (f_amr_seam(xb, yb, 2)) d = 2; end if
-                if (p_glb > 0) then; if (f_amr_seam(xb, yb, 3)) d = 3; end if
-                if (d == 0) cycle
-                rX = amr_block_owner(xb); rY = amr_block_owner(yb)
-                if (proc_rank /= rX .and. proc_rank /= rY) cycle
-                xm(1) = amr_slots(xb)%m; xm(2) = amr_slots(xb)%n; xm(3) = amr_slots(xb)%p
-                ym(1) = amr_slots(yb)%m; ym(2) = amr_slots(yb)%n; ym(3) = amr_slots(yb)%p
-                ! transverse fine size (dims /= d); xb and yb share it exactly (exact-match seam). Size the buffer from the
-                ! block THIS rank OWNS: lazy owned-only slot allocation leaves a non-owned slot's m/n/p = -1, so computing tsz
-                ! from xb's dims on the yb-owner gives tsz = 0 -> cnt = 0 and a truncated Sendrecv against the xb-owner.
-                mm = xm
-                if (proc_rank == rY .and. rX /= rY) mm = ym
-                tsz = 1
-                if (d /= 1) tsz = tsz*(mm(1) + 1)
-                if (d /= 2 .and. n_glb > 0) tsz = tsz*(mm(2) + 1)
-                if (d /= 3 .and. p_glb > 0) tsz = tsz*(mm(3) + 1)
-                cnt = sys_size*buff_size*tsz
-                allocate (xbuf(cnt), ybuf(cnt))
-                if (rX == rY) then  ! same rank owns both: pack each near-seam interior, unpack into the other's seam ghost
-                    call s_amr_fine_slice(xb, d, xm(d) - buff_size + 1, xm(d), xbuf, 1)  ! xb high interior
-                    call s_amr_fine_slice(yb, d, 0, buff_size - 1, ybuf, 1)  ! yb low interior
-                    call s_amr_fine_slice(yb, d, -buff_size, -1, xbuf, -1)  ! -> yb low ghost
-                    call s_amr_fine_slice(xb, d, xm(d) + 1, xm(d) + buff_size, ybuf, -1)  ! -> xb high ghost
-                else if (proc_rank == rX) then
-                    call s_amr_fine_slice(xb, d, xm(d) - buff_size + 1, xm(d), xbuf, 1)  ! send xb high interior
+        ! dim-ordered seams (x->y->z) with a barrier between phases: each phase's transverse pack is ghost-inclusive for the
+        ! already-exchanged lower dims (s_amr_fine_slice), so composition fills the edge/corner ghosts left between
+        ! diagonally-adjacent sub-blocks. The barrier also keeps a later phase's Sendrecv from matching an earlier one (same tag).
+        do d = 1, num_dims
+            do xb = 1, amr_num_blocks
+                do yb = 1, amr_num_blocks
+                    if (xb == yb) cycle
+                    if (.not. f_amr_seam(xb, yb, d)) cycle
+                    rX = amr_block_owner(xb); rY = amr_block_owner(yb)
+                    if (proc_rank /= rX .and. proc_rank /= rY) cycle
+                    xm(1) = amr_slots(xb)%m; xm(2) = amr_slots(xb)%n; xm(3) = amr_slots(xb)%p
+                    ym(1) = amr_slots(yb)%m; ym(2) = amr_slots(yb)%n; ym(3) = amr_slots(yb)%p
+                    ! transverse fine size (dims /= d); xb and yb share it exactly (exact-match seam). Size the buffer from the
+                    ! block THIS rank OWNS: lazy owned-only slot allocation leaves a non-owned slot's m/n/p = -1, so computing tsz
+                    ! from xb's dims on the yb-owner gives tsz = 0 -> cnt = 0 and a truncated Sendrecv against the xb-owner. The
+                    ! extent is ghost-inclusive (+2*buff_size) for transverse dims < d (already exchanged), interior for dims > d.
+                    mm = xm
+                    if (proc_rank == rY .and. rX /= rY) mm = ym
+                    tsz = 1
+                    if (d /= 1) tsz = tsz*(mm(1) + 1 + merge(2*buff_size, 0, 1 < d))
+                    if (d /= 2 .and. n_glb > 0) tsz = tsz*(mm(2) + 1 + merge(2*buff_size, 0, 2 < d))
+                    if (d /= 3 .and. p_glb > 0) tsz = tsz*(mm(3) + 1 + merge(2*buff_size, 0, 3 < d))
+                    cnt = sys_size*buff_size*tsz
+                    allocate (xbuf(cnt), ybuf(cnt))
+                    if (rX == rY) then  ! same rank owns both: pack each near-seam interior, unpack into the other's seam ghost
+                        call s_amr_fine_slice(xb, d, xm(d) - buff_size + 1, xm(d), xbuf, 1)  ! xb high interior
+                        call s_amr_fine_slice(yb, d, 0, buff_size - 1, ybuf, 1)  ! yb low interior
+                        call s_amr_fine_slice(yb, d, -buff_size, -1, xbuf, -1)  ! -> yb low ghost
+                        call s_amr_fine_slice(xb, d, xm(d) + 1, xm(d) + buff_size, ybuf, -1)  ! -> xb high ghost
+                    else if (proc_rank == rX) then
+                        call s_amr_fine_slice(xb, d, xm(d) - buff_size + 1, xm(d), xbuf, 1)  ! send xb high interior
 #ifdef MFC_MPI
-                    call MPI_SENDRECV(xbuf, cnt, mpi_p, rY, 4200, ybuf, cnt, mpi_p, rY, 4201, MPI_COMM_WORLD, MPI_STATUS_IGNORE, &
-                                      & ierr)
+                        call MPI_SENDRECV(xbuf, cnt, mpi_p, rY, 4200, ybuf, cnt, mpi_p, rY, 4201, MPI_COMM_WORLD, &
+                                          & MPI_STATUS_IGNORE, ierr)
 #endif
-                    call s_amr_fine_slice(xb, d, xm(d) + 1, xm(d) + buff_size, ybuf, -1)  ! recv yb low interior -> xb high ghost
-                else  ! proc_rank == rY
-                    call s_amr_fine_slice(yb, d, 0, buff_size - 1, ybuf, 1)  ! send yb low interior
+                        call s_amr_fine_slice(xb, d, xm(d) + 1, xm(d) + buff_size, ybuf, -1)  ! recv yb low interior -> xb high ghost
+                    else  ! proc_rank == rY
+                        call s_amr_fine_slice(yb, d, 0, buff_size - 1, ybuf, 1)  ! send yb low interior
 #ifdef MFC_MPI
-                    call MPI_SENDRECV(ybuf, cnt, mpi_p, rX, 4201, xbuf, cnt, mpi_p, rX, 4200, MPI_COMM_WORLD, MPI_STATUS_IGNORE, &
-                                      & ierr)
+                        call MPI_SENDRECV(ybuf, cnt, mpi_p, rX, 4201, xbuf, cnt, mpi_p, rX, 4200, MPI_COMM_WORLD, &
+                                          & MPI_STATUS_IGNORE, ierr)
 #endif
-                    call s_amr_fine_slice(yb, d, -buff_size, -1, xbuf, -1)  ! recv xb high interior -> yb low ghost
-                end if
-                deallocate (xbuf, ybuf)
+                        call s_amr_fine_slice(yb, d, -buff_size, -1, xbuf, -1)  ! recv xb high interior -> yb low ghost
+                    end if
+                    deallocate (xbuf, ybuf)
+                end do
             end do
+#ifdef MFC_MPI
+            call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+#endif
         end do
 
         do xb = 1, amr_num_blocks
