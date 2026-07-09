@@ -53,14 +53,48 @@ The AMR core math is correct at every config (init diagnostics):
 s/step at np=16 without ST) — so the ~2.25 s/step at np=1-with-ST is purely the absence of
 parallelism, forced by the halo bug.
 
-### The likely mechanism (`m_mpi_proxy.fpp:181`)
-The fine-halo `MPI_SENDRECV` uses the **same `cnt` for send and receive**, assuming the
-neighbor's matching fine face has identical size and that the neighbor participates. Under
-the mirror decomposition adjacent ranks can own different-sized block pieces, and a rank
-owning no block cells returns early (line 92) — so a poster can lack a partner (deadlock)
-or a size can mismatch (truncation). Why this only bites with ST is not yet pinned down
-(the count scales uniformly with `sys_size`); a plausible cause is a separate
-color-function/curvature halo on the fine level. Diagnosing the exact trigger is deferred.
+### Root cause (CONFIRMED) and fix
+Not the fine-fine halo (an earlier guess; `s_mpi_sendrecv_amr_fine_halo` is dead code).
+The real cause: the AMR fine-block advance runs the full solver RHS
+(`s_amr_fine_stage_advance → s_compute_rhs`, `m_amr.fpp:2532`). For surface_tension that
+RHS calls `s_get_capillary → s_populate_capillary_buffers` (`m_surface_tension.fpp:275`),
+which does a **coarse-decomposition MPI halo** on the color-gradient `c_divs`
+(`s_mpi_sendrecv_variables_buffers`). But only the block-owning rank(s) enter the fine
+advance, so that MPI has no matching partner on the other ranks → **deadlock (np=2) /
+truncation (np≥ with an uneven split)**. Surface_tension is the **only** physics that does
+an MPI exchange *inside* `s_compute_rhs`, which is exactly why the no-ST controls run.
+The IGR solver already guards its analogous populate with `if (.not. amr_in_fine_advance)`
+(`m_igr.fpp:306`); surface_tension was simply missed — it was gated under AMR, so the path
+was never exercised.
+
+**Fix 1 (deadlock) — DONE & VERIFIED** (branch `fix/amr-st-multirank-halo`): skip the
+c_divs MPI halo during the fine advance (the fine block is interior; its c_divs ghosts are
+filled locally, as at np=1 where the halo is a no-op). Guard the populate with
+`amr_in_fine_advance`, mirroring `m_igr.fpp:306`; provably a no-op for non-AMR runs.
+**Verified: np=2 no longer deadlocks at step 0** — it runs all 260 steps.
+
+**BUT a second, deeper problem remains — np=2 BLOWS UP** (not fixed). With the deadlock
+gone, np=2 diverges from np=1 and blows up (alpha1→4.5, pres→2.5e5, |u|→2.9 vs np=1's
+alpha1∈[0,1], pres~285, |u|~0.16). Localized to **(x/R≈0, y/R≈±1) — the interface∩rank-
+boundary**. Diagnosis (data-backed):
+- The coarse solve is **bit-identical** np1/np2 away from the block (diff 0). The
+  divergence is entirely **inside the fine block**, at the interface.
+- With `amr_max_blocks=1 < num_procs`, the block is **whole-owned by one rank**, which must
+  **gather** the other rank's coarse cells to prolong its fine ghosts. The multi-rank
+  restrict-prolong carries a **7.3e-12 conservation defect** (vs 2.2e-16 at np=1). For a
+  sharp interface with surface tension this tiny gather/prolong inconsistency **seeds a
+  growing spurious capillary current** at the seam → blowup. For no-ST (smooth solution)
+  the defect is negligible, which is why the no-ST controls stay sane.
+- The blowup is **identical** across three attempted capillary fixes (c_divs ghost-extrap;
+  c_divs recomputed from the prolonged color; wiring in the dead-code rank-seam fine halo
+  `s_mpi_sendrecv_amr_fine_halo`). It is **independent of the capillary-path handling** —
+  the seed is upstream in the AMR gather/prolong. `amr_max_blocks=2` (block tiled 2-ways)
+  **crashes at init (SIGABRT)** — the tiling+ST path is separately broken.
+
+**Conclusion:** the deadlock is a clean, isolated, fixable bug (fixed). Full multi-rank
+AMR+ST **correctness** needs bit-consistency in the PR's core multi-rank gather/prolong
+(and a working tiled path) — deep, unfinished PR-internal work, amplified by ST's sharp
+interface. This is precisely why the PR gated ST under AMR; it is not a bounded fix.
 
 ### Feasibility consequence
 
