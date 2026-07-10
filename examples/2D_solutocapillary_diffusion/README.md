@@ -51,6 +51,25 @@ python3 measure.py
 The amplitude tracks the exact exponential to within 0.1 % on this grid, and the total surfactant is
 conserved to round-off — the surface-diffusion operator reproduces the analytic Laplace–Beltrami rate.
 
+## Interface field
+
+The surfactant density `Γ̃` on the interface, rendered with the built-in viewer:
+
+```
+./mfc.sh run case.py -n 1 -t pre_process simulation post_process
+./mfc.sh viz . --var surfactant --step 0 --png --vmin 0 --vmax 16 --cmap magma
+./mfc.sh viz . --var surfactant --step 1600 --png --vmin 0 --vmax 16 --cmap magma
+```
+
+| initial (`t = 0`) | final (`t ≈ 2τ`) |
+|---|---|
+| ![initial](figures/surfactant_field_initial.png) | ![final](figures/surfactant_field_final.png) |
+
+The surfactant stays concentrated on the interface at `y = 0` (dark bulk everywhere else — the
+tangential projection leaks no surfactant off the interface), while the along-interface `cos kx`
+modulation — bright at the crest, dim at the troughs at `t = 0` — homogenizes into a uniform band as
+it diffuses. Same colour scale in both frames.
+
 ## Note on curved interfaces
 
 On a **curved** interface the same operator is subject to the usual diffuse-interface errors: at
