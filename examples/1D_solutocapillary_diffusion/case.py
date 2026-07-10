@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-# VALIDATION: insoluble-surfactant tangential surface diffusion against the exact mode-decay rate.
+# VALIDATION (1D): insoluble-surfactant surface diffusion vs the exact mode-decay rate D_s*k^2.
+# The flat, grid-aligned interface makes this a 1D check: it validates the operator's flux/divergence
+# scaling, but NOT the tangential projection (I - n n), which is identically zero when n is along a
+# grid axis (see README). A tilted or resolved-curved interface is needed to validate the projection.
 #
 # A flat, grid-aligned interface separates two identical fluids (lower y<0 vs upper y>0). A PASSIVE
 # surfactant (no Marangoni: sigma_dGamma unset, so sigma is constant and the interface stays flat and

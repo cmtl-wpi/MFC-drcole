@@ -1,7 +1,15 @@
-# Insoluble-surfactant surface diffusion — mode-decay validation
+# 1D solutocapillary surface diffusion — mode-decay validation
 
 Validates MFC's tangential (interfacial) surfactant diffusion operator against an exact analytic
 solution: the decay of a surface-concentration mode under pure surface diffusion.
+
+**Scope (what this does and does not test).** The interface here is flat and grid-aligned, so the
+surface diffusion is effectively 1D (along `x`) and the surface Laplacian reduces to `∂²/∂x²`. This
+validates the operator's flux/divergence **scaling** (that the measured rate equals `D_s k²`), and it
+is exact to −0.1% below. It does **not** exercise the tangential projection `(I − n⊗n)`: with the
+normal `n = (0,1)` along a grid axis, the projection's cross-derivative terms are multiplied by
+`n_x = 0` and contribute nothing. Validating the projection needs an interface whose tangent is not
+grid-aligned (a tilted flat interface, or a resolved curved interface — see the note at the end).
 
 ## Problem
 
@@ -70,12 +78,20 @@ tangential projection leaks no surfactant off the interface), while the along-in
 modulation — bright at the crest, dim at the troughs at `t = 0` — homogenizes into a uniform band as
 it diffuses. Same colour scale in both frames.
 
-## Note on curved interfaces
+## Note on curved / non-aligned interfaces (not yet validated)
 
-On a **curved** interface the same operator is subject to the usual diffuse-interface errors: at
-coarse resolution the finite band thickness (`w/R`) and the averaged-normal projection reduce the
-effective rate (e.g. a `Nx=64`, `R=0.5` drop, `R/dx ≈ 10.6`, `w/R ≈ 0.2`, underestimates `D_s/R²` by
-a factor of ~2.8). This is a resolution effect — the flat-interface test above isolates and confirms
-the operator's discretization is correct — and it decreases as the interface is better resolved.
-Quantitative surfactant-laden-drop benchmarks (e.g. Stone & Leal extensional flow) therefore require
-a resolved interface.
+On a curved interface with the tangent *not* grid-aligned, the projection cross-terms are active and
+the finite band thickness matters. A `Nx=64`, `R=0.5` drop (`R/dx ≈ 10.6`, `w/R ≈ 0.2`) underestimates
+`D_s/R²` by a factor of ~2.8. **This 1D test does not isolate that error**: because the flat interface
+is grid-aligned, the projection contributes nothing here, so the sphere discrepancy could be finite
+band thickness (a resolution effect that converges), a projection cross-term error, or both — this
+example cannot distinguish them.
+
+Two checks close that gap and are not yet done:
+- **Tilted flat interface** (tangent at 45°, exact `D_s k²`) — activates the projection cross-terms
+  with no curvature confound, so it validates the projection cleanly.
+- **Sphere spherical-harmonic mode decay** (`Γ ~ Y_lm`, rate `l(l+1)D_s/R²`) at increasing `R/dx` —
+  the canonical surface-diffusion benchmark; a convergence study separates resolution from projection.
+
+Quantitative surfactant-laden-drop benchmarks (e.g. Stone & Leal extensional flow) additionally
+require a resolved interface plus an imposed strain, and are future work.
