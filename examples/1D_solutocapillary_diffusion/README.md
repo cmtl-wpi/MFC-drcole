@@ -59,6 +59,31 @@ python3 measure.py
 The amplitude tracks the exact exponential to within 0.1 % on this grid, and the total surfactant is
 conserved to round-off — the surface-diffusion operator reproduces the analytic Laplace–Beltrami rate.
 
+## Dispersion — the full eigenvalue spectrum
+
+The canonical surface-diffusion benchmark is not a single mode but the whole spectrum: every mode `k`
+must decay at its Laplace–Beltrami eigenvalue rate `D_s k²` (Xu, Li, Lowengrub & Zhao, *J. Comput.
+Phys.* 2006; the surface-FEM literature, Dziuk & Elliott). Because the operator is linear, seeding a
+superposition of modes and letting them decay independently recovers the entire `rate(k)` curve in one
+run:
+
+```
+./mfc.sh run sweep.py -n 1 -t pre_process simulation
+python3 measure.py sweep
+```
+
+![dispersion](figures/dispersion.png)
+
+| mode | `k` | measured rate | exact `D_s k²` | error |
+|---|---|---|---|---|
+| `n=1` | 3.14 | 1.971 | 1.974 | −0.14 % |
+| `n=2` | 6.28 | 7.851 | 7.896 | −0.57 % |
+| `n=3` | 9.42 | 17.538 | 17.765 | −1.28 % |
+
+The measured rates lie on `D_s k²` across all three modes; the error grows mildly with `k` because the
+higher modes have fewer cells per wavelength (`48/n`), the expected spatial-resolution trend. This is
+the operator matching the canonical mode-decay benchmark, not just one eigenvalue.
+
 ## Interface field
 
 The surfactant density `Γ̃` on the interface, rendered with the built-in viewer:
