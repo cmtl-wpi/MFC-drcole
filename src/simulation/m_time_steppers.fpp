@@ -614,13 +614,14 @@ contains
             ! ghost lerp sources, restriction target, and state-reflux target are all device-resident:
             ! the substep/restriction/reflux machinery runs as device kernels (M2). Each active block slot
             ! is subcycled, restricted, and state-refluxed in turn; amr_cur resets to 1 afterwards.
+            ! subcycle: advance ALL blocks stage-synchronized (the block loop is INSIDE, with the fine-fine seam halo between the
+            ! per-stage fill and advance) so tiled fine blocks stay conservative. Then restrict + reflux each block in turn.
+            if (amr_subcycle) then
+                call s_advance_amr_fine_substeps(q_cons_ts(stor)%vf, q_cons_ts(1)%vf, rk_coef, bc_type, q_T_sf, pb_ts(stor)%sf, &
+                                                 & mv_ts(stor)%sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+            end if
             do islot = 1, amr_num_blocks
                 call s_amr_select_slot(islot)  ! refresh the region/intersection mirrors (sets amr_cur)
-                if (amr_subcycle) then
-                    call s_advance_amr_fine_substeps(q_cons_ts(stor)%vf, q_cons_ts(1)%vf, rk_coef, bc_type, q_T_sf, &
-                                                     & pb_ts(stor)%sf, mv_ts(stor)%sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, &
-                                                     & t_step, time_avg)
-                end if
                 ! equilibrate the fine solution (phase change) before it restricts to the coarse level
                 if (relax) call s_amr_relax_fine()
                 call s_restrict_fine_to_coarse(q_cons_ts(1)%vf)

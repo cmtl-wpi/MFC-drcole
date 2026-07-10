@@ -124,7 +124,7 @@ DESCRIPTIONS = {
     "amr_buf": "Coarse-cell padding around tagged cells when regridding",
     "amr_subcycle": "Advance the coarse level at the case dt and the fine level at dt/amr_ref_ratio (amr_ref_ratio substeps; Berger-Colella refluxing)",
     "amr_max_blocks": "Number of fixed refined-block slots preallocated for multi-block AMR (each sized max-block; N slots ~ N x device memory)",
-    "amr_ref_ratio": "Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires amr_subcycle and a single un-tiled fine block",
+    "amr_ref_ratio": "Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires amr_subcycle (the finer grid subcycles dt/r for its own dt limit)",
     "amr_cluster_eff": "Berger-Rigoutsos min tag efficiency (tagged/total) a clustered block box must reach before splitting stops (0 < eff <= 1)",
     "hybrid_weno": "Use linear-optimal reconstruction in smooth cells, full WENO only at flagged discontinuities",
     "hybrid_weno_eps": "Smoothness threshold for hybrid WENO shock flagging (must be > 0)",

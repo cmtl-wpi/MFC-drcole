@@ -684,7 +684,7 @@ To restart the simulation from $k$-th time step, see @ref running "Restarting Ca
 | `amr_buf`               | Integer | Coarse-cell padding around tagged cells when regridding (default 3) |
 | `amr_subcycle`          | Logical | Advance the coarse level at the case dt and the fine level at dt/`amr_ref_ratio` (`amr_ref_ratio` substeps; Berger-Colella refluxing). Requires `amr`; incompatible with `cfl_dt`. |
 | `amr_max_blocks`       | Integer | Number of fixed refined-block slots preallocated (each max-block sized; ~N x device memory); must be >= 1 (default 4) |
-| `amr_ref_ratio`         | Integer | Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires `amr_subcycle` and a single un-tiled fine block |
+| `amr_ref_ratio`         | Integer | Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires `amr_subcycle` (the finer grid subcycles dt/r for its own dt limit) |
 | `amr_cluster_eff`       | Real    | Berger-Rigoutsos min tag efficiency a clustered block box reaches before splitting stops; must satisfy 0 < eff <= 1 (default 0.7) |
 | `hybrid_weno`           | Logical | Use linear-optimal reconstruction in smooth cells, full WENO only at flagged discontinuities (requires WENO reconstruction) |
 | `hybrid_weno_eps`       | Real    | Smoothness threshold for hybrid WENO shock flagging; must be > 0 (default 1e-2) |
@@ -918,9 +918,12 @@ after each coarse step.
 
 **Refinement ratio.**
 `amr_ref_ratio` (default 2) sets the fine/coarse cell ratio r per dimension. `r = 2` is
-the standard case (lockstep or subcycled, any rank count). `r /= 2` requires `amr_subcycle`
-(so the finer grid meets its own dt limit) and a single un-tiled fine block (the block must
-fit one rank; the subcycle path has no fine-fine seam halo yet), enforced at startup.
+the standard case (lockstep or subcycled). `r /= 2` requires `amr_subcycle` so the finer
+grid subcycles `dt/r` and meets its own (capillary/acoustic) dt limit — advancing it at the
+coarse dt (lockstep) is unstable for r > 2. Tiled (multi-rank-split) fine blocks stay
+conservative via the block-to-block fine-fine seam halo, which the subcycle driver runs
+stage-synchronized across tiles. Dynamic regrid is not yet generalized, so `r /= 2` requires
+`amr_regrid_int = 0` (static block).
 
 **Block slots.**
 `amr_max_blocks` (default 4) sets the number of fixed refined-block slots preallocated
@@ -961,7 +964,7 @@ visualization output is future work.
 | `amr_buf`               | Integer | Coarse-cell padding around tagged cells; must be >= 1 when `amr_regrid_int > 0` (default 3) |
 | `amr_subcycle`          | Logical | Advance fine level at dt/`amr_ref_ratio` (`amr_ref_ratio` substeps per coarse step) with Berger–Colella refluxing |
 | `amr_max_blocks`       | Integer | Number of fixed refined-block slots preallocated (each max-block sized; ~N x device memory); must be >= 1 (default 4) |
-| `amr_ref_ratio`         | Integer | Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires `amr_subcycle` and a single un-tiled fine block |
+| `amr_ref_ratio`         | Integer | Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires `amr_subcycle` (the finer grid subcycles dt/r for its own dt limit) |
 | `amr_cluster_eff`       | Real    | Berger-Rigoutsos min tag efficiency a clustered block box reaches before splitting stops; must satisfy 0 < eff <= 1 (default 0.7) |
 
 ### 8. Acoustic Source {#sec-acoustic-source}
