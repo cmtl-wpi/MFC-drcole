@@ -144,10 +144,10 @@ contains
         maxc2 = 1; maxc3 = 1
         if (n_glb > 0) maxc2 = maxc_fit(2)
         if (p_glb > 0) maxc3 = maxc_fit(3)
-        max_f1 = 2*maxc1 - 1
+        max_f1 = amr_ref_ratio*maxc1 - 1
         max_f2 = 0; max_f3 = 0
-        if (n_glb > 0) max_f2 = 2*maxc2 - 1
-        if (p_glb > 0) max_f3 = 2*maxc3 - 1
+        if (n_glb > 0) max_f2 = amr_ref_ratio*maxc2 - 1
+        if (p_glb > 0) max_f3 = amr_ref_ratio*maxc3 - 1
         ! creg: relative 0-based transverse (0:maxc_t-1); freg: 0-based fine (0:max_f_t).
         ! Device-resident (@:ALLOCATE): capture and both applies run as kernels; no host copies are read.
         @:ALLOCATE(creg(1)%lo(1:sys_size,0:maxc2 - 1,0:maxc3 - 1,1:amr_max_blocks), creg(1)%hi(1:sys_size,0:maxc2 - 1, &
@@ -192,7 +192,8 @@ contains
         ! flux data was just written by device kernels; the face reads below run as device kernels too
         if (amr_subcycle) then
             if (amr_in_fine_advance) then
-                coef = 0.5_wp*rk3_w(stage); accum = .true.  ! zeroed by s_amr_zero_fine_registers before substep 1
+                ! dt_fine/dt_coarse = 1/ref_ratio; zeroed before substep 1
+                coef = rk3_w(stage)/real(amr_ref_ratio, wp); accum = .true.
             else
                 coef = rk3_w(stage); accum = (stage > 1)  ! stage 1 overwrites = implicit zero per coarse step
             end if
@@ -513,6 +514,7 @@ contains
         integer                                                :: tl1, tl2, tl3, dd1_hi, dd2_hi, sidx(3), ext(3), tlo(3), thi(3)
         logical                                                :: d2, d3, own_lo(3), own_hi(3), has_lo, has_hi
         real(wp)                                               :: fblo, fbhi, mlo, mhi
+        integer                                                :: rr
 
         if (.not. amr) return
         if (igr) return  ! stage-1 IGR: restriction-only coupling (no captured fluxes)
@@ -523,6 +525,7 @@ contains
         if (.not. (any(own_lo) .or. any(own_hi))) return
         ! device kernels: the coarse rhs stays device-resident for the coarse RK update kernel
         d2 = n_glb > 0; d3 = p_glb > 0
+        rr = amr_ref_ratio  ! each coarse face covers rr^d fine faces (host scalar, captured by value into the kernels)
         ! block-relative transverse frame (aligned with the owner's freg): loop c over each dim's owned overlap [bl:bh] =
         ! [tlo-region_lo : thi-region_lo]; creg/freg use c directly, LOCAL cell = tl + c with tl = region_lo - sidx.
         bl1 = tlo(1) - amr_region_lo(1); bh1 = thi(1) - amr_region_lo(1)
@@ -536,9 +539,9 @@ contains
         has_lo = own_lo(1); has_hi = own_hi(1)
         if (has_lo .or. has_hi) then
             nch = 1
-            if (n_glb > 0) nch = nch*2
-            if (p_glb > 0) nch = nch*2
-            dd1_hi = merge(1, 0, n_glb > 0); dd2_hi = merge(1, 0, p_glb > 0)
+            if (n_glb > 0) nch = nch*rr
+            if (p_glb > 0) nch = nch*rr
+            dd1_hi = merge(rr - 1, 0, n_glb > 0); dd2_hi = merge(rr - 1, 0, p_glb > 0)
             mlo = 1._wp; mhi = 1._wp
             if (has_lo) mlo = dx(ol1)
             if (has_hi) mhi = dx(oh1)
@@ -546,8 +549,8 @@ contains
             do eq = 1, sys_size
                 do c2 = bl3, bh3
                     do c1 = bl2, bh2
-                        f20 = 0; if (d3) f20 = 2*c2
-                        f10 = 0; if (d2) f10 = 2*c1
+                        f20 = 0; if (d3) f20 = rr*c2
+                        f10 = 0; if (d2) f10 = rr*c1
                         fblo = 0._wp; fbhi = 0._wp
                         do dd2 = 0, dd2_hi
                             do dd1 = 0, dd1_hi
@@ -568,9 +571,9 @@ contains
         ! y-faces (n_glb > 0): transverse dims (x, z); x is always active (2 children)
         has_lo = own_lo(2); has_hi = own_hi(2)
         if (n_glb > 0 .and. (has_lo .or. has_hi)) then
-            nch = 2
-            if (p_glb > 0) nch = nch*2
-            dd2_hi = merge(1, 0, p_glb > 0)
+            nch = rr
+            if (p_glb > 0) nch = nch*rr
+            dd2_hi = merge(rr - 1, 0, p_glb > 0)
             mlo = 1._wp; mhi = 1._wp
             if (has_lo) mlo = dy(ol2)
             if (has_hi) mhi = dy(oh2)
@@ -578,11 +581,11 @@ contains
             do eq = 1, sys_size
                 do c2 = bl3, bh3
                     do c1 = bl1, bh1
-                        f20 = 0; if (d3) f20 = 2*c2
-                        f10 = 2*c1
+                        f20 = 0; if (d3) f20 = rr*c2
+                        f10 = rr*c1
                         fblo = 0._wp; fbhi = 0._wp
                         do dd2 = 0, dd2_hi
-                            do dd1 = 0, 1
+                            do dd1 = 0, rr - 1
                                 fblo = fblo + freg(2)%lo(eq, f10 + dd1, f20 + dd2, islot)
                                 fbhi = fbhi + freg(2)%hi(eq, f10 + dd1, f20 + dd2, islot)
                             end do
@@ -600,7 +603,7 @@ contains
         ! z-faces (p_glb > 0): transverse dims (x, y); both always active in 3D (4 children)
         has_lo = own_lo(3); has_hi = own_hi(3)
         if (p_glb > 0 .and. (has_lo .or. has_hi)) then
-            nch = 4
+            nch = rr*rr
             mlo = 1._wp; mhi = 1._wp
             if (has_lo) mlo = dz(ol3)
             if (has_hi) mhi = dz(oh3)
@@ -608,11 +611,11 @@ contains
             do eq = 1, sys_size
                 do c2 = bl2, bh2
                     do c1 = bl1, bh1
-                        f20 = 2*c2
-                        f10 = 2*c1
+                        f20 = rr*c2
+                        f10 = rr*c1
                         fblo = 0._wp; fbhi = 0._wp
-                        do dd2 = 0, 1
-                            do dd1 = 0, 1
+                        do dd2 = 0, rr - 1
+                            do dd1 = 0, rr - 1
                                 fblo = fblo + freg(3)%lo(eq, f10 + dd1, f20 + dd2, islot)
                                 fbhi = fbhi + freg(3)%hi(eq, f10 + dd1, f20 + dd2, islot)
                             end do
@@ -668,6 +671,7 @@ contains
         integer                                                :: tl1, tl2, tl3, dd1_hi, dd2_hi, sidx(3), ext(3), tlo(3), thi(3)
         logical                                                :: d2, d3, own_lo(3), own_hi(3), has_lo, has_hi
         real(wp)                                               :: fblo, fbhi, mlo, mhi, dtl
+        integer                                                :: rr
 
         if (.not. amr) return
         if (igr) return  ! stage-1 IGR: restriction-only coupling (no captured fluxes)
@@ -678,6 +682,7 @@ contains
         ! device kernels: the restricted coarse state stays device-resident
         d2 = n_glb > 0; d3 = p_glb > 0
         dtl = dt
+        rr = amr_ref_ratio  ! host scalar, captured by value into the kernels (GPU-safe); each coarse face covers rr^d fine faces
         bl1 = tlo(1) - amr_region_lo(1); bh1 = thi(1) - amr_region_lo(1)
         bl2 = tlo(2) - amr_region_lo(2); bh2 = thi(2) - amr_region_lo(2)
         bl3 = tlo(3) - amr_region_lo(3); bh3 = thi(3) - amr_region_lo(3)
@@ -688,9 +693,9 @@ contains
         has_lo = own_lo(1); has_hi = own_hi(1)
         if (has_lo .or. has_hi) then
             nch = 1
-            if (n_glb > 0) nch = nch*2
-            if (p_glb > 0) nch = nch*2
-            dd1_hi = merge(1, 0, n_glb > 0); dd2_hi = merge(1, 0, p_glb > 0)
+            if (n_glb > 0) nch = nch*rr
+            if (p_glb > 0) nch = nch*rr
+            dd1_hi = merge(rr - 1, 0, n_glb > 0); dd2_hi = merge(rr - 1, 0, p_glb > 0)
             mlo = 1._wp; mhi = 1._wp
             if (has_lo) mlo = dx(ol1)
             if (has_hi) mhi = dx(oh1)
@@ -698,8 +703,8 @@ contains
             do eq = 1, sys_size
                 do c2 = bl3, bh3
                     do c1 = bl2, bh2
-                        f20 = 0; if (d3) f20 = 2*c2
-                        f10 = 0; if (d2) f10 = 2*c1
+                        f20 = 0; if (d3) f20 = rr*c2
+                        f10 = 0; if (d2) f10 = rr*c1
                         fblo = 0._wp; fbhi = 0._wp
                         do dd2 = 0, dd2_hi
                             do dd1 = 0, dd1_hi
@@ -719,9 +724,9 @@ contains
         end if
         has_lo = own_lo(2); has_hi = own_hi(2)
         if (n_glb > 0 .and. (has_lo .or. has_hi)) then
-            nch = 2
-            if (p_glb > 0) nch = nch*2
-            dd2_hi = merge(1, 0, p_glb > 0)
+            nch = rr
+            if (p_glb > 0) nch = nch*rr
+            dd2_hi = merge(rr - 1, 0, p_glb > 0)
             mlo = 1._wp; mhi = 1._wp
             if (has_lo) mlo = dy(ol2)
             if (has_hi) mhi = dy(oh2)
@@ -729,11 +734,11 @@ contains
             do eq = 1, sys_size
                 do c2 = bl3, bh3
                     do c1 = bl1, bh1
-                        f20 = 0; if (d3) f20 = 2*c2
-                        f10 = 2*c1
+                        f20 = 0; if (d3) f20 = rr*c2
+                        f10 = rr*c1
                         fblo = 0._wp; fbhi = 0._wp
                         do dd2 = 0, dd2_hi
-                            do dd1 = 0, 1
+                            do dd1 = 0, rr - 1
                                 fblo = fblo + freg(2)%lo(eq, f10 + dd1, f20 + dd2, islot)
                                 fbhi = fbhi + freg(2)%hi(eq, f10 + dd1, f20 + dd2, islot)
                             end do
@@ -750,7 +755,7 @@ contains
         end if
         has_lo = own_lo(3); has_hi = own_hi(3)
         if (p_glb > 0 .and. (has_lo .or. has_hi)) then
-            nch = 4
+            nch = rr*rr
             mlo = 1._wp; mhi = 1._wp
             if (has_lo) mlo = dz(ol3)
             if (has_hi) mhi = dz(oh3)
@@ -758,11 +763,11 @@ contains
             do eq = 1, sys_size
                 do c2 = bl2, bh2
                     do c1 = bl1, bh1
-                        f20 = 2*c2
-                        f10 = 2*c1
+                        f20 = rr*c2
+                        f10 = rr*c1
                         fblo = 0._wp; fbhi = 0._wp
-                        do dd2 = 0, 1
-                            do dd1 = 0, 1
+                        do dd2 = 0, rr - 1
+                            do dd1 = 0, rr - 1
                                 fblo = fblo + freg(3)%lo(eq, f10 + dd1, f20 + dd2, islot)
                                 fbhi = fbhi + freg(3)%hi(eq, f10 + dd1, f20 + dd2, islot)
                             end do

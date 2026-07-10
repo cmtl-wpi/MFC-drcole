@@ -679,6 +679,7 @@ def _load():
     _r("amr_buf", INT)
     _r("amr_subcycle", LOG)
     _r("amr_max_blocks", INT)
+    _r("amr_ref_ratio", INT)
     _r("amr_cluster_eff", REAL)
     _r("hybrid_weno_eps", REAL, {"output"})
     _r("hybrid_smooth_flux", INT, {"output"})
@@ -1366,6 +1367,7 @@ _nv(
     "amr_buf",
     "amr_subcycle",
     "amr_max_blocks",
+    "amr_ref_ratio",
     "amr_cluster_eff",
     "alf_factor",
     "num_igr_iters",

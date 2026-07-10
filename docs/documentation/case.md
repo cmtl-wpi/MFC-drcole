@@ -676,14 +676,15 @@ To restart the simulation from $k$-th time step, see @ref running "Restarting Ca
 | `sfc_partition_wrt`     | Logical | Report SFC-weighted load-balance partition |
 | `rank_time_wrt`         | Logical | Report per-rank RHS compute-time imbalance (max/mean) |
 | `load_balance`          | Logical | (Experimental/diagnostic) Weighted static Cartesian decomposition at init (requires `parallel_io = T`, >1 rank). Measured gain is small on CPU (~5%) and can be slower on GPU due to the occupancy floor; equal decomposition is near-optimal for uniform-cost workloads. |
-| `amr`                   | Logical | (Experimental) Enable block-structured AMR: a 2:1 refined level-1 block with gradient-based dynamic regrid, optional dt/2 subcycling, and conservative coupling with refluxing. Requires WENO reconstruction, SSP-RK3, model_eqns=2 or 3; num_fluids > 1 requires mpp_lim; supports physical viscosity. |
+| `amr`                   | Logical | (Experimental) Enable block-structured AMR: an r:1 refined level-1 block (`amr_ref_ratio`, default 2) with gradient-based dynamic regrid, optional dt/`amr_ref_ratio` subcycling, and conservative coupling with refluxing. Requires WENO reconstruction, SSP-RK3, model_eqns=2 or 3; num_fluids > 1 requires mpp_lim; supports physical viscosity. |
 | `amr_block_beg(i)`      | Integer | Refined-block start cell index in direction $i$ (level-0 index space) |
 | `amr_block_end(i)`      | Integer | Refined-block end cell index in direction $i$ (level-0 index space) |
 | `amr_regrid_int`        | Integer | Steps between AMR regrid events (0 = static block) |
 | `amr_tag_eps`           | Real    | Relative density-gradient threshold for AMR refinement tagging (default 0.1) |
 | `amr_buf`               | Integer | Coarse-cell padding around tagged cells when regridding (default 3) |
-| `amr_subcycle`          | Logical | Advance the coarse level at the case dt and the fine level at dt/2 (two substeps; Berger-Colella refluxing). Requires `amr`; incompatible with `cfl_dt`. |
+| `amr_subcycle`          | Logical | Advance the coarse level at the case dt and the fine level at dt/`amr_ref_ratio` (`amr_ref_ratio` substeps; Berger-Colella refluxing). Requires `amr`; incompatible with `cfl_dt`. |
 | `amr_max_blocks`       | Integer | Number of fixed refined-block slots preallocated (each max-block sized; ~N x device memory); must be >= 1 (default 4) |
+| `amr_ref_ratio`         | Integer | Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires `amr_subcycle` and a single un-tiled fine block |
 | `amr_cluster_eff`       | Real    | Berger-Rigoutsos min tag efficiency a clustered block box reaches before splitting stops; must satisfy 0 < eff <= 1 (default 0.7) |
 | `hybrid_weno`           | Logical | Use linear-optimal reconstruction in smooth cells, full WENO only at flagged discontinuities (requires WENO reconstruction) |
 | `hybrid_weno_eps`       | Real    | Smoothness threshold for hybrid WENO shock flagging; must be > 0 (default 1e-2) |
@@ -776,8 +777,8 @@ It also cannot be enabled with `flux_wrt`, `heat_ratio_wrt`, `pres_inf_wrt`, `c_
 
 ### 7.1. Adaptive Mesh Refinement (AMR) {#sec-amr}
 
-MFC supports block-structured AMR (Experimental) via up to `amr_max_blocks` 2:1 refined level-1 blocks
-that coexists with the base-level solve.
+MFC supports block-structured AMR (Experimental) via up to `amr_max_blocks` r:1 refined level-1 blocks
+(refinement ratio `amr_ref_ratio`, default 2) that coexists with the base-level solve.
 The fine block is initialized from the base grid by piecewise-linear interpolation and
 remains continuously coupled to the base solve through conservative ghost-cell exchange
 and flux refluxing at the coarse–fine interface.
@@ -908,12 +909,18 @@ is capped at `amr_max_blocks`.
 A positive `amr_tag_eps` and `amr_buf >= 1` are required whenever regridding is active.
 
 **Subcycling.**
-`amr_subcycle = T` enables Berger–Colella dt/2 subcycling: the coarse level advances
-one full step at the case `dt`, while the fine level takes two half-steps at `dt/2` with
-time-interpolated ghost values at the intermediate stage.
+`amr_subcycle = T` enables Berger–Colella subcycling: the coarse level advances
+one full step at the case `dt`, while the fine level takes `amr_ref_ratio` steps at
+`dt/amr_ref_ratio` with time-interpolated ghost values at the intermediate stages.
 Accumulated fine-level fluxes are applied back to the coarse level (reflux correction)
 after each coarse step.
 `amr_subcycle` is incompatible with `cfl_dt` (variable time step) and requires `amr = T`.
+
+**Refinement ratio.**
+`amr_ref_ratio` (default 2) sets the fine/coarse cell ratio r per dimension. `r = 2` is
+the standard case (lockstep or subcycled, any rank count). `r /= 2` requires `amr_subcycle`
+(so the finer grid meets its own dt limit) and a single un-tiled fine block (the block must
+fit one rank; the subcycle path has no fine-fine seam halo yet), enforced at startup.
 
 **Block slots.**
 `amr_max_blocks` (default 4) sets the number of fixed refined-block slots preallocated
@@ -952,8 +959,9 @@ visualization output is future work.
 | `amr_regrid_int`        | Integer | Coarse steps between regrid events (0 = static block) |
 | `amr_tag_eps`           | Real    | Normalized density-gradient threshold for refinement tagging; must be > 0 when `amr_regrid_int > 0` (default 0.1) |
 | `amr_buf`               | Integer | Coarse-cell padding around tagged cells; must be >= 1 when `amr_regrid_int > 0` (default 3) |
-| `amr_subcycle`          | Logical | Advance fine level at dt/2 (two substeps per coarse step) with Berger–Colella refluxing |
+| `amr_subcycle`          | Logical | Advance fine level at dt/`amr_ref_ratio` (`amr_ref_ratio` substeps per coarse step) with Berger–Colella refluxing |
 | `amr_max_blocks`       | Integer | Number of fixed refined-block slots preallocated (each max-block sized; ~N x device memory); must be >= 1 (default 4) |
+| `amr_ref_ratio`         | Integer | Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires `amr_subcycle` and a single un-tiled fine block |
 | `amr_cluster_eff`       | Real    | Berger-Rigoutsos min tag efficiency a clustered block box reaches before splitting stops; must satisfy 0 < eff <= 1 (default 0.7) |
 
 ### 8. Acoustic Source {#sec-acoustic-source}
