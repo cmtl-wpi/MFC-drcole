@@ -103,20 +103,18 @@ tangential projection leaks no surfactant off the interface), while the along-in
 modulation — bright at the crest, dim at the troughs at `t = 0` — homogenizes into a uniform band as
 it diffuses. Same colour scale in both frames.
 
-## Note on curved / non-aligned interfaces (not yet validated)
+## Note on curved / non-aligned interfaces
 
-On a curved interface with the tangent *not* grid-aligned, the projection cross-terms are active and
-the finite band thickness matters. A `Nx=64`, `R=0.5` drop (`R/dx ≈ 10.6`, `w/R ≈ 0.2`) underestimates
-`D_s/R²` by a factor of ~2.8. **This 1D test does not isolate that error**: because the flat interface
-is grid-aligned, the projection contributes nothing here, so the sphere discrepancy could be finite
-band thickness (a resolution effect that converges), a projection cross-term error, or both — this
-example cannot distinguish them.
+Because this flat interface is grid-aligned, the projection `(I − n⊗n)` contributes nothing here, so
+the 1D test alone cannot tell whether a curved-interface error is finite band thickness (converges) or
+a projection bug. The **[3D sphere convergence study](../3D_solutocapillary_diffusion)** answers that:
+the `l = 1` mode decays at the sphere eigenvalue `l(l+1)D_s/R² = 2D_s/R²` (note: the *sphere* value,
+not the flat/circle `D_s k²`), and the measured rate converges monotonically to it as the interface is
+resolved — `rate/exact = 0.53 → 0.79 → 0.88` for `R/Δx = 5.3 → 10.7 → 16` — first order in `w/R`, with
+surfactant conserved to round-off throughout. So the curved-interface underestimate is a resolution
+effect, not a discretization bug: the operator is correct and its accuracy is set by how well the
+interface is resolved.
 
-Two checks close that gap and are not yet done:
-- **Tilted flat interface** (tangent at 45°, exact `D_s k²`) — activates the projection cross-terms
-  with no curvature confound, so it validates the projection cleanly.
-- **Sphere spherical-harmonic mode decay** (`Γ ~ Y_lm`, rate `l(l+1)D_s/R²`) at increasing `R/dx` —
-  the canonical surface-diffusion benchmark; a convergence study separates resolution from projection.
-
-Quantitative surfactant-laden-drop benchmarks (e.g. Stone & Leal extensional flow) additionally
-require a resolved interface plus an imposed strain, and are future work.
+Still open: a **tilted flat interface** (tangent at 45°, exact `D_s k²`) would isolate the projection
+from curvature entirely; and quantitative surfactant-laden-drop benchmarks (e.g. Stone & Leal
+extensional flow) additionally need a resolved interface plus an imposed strain — future work.
