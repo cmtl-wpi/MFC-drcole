@@ -1,0 +1,10 @@
+# Basilisk build + run artifacts
+collision
+collision.mpi
+_collision.c
+*.o
+stats.dat
+facets-*.dat
+dump-*
+*.mp4
+*.ppm
