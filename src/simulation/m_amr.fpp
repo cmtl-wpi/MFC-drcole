@@ -3418,9 +3418,9 @@ contains
                 ! migration below and the overlap-copy's index shift are correct even where this rank did not own the old block
                 old_ilo(:,k) = amr_region_lo_all(:,k)
                 old_chi(:,k) = amr_region_hi_all(:,k)  ! old COARSE hi (for the P2P migration overlap test below)
-                old_ext(1, k) = 2*(amr_region_hi_all(1, k) - amr_region_lo_all(1, k) + 1) - 1
-                old_ext(2, k) = merge(2*(amr_region_hi_all(2, k) - amr_region_lo_all(2, k) + 1) - 1, 0, n_glb > 0)
-                old_ext(3, k) = merge(2*(amr_region_hi_all(3, k) - amr_region_lo_all(3, k) + 1) - 1, 0, p_glb > 0)
+                old_ext(1, k) = amr_ref_ratio*(amr_region_hi_all(1, k) - amr_region_lo_all(1, k) + 1) - 1
+                old_ext(2, k) = merge(amr_ref_ratio*(amr_region_hi_all(2, k) - amr_region_lo_all(2, k) + 1) - 1, 0, n_glb > 0)
+                old_ext(3, k) = merge(amr_ref_ratio*(amr_region_hi_all(3, k) - amr_region_lo_all(3, k) + 1) - 1, 0, p_glb > 0)
                 old_owner(k) = amr_block_owner(k)
                 old_owns(k) = amr_owns_all(k)
                 if (old_owns(k)) then
@@ -3558,7 +3558,8 @@ contains
                 ! every old block's stashed fine state is now replicated in amr_slots(kk)%q_cons_stor (migration above), so copy
                 ! the overlap from EVERY covering old block regardless of who owned it - sh is the old->new LOCAL fine index shift
                 do kk = 1, old_np
-                    sh = 2*(amr_isect_lo - old_ilo(:,kk))  ! old LOCAL fine index = new LOCAL fine index + sh (collapsed dims sh=0)
+                    ! old LOCAL fine index = new LOCAL fine index + sh (collapsed dims sh=0)
+                    sh = amr_ref_ratio*(amr_isect_lo - old_ilo(:,kk))
                     do i = 1, sys_size
                         do fk = 0, amr_slots(k)%p
                             ofk = fk + sh(3)
@@ -3584,7 +3585,7 @@ contains
                     call s_amr_prolong_pbmv()
                     do kk = 1, old_np
                         if (.not. old_owns(kk)) cycle
-                        sh = 2*(amr_isect_lo - old_ilo(:,kk))
+                        sh = amr_ref_ratio*(amr_isect_lo - old_ilo(:,kk))
                         do fk = 0, amr_slots(k)%p
                             ofk = fk + sh(3)
                             if (p_glb > 0 .and. (ofk < 0 .or. ofk > old_ext(3, kk))) cycle

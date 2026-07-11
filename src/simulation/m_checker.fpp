@@ -188,7 +188,9 @@ contains
                        & "amr_block_end must exceed amr_block_beg on each active axis")
             @:PROHIBIT(amr_ref_ratio < 2, "amr_ref_ratio must be >= 2")
             @:PROHIBIT(amr_ref_ratio /= 2 .and. amr_regrid_int /= 0, &
-                       & "amr_ref_ratio /= 2 is supported only for static blocks: set amr_regrid_int = 0")
+                       & "amr_ref_ratio /= 2 with dynamic regrid (amr_regrid_int > 0) is not yet supported: the regrid index " &
+                       & // "math is generalized, but a multi-tile regrid-migration path still fails for ref_ratio > 2 (the " &
+                       & // "same path is correct at ref_ratio = 2). Use amr_regrid_int = 0 (a static block) with ref_ratio /= 2")
             @:PROHIBIT(amr_ref_ratio /= 2 .and. .not. amr_subcycle, &
                        & "amr_ref_ratio /= 2 requires amr_subcycle = T: the fine block must subcycle dt/ref_ratio so the finer " &
                        & // "grid satisfies its own (capillary/acoustic) dt limit; advancing it at the coarse dt (lockstep) is " &
