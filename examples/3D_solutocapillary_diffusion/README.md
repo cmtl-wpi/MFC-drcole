@@ -43,9 +43,10 @@ coarse-mesh gap being a resolution effect rather than a bug.
 
 Take the exact *ratios* (0.53 → 0.88) as **indicative, not tight**. They come from a whole-field moment
 `M₁ = Σ Γ̃ z`, which carries some bias from the staircased representation of the sphere on a Cartesian
-grid and tiny interface motion — bias that does not cleanly vanish with resolution. A 2D-circle
-cross-check makes this concrete: the *same* moment reads ~0.63× exact using the whole field but ~1.8×
-using only the interface band, with the true value sitting **between** them. So the moment brackets the
+grid and tiny interface motion — bias that does not cleanly vanish with resolution. The
+[2D-circle cross-check](../2D_solutocapillary_diffusion) makes this concrete: the *same* moment reads
+~0.63× exact using the whole field but ~1.8× using only the interface band, with the true value sitting
+**between** them (and the bracket *widening* with resolution, not closing). So the moment brackets the
 right answer rather than pinning it. What is solid here is (a) mass conservation to round-off and (b)
 the rate clearly increasing with resolution; the precise convergence rate would need a proper
 interfacial measurement — recover the concentration `Γ = Γ̃/|∇c|` on the band and project it onto the
