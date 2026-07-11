@@ -922,8 +922,9 @@ the standard case (lockstep or subcycled). `r /= 2` requires `amr_subcycle` so t
 grid subcycles `dt/r` and meets its own (capillary/acoustic) dt limit — advancing it at the
 coarse dt (lockstep) is unstable for r > 2. Tiled (multi-rank-split) fine blocks stay
 conservative via the block-to-block fine-fine seam halo, which the subcycle driver runs
-stage-synchronized across tiles. Dynamic regrid is not yet generalized, so `r /= 2` requires
-`amr_regrid_int = 0` (static block).
+stage-synchronized across tiles. Dynamic regrid (`amr_regrid_int > 0`) is supported at any
+`r`: the migration is conservative across a regrid at single- and multi-rank (np-independent
+to round-off).
 
 **Block slots.**
 `amr_max_blocks` (default 4) sets the number of fixed refined-block slots preallocated
