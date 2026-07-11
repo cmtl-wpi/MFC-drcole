@@ -2594,6 +2594,7 @@ contains
         real(wp), intent(inout)                                                                 :: time_avg
         real(wp), parameter                                                                     :: c_abs(3) = [0._wp, 1._wp, 0.5_wp]
         integer                                                                                 :: sub, s, islot
+        real(wp)                                                                                :: th
 
         if (.not. amr) return
         ! valid coarse CONS ghosts on both lerp sources (ALL ranks call: pairwise halo). Coarse-array ops -> ONCE for all blocks;
@@ -2630,71 +2631,67 @@ contains
         ! advance every block. Interiors are all at the same stage-entry level when the halo runs, so the exchange is consistent.
         do sub = 1, amr_ref_ratio
             do s = 1, 3
-                block
-                    real(wp) :: th
-                    th = (real(sub - 1, wp) + c_abs(s))/real(amr_ref_ratio, wp)
-                    ! FILL: lerp the ghost shell into q_cons at the stage time (device kernel; interior untouched) + substep-entry
-                    ! backup for the SSP-RK combination (owner-only; no collective, so guarded by ownership)
-                    do islot = 1, amr_num_blocks
-                        call s_amr_select_slot(islot)
-                        if (.not. amr_rank_owns_block) cycle
-                        call s_amr_lerp_fine_ghosts(amr_slots(amr_cur)%q_ghost_a, amr_slots(amr_cur)%q_ghost_b, &
-                                                    & amr_slots(amr_cur)%q_cons, th)
-                        if (qbmm .and. .not. polytropic) call s_amr_lerp_fine_ghosts_pbmv(amr_slots(amr_cur)%pb_f%sf, &
-                            & amr_slots(amr_cur)%mv_f%sf, amr_slots(amr_cur)%pb_ghost_a%sf, amr_slots(amr_cur)%mv_ghost_a%sf, &
-                            & amr_slots(amr_cur)%pb_ghost_b%sf, amr_slots(amr_cur)%mv_ghost_b%sf, th)
-                        if (s == 1) then
-                            call s_amr_copy_fine_fields(amr_slots(amr_cur)%q_cons, amr_slots(amr_cur)%q_cons_stor, 0, &
-                                                        & amr_slots(amr_cur)%m, 0, amr_slots(amr_cur)%n, 0, amr_slots(amr_cur)%p)
-                            if (qbmm .and. .not. polytropic) call s_amr_backup_pbmv(amr_slots(amr_cur)%pb_f%sf, &
-                                & amr_slots(amr_cur)%mv_f%sf, amr_slots(amr_cur)%pb_stor%sf, amr_slots(amr_cur)%mv_stor%sf)
-                        end if
-                    end do
+                th = (real(sub - 1, wp) + c_abs(s))/real(amr_ref_ratio, wp)
+                ! FILL: lerp the ghost shell into q_cons at the stage time (device kernel; interior untouched) + substep-entry
+                ! backup for the SSP-RK combination (owner-only; no collective, so guarded by ownership)
+                do islot = 1, amr_num_blocks
+                    call s_amr_select_slot(islot)
+                    if (.not. amr_rank_owns_block) cycle
+                    call s_amr_lerp_fine_ghosts(amr_slots(amr_cur)%q_ghost_a, amr_slots(amr_cur)%q_ghost_b, &
+                                                & amr_slots(amr_cur)%q_cons, th)
+                    if (qbmm .and. .not. polytropic) call s_amr_lerp_fine_ghosts_pbmv(amr_slots(amr_cur)%pb_f%sf, &
+                        & amr_slots(amr_cur)%mv_f%sf, amr_slots(amr_cur)%pb_ghost_a%sf, amr_slots(amr_cur)%mv_ghost_a%sf, &
+                        & amr_slots(amr_cur)%pb_ghost_b%sf, amr_slots(amr_cur)%mv_ghost_b%sf, th)
+                    if (s == 1) then
+                        call s_amr_copy_fine_fields(amr_slots(amr_cur)%q_cons, amr_slots(amr_cur)%q_cons_stor, 0, &
+                                                    & amr_slots(amr_cur)%m, 0, amr_slots(amr_cur)%n, 0, amr_slots(amr_cur)%p)
+                        if (qbmm .and. .not. polytropic) call s_amr_backup_pbmv(amr_slots(amr_cur)%pb_f%sf, &
+                            & amr_slots(amr_cur)%mv_f%sf, amr_slots(amr_cur)%pb_stor%sf, amr_slots(amr_cur)%mv_stor%sf)
+                    end if
+                end do
 
-                    ! HALO: overwrite adjacent-tile seam ghosts with neighbour interior (ALL ranks call; no-op for a single
-                    ! un-tiled block). Must run between FILL and ADVANCE so it reads stage-entry interiors.
-                    call s_amr_fine_fine_halo()
+                ! HALO: overwrite adjacent-tile seam ghosts with neighbour interior (ALL ranks call; no-op for a single
+                ! un-tiled block). Must run between FILL and ADVANCE so it reads stage-entry interiors.
+                call s_amr_fine_fine_halo()
 
-                    ! ADVANCE: fine RHS + RK update at dt/ref_ratio (owner-only)
-                    do islot = 1, amr_num_blocks
-                        call s_amr_select_slot(islot)
-                        if (.not. amr_rank_owns_block) cycle
-                        amr_in_fine_advance = .true.
-                        call s_amr_swap_to_fine()
-                        ! widen the conversion range to the ghost shell (restored by s_amr_restore_coarse)
-                        idwint = amr_slots(amr_cur)%idwbuff
-                        $:GPU_UPDATE(device='[idwint]')
-                        if (qbmm .and. .not. polytropic) then
-                            ! the block's OWN side-state and rhs scratch (the coarse arrays stay untouched)
-                            call s_compute_rhs(amr_slots(amr_cur)%q_cons, q_T_sf, amr_slots(amr_cur)%q_prim, bc_type, &
-                                               & amr_slots(amr_cur)%rhs, amr_slots(amr_cur)%pb_f%sf, amr_rhs_pb_f, &
-                                               & amr_slots(amr_cur)%mv_f%sf, amr_rhs_mv_f, t_step, time_avg, s)
-                        else
-                            call s_compute_rhs(amr_slots(amr_cur)%q_cons, q_T_sf, amr_slots(amr_cur)%q_prim, bc_type, &
-                                               & amr_slots(amr_cur)%rhs, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg, s)
-                        end if
-                        call s_amr_restore_coarse()
-                        amr_in_fine_advance = .false.
+                ! ADVANCE: fine RHS + RK update at dt/ref_ratio (owner-only)
+                do islot = 1, amr_num_blocks
+                    call s_amr_select_slot(islot)
+                    if (.not. amr_rank_owns_block) cycle
+                    amr_in_fine_advance = .true.
+                    call s_amr_swap_to_fine()
+                    ! widen the conversion range to the ghost shell (restored by s_amr_restore_coarse)
+                    idwint = amr_slots(amr_cur)%idwbuff
+                    $:GPU_UPDATE(device='[idwint]')
+                    if (qbmm .and. .not. polytropic) then
+                        ! the block's OWN side-state and rhs scratch (the coarse arrays stay untouched)
+                        call s_compute_rhs(amr_slots(amr_cur)%q_cons, q_T_sf, amr_slots(amr_cur)%q_prim, bc_type, &
+                                           & amr_slots(amr_cur)%rhs, amr_slots(amr_cur)%pb_f%sf, amr_rhs_pb_f, &
+                                           & amr_slots(amr_cur)%mv_f%sf, amr_rhs_mv_f, t_step, time_avg, s)
+                    else
+                        call s_compute_rhs(amr_slots(amr_cur)%q_cons, q_T_sf, amr_slots(amr_cur)%q_prim, bc_type, &
+                                           & amr_slots(amr_cur)%rhs, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg, s)
+                    end if
+                    call s_amr_restore_coarse()
+                    amr_in_fine_advance = .false.
 
-                        ! RK stage update at the FINE time step (device kernel)
-                        call s_amr_fine_rk_update(amr_slots(amr_cur)%q_cons, amr_slots(amr_cur)%q_cons_stor, &
-                                                  & amr_slots(amr_cur)%rhs, coefs(s, 1), coefs(s, 2), coefs(s, 3), coefs(s, 4), &
-                                                  & amr_dt_fine)
-                        if (qbmm .and. .not. polytropic) then
-                            call s_amr_fine_rk_update_pbmv(amr_slots(amr_cur)%pb_f%sf, amr_slots(amr_cur)%mv_f%sf, &
-                                                           & amr_slots(amr_cur)%pb_stor%sf, amr_slots(amr_cur)%mv_stor%sf, &
-                                                           & amr_rhs_pb_f, amr_rhs_mv_f, coefs(s, 1), coefs(s, 2), coefs(s, 3), &
-                                                           & coefs(s, 4), amr_dt_fine)
-                        end if
-                        ! 6-equation model: per-substage pressure relaxation (instantaneous equilibration -
-                        ! per stage at fine dt is the same infinite-rate limit the coarse applies per stage)
-                        if (model_eqns == model_eqns_6eq .and. (.not. relax)) call s_amr_pressure_relax_fine()
-                        ! moving body: rebuild the fine-block IB state at the body's fine sub-time position (th matches the lerp)
-                        if (moving_immersed_boundary_flag) call s_amr_update_mib_fine(th)
-                        ! IB state correction on the fine block after each substep RK update (no-op unless ib)
-                        call s_amr_ib_correct_fine()
-                    end do
-                end block
+                    ! RK stage update at the FINE time step (device kernel)
+                    call s_amr_fine_rk_update(amr_slots(amr_cur)%q_cons, amr_slots(amr_cur)%q_cons_stor, amr_slots(amr_cur)%rhs, &
+                                              & coefs(s, 1), coefs(s, 2), coefs(s, 3), coefs(s, 4), amr_dt_fine)
+                    if (qbmm .and. .not. polytropic) then
+                        call s_amr_fine_rk_update_pbmv(amr_slots(amr_cur)%pb_f%sf, amr_slots(amr_cur)%mv_f%sf, &
+                                                       & amr_slots(amr_cur)%pb_stor%sf, amr_slots(amr_cur)%mv_stor%sf, &
+                                                       & amr_rhs_pb_f, amr_rhs_mv_f, coefs(s, 1), coefs(s, 2), coefs(s, 3), &
+                                                       & coefs(s, 4), amr_dt_fine)
+                    end if
+                    ! 6-equation model: per-substage pressure relaxation (instantaneous equilibration -
+                    ! per stage at fine dt is the same infinite-rate limit the coarse applies per stage)
+                    if (model_eqns == model_eqns_6eq .and. (.not. relax)) call s_amr_pressure_relax_fine()
+                    ! moving body: rebuild the fine-block IB state at the body's fine sub-time position (th matches the lerp)
+                    if (moving_immersed_boundary_flag) call s_amr_update_mib_fine(th)
+                    ! IB state correction on the fine block after each substep RK update (no-op unless ib)
+                    call s_amr_ib_correct_fine()
+                end do
             end do
         end do
         call s_amr_select_slot(1)
