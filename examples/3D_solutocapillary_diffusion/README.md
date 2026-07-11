@@ -35,10 +35,21 @@ over a few cells, which at low resolution is a big fraction of the whole sphere.
 the fuzz shrinks and the rate rises steadily toward the exact answer, halving the error each time the
 mesh doubles. The total amount of surfactant is conserved to round-off the whole time.
 
-**The takeaway:** the operator is **correct** — it converges to the exact answer. The gap on a coarse
-mesh is just a resolution effect, not a bug. The approach is gradual (first order), so getting within a
-few percent needs a well-resolved interface (~30 cells across the radius) — the same resolution the
-harder surfactant-laden-drop benchmarks (Stone & Leal) would need.
+**The takeaway:** the rate rises steadily toward the exact value as the mesh is refined, and the total
+surfactant is conserved exactly — consistent with the operator converging to the right answer, with the
+coarse-mesh gap being a resolution effect rather than a bug.
+
+## Honest caveat on the measurement
+
+Take the exact *ratios* (0.53 → 0.88) as **indicative, not tight**. They come from a whole-field moment
+`M₁ = Σ Γ̃ z`, which carries some bias from the staircased representation of the sphere on a Cartesian
+grid and tiny interface motion — bias that does not cleanly vanish with resolution. A 2D-circle
+cross-check makes this concrete: the *same* moment reads ~0.63× exact using the whole field but ~1.8×
+using only the interface band, with the true value sitting **between** them. So the moment brackets the
+right answer rather than pinning it. What is solid here is (a) mass conservation to round-off and (b)
+the rate clearly increasing with resolution; the precise convergence rate would need a proper
+interfacial measurement — recover the concentration `Γ = Γ̃/|∇c|` on the band and project it onto the
+`cos θ` mode — which this example does not yet do.
 
 ## Details (the math and how to run it)
 
@@ -46,8 +57,8 @@ harder surfactant-laden-drop benchmarks (Stone & Leal) would need.
   the drop stays put), seeded with the `l = 1` spherical-harmonic mode `Γ = Γ₀(1 + ε z/R)` (`z/R = cos θ`).
 - **Exact rate:** a spherical-harmonic mode of degree `l` decays as `exp(−l(l+1) D_s/R² · t)`. For
   `l = 1` that is `2 D_s/R²` — the *sphere* eigenvalue, **not** the flat/circle value `D_s k²`.
-- **Measured** as the `z`-moment `M₁ = Σ Γ̃ z` (a clean surface quantity because the stored density
-  `Γ̃ = Γ·|∇c|` sits on the interface), fit to an exponential.
+- **Measured** as the `z`-moment `M₁ = Σ Γ̃ z` (the stored density `Γ̃ = Γ·|∇c|` sits on the interface),
+  fit to an exponential — an approximate estimator; see the measurement caveat above.
 - **Run the sweep** — one build serves every resolution, since the `z/R` initial condition does not
   depend on the mesh:
   ```
@@ -60,5 +71,6 @@ harder surfactant-laden-drop benchmarks (Stone & Leal) would need.
 | 10.7 | 0.19 | 1.259 | 1.600 | 0.79 | 0.000 % |
 | 16.0 | 0.12 | 1.400 | 1.600 | 0.88 | 0.000 % |
 
-The steadily rising ratio (first order in the band thickness `w/R`) is exactly the behaviour expected
-of a diffuse-interface surface operator, and it confirms the discretization is correct.
+The steadily rising ratio is the behaviour expected of a diffuse-interface surface operator as the band
+thickness `w/R` shrinks, and — together with exact mass conservation — is consistent with a convergent,
+correct operator. The precise rate of convergence is not established here, only bracketed (see caveat).
