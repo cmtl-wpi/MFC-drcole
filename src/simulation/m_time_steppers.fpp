@@ -29,7 +29,8 @@ module m_time_steppers
     use m_constants, only: model_eqns_6eq, time_stepper_rk1, time_stepper_rk2, time_stepper_rk3
     use m_active_box, only: s_grow_active_box, s_check_active_box_envelope, ab_x, ab_y, ab_z, ab_active
     use m_amr, only: s_amr_fine_stage_fill, s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, &
-        & s_restrict_fine_to_coarse, s_amr_relax_fine, s_amr_p2p_reflux_faces
+        & s_restrict_fine_to_coarse, s_amr_relax_fine, s_amr_p2p_reflux_faces, s_amr_fill_l2_ghosts, s_amr_advance_l2_stage, &
+        & s_amr_restrict_l2_to_l1
     use m_amr_registers, only: s_amr_apply_reflux, s_amr_apply_reflux_state
 
     implicit none
@@ -513,6 +514,8 @@ contains
                     call s_amr_select_slot(islot)  ! refresh the region/intersection mirrors (sets amr_cur)
                     call s_amr_fine_stage_fill(q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf)
                 end do
+                ! multilevel P2: fill the nested level-2 block's ghost shell from its level-1 parent's stage-entry interior
+                call s_amr_fill_l2_ghosts()
                 ! Phase 2 - block-to-block fine-fine halo: overwrite adjacent-sub-block seam ghosts with neighbour fine interior.
                 call s_amr_fine_fine_halo()
                 ! Phase 3 - ADVANCE every block (RHS + RK update) + reflux at its c/f faces.
@@ -524,6 +527,9 @@ contains
                     call s_amr_p2p_reflux_faces()
                     call s_amr_apply_reflux(rhs_vf)  ! coarse update sees the fine flux at c/f faces
                 end do
+                ! multilevel P2: advance the nested level-2 block one RK stage (lockstep) from the parent's stage-entry ghosts
+                call s_amr_advance_l2_stage(s, rk_coef(s,:), bc_type, q_T_sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, &
+                                            & time_avg)
                 call s_amr_select_slot(1)
             end if
 
@@ -620,6 +626,8 @@ contains
                 call s_advance_amr_fine_substeps(q_cons_ts(stor)%vf, q_cons_ts(1)%vf, rk_coef, bc_type, q_T_sf, pb_ts(stor)%sf, &
                                                  & mv_ts(stor)%sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
             end if
+            ! multilevel P2: fold the nested level-2 block into its level-1 parent BEFORE the parent restricts into the base
+            call s_amr_restrict_l2_to_l1()
             do islot = 1, amr_num_blocks
                 call s_amr_select_slot(islot)  ! refresh the region/intersection mirrors (sets amr_cur)
                 ! equilibrate the fine solution (phase change) before it restricts to the coarse level

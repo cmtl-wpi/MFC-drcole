@@ -41,7 +41,8 @@ module m_amr
         & s_finalize_amr_module, s_amr_swap_to_fine, s_amr_restore_coarse, s_amr_fill_fine_ghosts, s_amr_operator_checks, &
         & s_amr_fine_stage_fill, s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, &
         & s_amr_conservation_defect, s_set_amr_fine_geometry, s_amr_regrid, s_write_amr_restart, s_read_amr_restart, &
-        & s_amr_relax_fine, s_amr_setup_ib, s_amr_check_active_box_containment, s_amr_p2p_reflux_faces
+        & s_amr_relax_fine, s_amr_setup_ib, s_amr_check_active_box_containment, s_amr_p2p_reflux_faces, s_amr_fill_l2_ghosts, &
+        & s_amr_advance_l2_stage, s_amr_restrict_l2_to_l1
 
     !> Fine-level time step for subcycling (= 0.5*dt after init; 0 when amr is off).
     real(wp) :: amr_dt_fine = 0._wp
@@ -1966,6 +1967,69 @@ contains
         call s_amr_select_slot(1)
 
     end subroutine s_amr_l2_conservation_check
+
+    !> Multilevel P2 (S4): fill the level-2 block's ghost shell from its level-1 parent's current (stage-entry) interior. Device
+    !! kernel in the parent-native frame (amr_cpat_off=0); saves/restores amr_cpat_off and returns the parent as the working slot.
+    impure subroutine s_amr_fill_l2_ghosts()
+
+        integer :: par, saved_cpat_off(3)
+
+        if (amr_l2_slot <= 0) return
+        saved_cpat_off = amr_cpat_off
+        par = amr_slots(amr_l2_slot)%parent
+        call s_amr_select_l2(amr_l2_slot)
+        call s_amr_fill_fine_ghosts(amr_slots(par)%q_cons, amr_slots(amr_l2_slot)%q_cons)
+        amr_cpat_off = saved_cpat_off
+        call s_amr_select_slot(par)
+
+    end subroutine s_amr_fill_l2_ghosts
+
+    !> Multilevel P2 (S4): advance the level-2 block one RK stage (lockstep). Thin wrapper - select the L2 frame and reuse the
+    !! generic per-block s_amr_fine_stage_advance (it swaps the global grid to the L2 slot's geometry), then restore the parent.
+    impure subroutine s_amr_advance_l2_stage(s, coefs, bc_type, q_T_sf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg)
+
+        integer, intent(in)                                        :: s, t_step
+        real(wp), intent(in)                                       :: coefs(4)
+        type(integer_field), dimension(1:num_dims,1:2), intent(in) :: bc_type
+        type(scalar_field), intent(inout)                          :: q_T_sf
+        real(stp), dimension(:,:,:,:,:), intent(inout)             :: pb_in, mv_in
+        real(wp), dimension(:,:,:,:,:), intent(inout)              :: rhs_pb, rhs_mv
+        real(wp), intent(inout)                                    :: time_avg
+        integer                                                    :: saved_cpat_off(3)
+
+        if (amr_l2_slot <= 0) return
+        saved_cpat_off = amr_cpat_off
+        call s_amr_select_l2(amr_l2_slot)
+        call s_amr_fine_stage_advance(s, coefs, bc_type, q_T_sf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg)
+        amr_cpat_off = saved_cpat_off
+        call s_amr_select_slot(amr_slots(amr_l2_slot)%parent)
+
+    end subroutine s_amr_advance_l2_stage
+
+    !> Multilevel P2 (S4): fold the level-2 block back into its level-1 parent (child-average the L2 interior into the covered L1
+    !! cells) once per step - the L2<->L1 analogue of the L1->base restrict. Host restrict with a device sync: pull L2 to host,
+    !! restrict into the L1 slot (amr_cpat_off=0 -> native L1-fine index), push the L1 slot to device. Leaves the parent selected.
+    impure subroutine s_amr_restrict_l2_to_l1()
+
+        integer :: par, i, saved_cpat_off(3)
+
+        if (amr_l2_slot <= 0) return
+        saved_cpat_off = amr_cpat_off
+        par = amr_slots(amr_l2_slot)%parent
+        call s_amr_select_l2(amr_l2_slot)
+        do i = 1, sys_size
+            $:GPU_UPDATE(host='[amr_slots(amr_l2_slot)%q_cons(i)%sf]')
+        end do
+        do i = 1, sys_size
+            call s_restrict_one_var(amr_slots(amr_l2_slot)%q_cons(i), amr_slots(par)%q_cons(i))
+        end do
+        do i = 1, sys_size
+            $:GPU_UPDATE(device='[amr_slots(par)%q_cons(i)%sf]')
+        end do
+        amr_cpat_off = saved_cpat_off
+        call s_amr_select_slot(par)
+
+    end subroutine s_amr_restrict_l2_to_l1
 
     !> Swap the global grid state to the fine block. MUST be paired with s_amr_restore_coarse.
     impure subroutine s_amr_swap_to_fine()
