@@ -30,7 +30,7 @@ module m_time_steppers
     use m_active_box, only: s_grow_active_box, s_check_active_box_envelope, ab_x, ab_y, ab_z, ab_active
     use m_amr, only: s_amr_fine_stage_fill, s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, &
         & s_restrict_fine_to_coarse, s_amr_relax_fine, s_amr_p2p_reflux_faces, s_amr_fill_l2_ghosts, s_amr_advance_l2_stage, &
-        & s_amr_restrict_l2_to_l1
+        & s_amr_restrict_l2_to_l1, s_amr_fine_stage_rhs, s_amr_fine_stage_update, s_amr_reflux_l2
     use m_amr_registers, only: s_amr_apply_reflux, s_amr_apply_reflux_state
 
     implicit none
@@ -521,15 +521,24 @@ contains
                 ! Phase 3 - ADVANCE every block (RHS + RK update) + reflux at its c/f faces.
                 do islot = 1, amr_num_blocks
                     call s_amr_select_slot(islot)
-                    call s_amr_fine_stage_advance(s, rk_coef(s,:), bc_type, q_T_sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, &
-                                                  & t_step, time_avg)
+                    if (amr_l2_slot > 0 .and. amr_l2_parent == islot) then
+                        ! multilevel P2 (S5): nest the L2 stage BETWEEN L1's rhs and update so the L2 reflux corrects L1's rhs
+                        ! (the analogue of base rhs -> [L1 advance + reflux] -> base update). L1 rhs captures creg(L2); the L2
+                        ! advance captures freg(L2); s_amr_reflux_l2 applies (creg - freg_avg)/dx_L1 into the L1 rhs.
+                        call s_amr_fine_stage_rhs(s, bc_type, q_T_sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+                        call s_amr_advance_l2_stage(s, rk_coef(s,:), bc_type, q_T_sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, &
+                                                    & t_step, time_avg)
+                        call s_amr_select_slot(islot)  ! back to L1 (advance_l2_stage left amr_cur at the parent; be explicit)
+                        call s_amr_reflux_l2()
+                        call s_amr_fine_stage_update(s, rk_coef(s,:))
+                    else
+                        call s_amr_fine_stage_advance(s, rk_coef(s,:), bc_type, q_T_sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, &
+                                                      & t_step, time_avg)
+                    end if
                     ! freg slices of the block faces move to the coarse-outside-owners (ALL ranks call; no-op at np=1)
                     call s_amr_p2p_reflux_faces()
                     call s_amr_apply_reflux(rhs_vf)  ! coarse update sees the fine flux at c/f faces
                 end do
-                ! multilevel P2: advance the nested level-2 block one RK stage (lockstep) from the parent's stage-entry ghosts
-                call s_amr_advance_l2_stage(s, rk_coef(s,:), bc_type, q_T_sf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, &
-                                            & time_avg)
                 call s_amr_select_slot(1)
             end if
 

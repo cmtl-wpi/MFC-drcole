@@ -22,7 +22,7 @@ module m_amr
         & s_mpi_allreduce_max, s_mpi_allreduce_integer_sum, s_mpi_sendrecv_variables_buffers, s_mpi_allreduce_array_max
     use m_rhs, only: s_compute_rhs
     use m_phase_change, only: s_infinite_relaxation_k
-    use m_amr_registers, only: s_amr_zero_fine_registers, freg
+    use m_amr_registers, only: s_amr_zero_fine_registers, freg, creg
     use m_rank_timing, only: s_rank_time_tic, s_rank_time_toc
     use m_ibm, only: s_ibm_alloc_fine, s_ibm_setup_fine, s_ibm_swap_to_fine, s_ibm_restore_from_fine, s_ibm_correct_state, &
         & s_update_mib, moving_immersed_boundary_flag, num_gps
@@ -42,7 +42,7 @@ module m_amr
         & s_amr_fine_stage_fill, s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, &
         & s_amr_conservation_defect, s_set_amr_fine_geometry, s_amr_regrid, s_write_amr_restart, s_read_amr_restart, &
         & s_amr_relax_fine, s_amr_setup_ib, s_amr_check_active_box_containment, s_amr_p2p_reflux_faces, s_amr_fill_l2_ghosts, &
-        & s_amr_advance_l2_stage, s_amr_restrict_l2_to_l1
+        & s_amr_advance_l2_stage, s_amr_restrict_l2_to_l1, s_amr_fine_stage_rhs, s_amr_fine_stage_update, s_amr_reflux_l2
 
     !> Fine-level time step for subcycling (= 0.5*dt after init; 0 when amr is off).
     real(wp) :: amr_dt_fine = 0._wp
@@ -88,8 +88,7 @@ module m_amr
     !! slot amr_cur (m_global_parameters) selects which slot every per-block routine operates on.
     type(t_level), allocatable :: amr_slots(:)
     integer                    :: amr_maxc(3)  !< max coarse block cells per dim: (m_glb+1)/2 etc.; 1 for collapsed dims
-    !> slot index of the single static level-2 block (0 = none); set at init when amr_max_levels>=2 (multilevel P2)
-    integer :: amr_l2_slot = 0
+    ! amr_l2_slot / amr_l2_parent live in m_global_parameters so m_amr_registers (which cannot `use m_amr`) sees them (S5 reflux)
 
     !> Per-slot field-array sizing (module-scope so s_amr_alloc_slot/s_amr_free_slot, called from init/regrid/restart/finalize, see
     !! them): max fine cells per dim (2*maxc_loc-1) and the buffered array bounds. amr_slot_live(k) tracks whether slot k's
@@ -965,6 +964,10 @@ contains
         amr_slots(l2)%parent = par
         amr_slots(l2)%ref_ratio = rr
         amr_slots(l2)%region%lo = lo; amr_slots(l2)%region%hi = hi
+        ! mirror the L2 region (in parent-fine-cell indices) so m_amr_registers reads the L1<->L2 interface for the reflux (S5)
+        amr_region_lo_all(:,l2) = lo; amr_region_hi_all(:,l2) = hi
+        amr_isect_lo_all(:,l2) = lo; amr_isect_hi_all(:,l2) = hi
+        amr_owns_all(l2) = .true.
 
         amr_slots(l2)%m = rr*(hi(1) - lo(1) + 1) - 1
         amr_slots(l2)%n = 0; amr_slots(l2)%p = 0
@@ -1024,7 +1027,7 @@ contains
 
         call s_amr_alloc_slot(l2)
         call s_set_amr_l2_geometry(l2, par, lo, hi)
-        amr_l2_slot = l2
+        amr_l2_slot = l2; amr_l2_parent = par
 
         if (proc_rank == 0) print '(A,3(1X,I0),A,3(1X,I0),A,3(1X,I0))', ' [amr] level-2 block: L1-fine lo', lo, ' hi', hi, &
             & ' -> fine m/n/p', amr_slots(l2)%m, amr_slots(l2)%n, amr_slots(l2)%p
@@ -2030,6 +2033,121 @@ contains
                                              & nchild)
 
     end subroutine s_amr_restrict_l2_to_l1
+
+    !> Multilevel P2 (S5c): apply the L1<->L2 reflux into the level-1 parent's rhs (public no-arg wrapper; passes the parent slot's
+    !! rhs to the kernel so the device descriptor is carried on the actual argument - amr_slots itself is not device-mapped).
+    impure subroutine s_amr_reflux_l2()
+
+        if (amr_l2_slot <= 0) return
+        call s_amr_apply_reflux_l2(amr_slots(amr_l2_parent)%rhs)
+
+    end subroutine s_amr_reflux_l2
+
+    !> Correct the level-1 rhs in the cells just OUTSIDE the level-2 block so the L1 update sees the child-averaged L2 flux at every
+    !! L2 c/f face. Mirror of s_amr_apply_reflux (m_amr_registers) but targets the L1 slot rhs with the L1 slot's dx (read as host
+    !! scalars - as s_amr_apply_reflux reads the global dx). creg(L2) captured in L1's rhs half; freg(L2) when L2 advanced. Signs
+    !! follow rhs=(F_left-F_right)/dx: low face is the outside cell's RIGHT face. np=1: all faces owned, sidx=0, tlo/thi=region.
+    impure subroutine s_amr_apply_reflux_l2(rhs_l1)
+
+        type(scalar_field), dimension(sys_size), intent(inout) :: rhs_l1
+        integer :: eq, c1, c2, f10, f20, dd1, dd2, nch, l2, par, dd1_hi, dd2_hi, rr
+        integer :: bh1, bh2, bh3, ol1, ol2, ol3, oh1, oh2, oh3, tl1, tl2, tl3, rlo(3), rhi(3)
+        logical :: d2, d3
+        real(wp) :: fblo, fbhi, mlo, mhi
+
+        if (igr) return  ! stage-1 IGR: restriction-only coupling (no captured fluxes)
+        l2 = amr_l2_slot; par = amr_l2_parent
+        rr = amr_ref_ratio; d2 = n_glb > 0; d3 = p_glb > 0
+        rlo = amr_slots(l2)%region%lo; rhi = amr_slots(l2)%region%hi
+        bh1 = rhi(1) - rlo(1); bh2 = rhi(2) - rlo(2); bh3 = rhi(3) - rlo(3)
+        ol1 = rlo(1) - 1; oh1 = rhi(1) + 1; ol2 = rlo(2) - 1; oh2 = rhi(2) + 1; ol3 = rlo(3) - 1; oh3 = rhi(3) + 1
+        tl1 = rlo(1); tl2 = rlo(2); tl3 = rlo(3)
+
+        ! x-faces: transverse (y, z)
+        nch = 1; if (d2) nch = nch*rr; if (d3) nch = nch*rr
+        dd1_hi = merge(rr - 1, 0, d2); dd2_hi = merge(rr - 1, 0, d3)
+        mlo = amr_slots(par)%dx(ol1); mhi = amr_slots(par)%dx(oh1)
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[f10, f20, dd1, dd2, fblo, fbhi]')
+        do eq = 1, sys_size
+            do c2 = 0, bh3
+                do c1 = 0, bh2
+                    f20 = 0; if (d3) f20 = rr*c2
+                    f10 = 0; if (d2) f10 = rr*c1
+                    fblo = 0._wp; fbhi = 0._wp
+                    do dd2 = 0, dd2_hi
+                        do dd1 = 0, dd1_hi
+                            fblo = fblo + freg(1)%lo(eq, f10 + dd1, f20 + dd2, l2)
+                            fbhi = fbhi + freg(1)%hi(eq, f10 + dd1, f20 + dd2, l2)
+                        end do
+                    end do
+                    fblo = fblo/real(nch, wp); fbhi = fbhi/real(nch, wp)
+                    rhs_l1(eq)%sf(ol1, tl2 + c1, tl3 + c2) = rhs_l1(eq)%sf(ol1, tl2 + c1, tl3 + c2) + (creg(1)%lo(eq, c1, c2, &
+                           & l2) - fblo)/mlo
+                    rhs_l1(eq)%sf(oh1, tl2 + c1, tl3 + c2) = rhs_l1(eq)%sf(oh1, tl2 + c1, tl3 + c2) + (fbhi - creg(1)%hi(eq, c1, &
+                           & c2, l2))/mhi
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+        ! y-faces (n_glb > 0): transverse (x always active, z)
+        if (d2) then
+            nch = rr; if (d3) nch = nch*rr
+            dd2_hi = merge(rr - 1, 0, d3)
+            mlo = amr_slots(par)%dy(ol2); mhi = amr_slots(par)%dy(oh2)
+            $:GPU_PARALLEL_LOOP(collapse=3, private='[f10, f20, dd1, dd2, fblo, fbhi]')
+            do eq = 1, sys_size
+                do c2 = 0, bh3
+                    do c1 = 0, bh1
+                        f20 = 0; if (d3) f20 = rr*c2
+                        f10 = rr*c1
+                        fblo = 0._wp; fbhi = 0._wp
+                        do dd2 = 0, dd2_hi
+                            do dd1 = 0, rr - 1
+                                fblo = fblo + freg(2)%lo(eq, f10 + dd1, f20 + dd2, l2)
+                                fbhi = fbhi + freg(2)%hi(eq, f10 + dd1, f20 + dd2, l2)
+                            end do
+                        end do
+                        fblo = fblo/real(nch, wp); fbhi = fbhi/real(nch, wp)
+                        rhs_l1(eq)%sf(tl1 + c1, ol2, tl3 + c2) = rhs_l1(eq)%sf(tl1 + c1, ol2, tl3 + c2) + (creg(2)%lo(eq, c1, c2, &
+                               & l2) - fblo)/mlo
+                        rhs_l1(eq)%sf(tl1 + c1, oh2, tl3 + c2) = rhs_l1(eq)%sf(tl1 + c1, oh2, tl3 + c2) + (fbhi - creg(2)%hi(eq, &
+                               & c1, c2, l2))/mhi
+                    end do
+                end do
+            end do
+            $:END_GPU_PARALLEL_LOOP()
+        end if
+
+        ! z-faces (p_glb > 0): transverse (x, y both active)
+        if (d3) then
+            nch = rr*rr
+            mlo = amr_slots(par)%dz(ol3); mhi = amr_slots(par)%dz(oh3)
+            $:GPU_PARALLEL_LOOP(collapse=3, private='[f10, f20, dd1, dd2, fblo, fbhi]')
+            do eq = 1, sys_size
+                do c2 = 0, bh2
+                    do c1 = 0, bh1
+                        f20 = rr*c2
+                        f10 = rr*c1
+                        fblo = 0._wp; fbhi = 0._wp
+                        do dd2 = 0, rr - 1
+                            do dd1 = 0, rr - 1
+                                fblo = fblo + freg(3)%lo(eq, f10 + dd1, f20 + dd2, l2)
+                                fbhi = fbhi + freg(3)%hi(eq, f10 + dd1, f20 + dd2, l2)
+                            end do
+                        end do
+                        fblo = fblo/real(nch, wp); fbhi = fbhi/real(nch, wp)
+                        rhs_l1(eq)%sf(tl1 + c1, tl2 + c2, ol3) = rhs_l1(eq)%sf(tl1 + c1, tl2 + c2, ol3) + (creg(3)%lo(eq, c1, c2, &
+                               & l2) - fblo)/mlo
+                        rhs_l1(eq)%sf(tl1 + c1, tl2 + c2, oh3) = rhs_l1(eq)%sf(tl1 + c1, tl2 + c2, oh3) + (fbhi - creg(3)%hi(eq, &
+                               & c1, c2, l2))/mhi
+                    end do
+                end do
+            end do
+            $:END_GPU_PARALLEL_LOOP()
+        end if
+
+    end subroutine s_amr_apply_reflux_l2
 
     !> Swap the global grid state to the fine block. MUST be paired with s_amr_restore_coarse.
     impure subroutine s_amr_swap_to_fine()
