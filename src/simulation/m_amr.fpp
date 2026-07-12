@@ -2011,23 +2011,23 @@ contains
     !! restrict into the L1 slot (amr_cpat_off=0 -> native L1-fine index), push the L1 slot to device. Leaves the parent selected.
     impure subroutine s_amr_restrict_l2_to_l1()
 
-        integer :: par, i, saved_cpat_off(3)
+        integer :: par, l2, rr, dj_hi, dk_hi, nchild, bl(3), bh(3), rlo(3)
 
         if (amr_l2_slot <= 0) return
-        saved_cpat_off = amr_cpat_off
-        par = amr_slots(amr_l2_slot)%parent
-        call s_amr_select_l2(amr_l2_slot)
-        do i = 1, sys_size
-            $:GPU_UPDATE(host='[amr_slots(amr_l2_slot)%q_cons(i)%sf]')
-        end do
-        do i = 1, sys_size
-            call s_restrict_one_var(amr_slots(amr_l2_slot)%q_cons(i), amr_slots(par)%q_cons(i))
-        end do
-        do i = 1, sys_size
-            $:GPU_UPDATE(device='[amr_slots(par)%q_cons(i)%sf]')
-        end do
-        amr_cpat_off = saved_cpat_off
-        call s_amr_select_slot(par)
+        l2 = amr_l2_slot; par = amr_slots(l2)%parent
+        rr = amr_ref_ratio
+        nchild = rr; if (n_glb > 0) nchild = nchild*rr; if (p_glb > 0) nchild = nchild*rr
+        dj_hi = merge(rr - 1, 0, n_glb > 0); dk_hi = merge(rr - 1, 0, p_glb > 0)
+        bl = 0; bh = 0
+        bl(1) = amr_slots(l2)%region%lo(1); bh(1) = amr_slots(l2)%region%hi(1)
+        if (n_glb > 0) then; bl(2) = amr_slots(l2)%region%lo(2); bh(2) = amr_slots(l2)%region%hi(2); end if
+        if (p_glb > 0) then; bl(3) = amr_slots(l2)%region%lo(3); bh(3) = amr_slots(l2)%region%hi(3); end if
+        rlo = bl  ! fine child fi0 = (ci - region_lo)*rr indexes the L2 interior
+        ! device-native (s_amr_restrict_overwrite_device): child-average the L2 interior into ONLY the covered L1 cells on device.
+        ! A whole-array host->device push (the naive host restrict) would clobber the device-advanced non-covered L1 cells with a
+        ! stale host copy - the 0a615747 GPU bug class; invisible on CPU, corrupts a moving interface on GPU. Bit-identical on CPU.
+        call s_amr_restrict_overwrite_device(amr_slots(par)%q_cons, amr_slots(l2)%q_cons, bl, bh, 0, 0, 0, rlo, rr, dj_hi, dk_hi, &
+                                             & nchild)
 
     end subroutine s_amr_restrict_l2_to_l1
 
