@@ -37,11 +37,11 @@ module m_amr
 
     private
     public :: t_level, amr_maxc, amr_maxc_fit, amr_dt_fine, s_initialize_amr_module, s_populate_amr_fine, &
-        & s_interpolate_coarse_to_fine, s_restrict_fine_to_coarse, s_amr_conservation_check, s_finalize_amr_module, &
-        & s_amr_swap_to_fine, s_amr_restore_coarse, s_amr_fill_fine_ghosts, s_amr_operator_checks, s_amr_fine_stage_fill, &
-        & s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, s_amr_conservation_defect, &
-        & s_set_amr_fine_geometry, s_amr_regrid, s_write_amr_restart, s_read_amr_restart, s_amr_relax_fine, s_amr_setup_ib, &
-        & s_amr_check_active_box_containment, s_amr_p2p_reflux_faces
+        & s_interpolate_coarse_to_fine, s_restrict_fine_to_coarse, s_amr_conservation_check, s_amr_l2_conservation_check, &
+        & s_finalize_amr_module, s_amr_swap_to_fine, s_amr_restore_coarse, s_amr_fill_fine_ghosts, s_amr_operator_checks, &
+        & s_amr_fine_stage_fill, s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, &
+        & s_amr_conservation_defect, s_set_amr_fine_geometry, s_amr_regrid, s_write_amr_restart, s_read_amr_restart, &
+        & s_amr_relax_fine, s_amr_setup_ib, s_amr_check_active_box_containment, s_amr_p2p_reflux_faces
 
     !> Fine-level time step for subcycling (= 0.5*dt after init; 0 when amr is off).
     real(wp) :: amr_dt_fine = 0._wp
@@ -1030,6 +1030,21 @@ contains
 
     end subroutine s_amr_init_l2_block
 
+    !> Multilevel P2: make the level-2 slot the working slot in its PARENT-fine frame (np=1). Unlike s_amr_select_slot (base frame),
+    !! the L2 coarse source is the parent slot indexed in its native L1-fine cells: the patch offset is 0 and the intersection ==
+    !! the L2 region (the covered parent-fine cells). Owner is always this rank at np=1.
+    subroutine s_amr_select_l2(l2)
+
+        integer, intent(in) :: l2
+
+        amr_cur = l2
+        amr_region_lo = amr_slots(l2)%region%lo; amr_region_hi = amr_slots(l2)%region%hi
+        amr_isect_lo = amr_slots(l2)%region%lo; amr_isect_hi = amr_slots(l2)%region%hi
+        amr_cpat_off = 0
+        amr_rank_owns_block = .true.
+
+    end subroutine s_amr_select_l2
+
     !> Conservative-linear prolongation for a single variable pair. Reads coarse interior/ghost from qc; writes fine interior to qf.
     !! Minmod-limited slopes.
     impure subroutine s_prolong_one_var(qc, qf, pos, inject)
@@ -1081,9 +1096,11 @@ contains
     !> Conservative-linear prolongation: fill amr_fine interior from coarse (level-0), minmod-limited. Symmetric child offsets
     !! (+/-1/4 of a coarse cell) => the ref_ratio^d children average to the coarse value. Multi-fluid volume fractions take the
     !! sum-preserving closure path instead (single-fluid runs never branch, so their prolongation is untouched).
-    impure subroutine s_interpolate_coarse_to_fine()
+    impure subroutine s_interpolate_coarse_to_fine(qc_src)
 
-        integer :: i, bstride
+        !> coarse source (base->L1: amr_cg; L1->L2: parent slot q_cons)
+        type(scalar_field), dimension(sys_size), intent(in) :: qc_src
+        integer                                             :: i, bstride
 
         bstride = 1
         if (bubbles_euler) bstride = (eqn_idx%bub%end - eqn_idx%bub%beg + 1)/nb
@@ -1098,13 +1115,13 @@ contains
             ! cell's realizable moment set exactly). Non-QBMM Euler-Euler bubbles instead floor their POSITIVE
             ! moments (radius nR, non-polytropic partial pressure npb / vapor mass nmv); the signed velocity moment
             ! nV (offset 1 in each bin's stride) prolongs freely.
-            call s_prolong_one_var(amr_cg(i), amr_slots(amr_cur)%q_cons(i), &
+            call s_prolong_one_var(qc_src(i), amr_slots(amr_cur)%q_cons(i), &
                                    & pos=bubbles_euler .and. .not. qbmm .and. i >= eqn_idx%bub%beg .and. i <= eqn_idx%bub%end &
                                    & .and. mod(i - eqn_idx%bub%beg, bstride) /= 1, &
                                    & inject=qbmm .and. i >= eqn_idx%bub%beg .and. i <= eqn_idx%bub%end)
         end do
-        if (num_fluids > 1 .and. (.not. bubbles_lagrange)) call s_prolong_alphas_closure(amr_cg, amr_slots(amr_cur)%q_cons)
-        if (chemistry) call s_prolong_species_closure(amr_cg, amr_slots(amr_cur)%q_cons)
+        if (num_fluids > 1 .and. (.not. bubbles_lagrange)) call s_prolong_alphas_closure(qc_src, amr_slots(amr_cur)%q_cons)
+        if (chemistry) call s_prolong_species_closure(qc_src, amr_slots(amr_cur)%q_cons)
 
     end subroutine s_interpolate_coarse_to_fine
 
@@ -1237,7 +1254,7 @@ contains
     impure subroutine s_populate_amr_fine(q_cons_base)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_base
-        integer                                                :: i, islot
+        integer                                                :: i, islot, saved_cpat_off(3)
 
         if (.not. amr) return
         ! Prolong EVERY block (max_grid_size tiling can make several) from its gathered coarse patch. The P2P gather pulls each
@@ -1247,7 +1264,7 @@ contains
             call s_amr_select_slot(islot)
             call s_amr_gather_coarse_patch(q_cons_base, .false.)
             if (amr_rank_owns_block) then
-                call s_interpolate_coarse_to_fine()
+                call s_interpolate_coarse_to_fine(amr_cg)
                 do i = 1, sys_size
                     $:GPU_UPDATE(device='[amr_slots(amr_cur)%q_cons(i)%sf]')
                 end do
@@ -1255,6 +1272,18 @@ contains
                 if (qbmm .and. .not. polytropic) call s_amr_prolong_pbmv()
             end if
         end do
+        ! Multilevel P2: fill the level-2 block interior by prolonging from its (now-populated) level-1 parent slot. Save/restore
+        ! amr_cpat_off: s_amr_select_l2 zeroes it (parent-native frame), but the downstream L1 restrict-prolong check reads the
+        ! last L1 block's gather offset (s_amr_select_slot does not touch amr_cpat_off).
+        if (amr_l2_slot > 0) then
+            saved_cpat_off = amr_cpat_off
+            call s_amr_select_l2(amr_l2_slot)
+            call s_interpolate_coarse_to_fine(amr_slots(amr_slots(amr_l2_slot)%parent)%q_cons)
+            do i = 1, sys_size
+                $:GPU_UPDATE(device='[amr_slots(amr_cur)%q_cons(i)%sf]')
+            end do
+            amr_cpat_off = saved_cpat_off
+        end if
         call s_amr_select_slot(1)
 
     end subroutine s_populate_amr_fine
@@ -1894,6 +1923,49 @@ contains
         deallocate (scratch)
 
     end subroutine s_amr_conservation_check
+
+    !> Multilevel P2 gate G3a: the level-1<->level-2 analogue of s_amr_conservation_check. Restricts the L2 fine interior into a
+    !! scratch buffer (parent L1-fine frame, amr_cpat_off=0) and compares to the level-1 parent slot over the covered cells - the
+    !! conservative prolong/restrict pair is exact, so err ~ round-off. np=1 self-test; no-op unless an L2 block exists.
+    impure subroutine s_amr_l2_conservation_check()
+
+        type(scalar_field), dimension(:), allocatable :: scratch
+        integer                                       :: i, ci, cj, ck, par, lo(3), hi(3), saved_cpat_off(3)
+        real(wp)                                      :: err, e
+
+        if (amr_l2_slot <= 0) return
+        par = amr_slots(amr_l2_slot)%parent
+        saved_cpat_off = amr_cpat_off
+        call s_amr_select_l2(amr_l2_slot)  ! amr_cur=l2, amr_isect_lo/hi=region, amr_cpat_off=0
+        lo = amr_isect_lo; hi = amr_isect_hi
+        ! scratch is indexed at native L1-fine cell (amr_cpat_off=0) over [lo,hi] <= [0,m_parent], so size to the parent fine extent
+        allocate (scratch(1:sys_size))
+        do i = 1, sys_size
+            allocate (scratch(i)%sf(0:max_f1,0:max_f2,0:max_f3))
+        end do
+        do i = 1, sys_size
+            call s_restrict_one_var(amr_slots(amr_l2_slot)%q_cons(i), scratch(i))
+        end do
+        err = 0._wp
+        do i = 1, sys_size
+            do ck = lo(3), merge(hi(3), lo(3), p_glb > 0)
+                do cj = lo(2), merge(hi(2), lo(2), n_glb > 0)
+                    do ci = lo(1), hi(1)
+                        e = abs(real(scratch(i)%sf(ci, cj, ck), wp) - real(amr_slots(par)%q_cons(i)%sf(ci, cj, ck), wp))
+                        if (e > err) err = e
+                    end do
+                end do
+            end do
+        end do
+        print '(A,ES12.4)', ' [amr] L2 restrict-prolong conservation err = ', err
+        do i = 1, sys_size
+            deallocate (scratch(i)%sf)
+        end do
+        deallocate (scratch)
+        amr_cpat_off = saved_cpat_off
+        call s_amr_select_slot(1)
+
+    end subroutine s_amr_l2_conservation_check
 
     !> Swap the global grid state to the fine block. MUST be paired with s_amr_restore_coarse.
     impure subroutine s_amr_swap_to_fine()
@@ -3639,7 +3711,7 @@ contains
                 ! q_cons_base is host-current with valid ghosts from the exchange at the top of s_amr_regrid)
                 call s_amr_gather_coarse_patch(q_cons_base, .false.)
                 if (.not. amr_rank_owns_block) cycle
-                call s_interpolate_coarse_to_fine()
+                call s_interpolate_coarse_to_fine(amr_cg)
                 ! every old block's stashed fine state is now replicated in amr_slots(kk)%q_cons_stor (migration above), so copy
                 ! the overlap from EVERY covering old block regardless of who owned it - sh is the old->new LOCAL fine index shift
                 do kk = 1, old_np
