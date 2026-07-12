@@ -288,8 +288,7 @@ contains
 
         ! fine advance: c_divs ghosts were recomputed above from the prolonged color, so the
         ! coarse-decomposition halo/BC populate is neither needed nor valid here.
-        if (.not. amr_in_fine_advance) &
-            call s_populate_capillary_buffers(c_divs, bc_type, bc_xyz_info(bc_x, bc_y, bc_z))
+        if (.not. amr_in_fine_advance) call s_populate_capillary_buffers(c_divs, bc_type, bc_xyz_info(bc_x, bc_y, bc_z))
 
         iv%beg = 1; iv%end = num_dims + 1
 
