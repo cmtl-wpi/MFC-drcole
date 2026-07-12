@@ -672,7 +672,7 @@ def _load():
     ]:
         _r(n, LOG, {"output"})
     for j in range(1, 4):
-        for a in ["amr_block_beg", "amr_block_end"]:
+        for a in ["amr_block_beg", "amr_block_end", "amr_l2_block_beg", "amr_l2_block_end"]:
             _r(f"{a}({j})", INT)
     _r("amr_regrid_int", INT)
     _r("amr_tag_eps", REAL)
@@ -680,6 +680,7 @@ def _load():
     _r("amr_subcycle", LOG)
     _r("amr_max_blocks", INT)
     _r("amr_ref_ratio", INT)
+    _r("amr_max_levels", INT)
     _r("amr_cluster_eff", REAL)
     _r("hybrid_weno_eps", REAL, {"output"})
     _r("hybrid_smooth_flux", INT, {"output"})
@@ -1163,6 +1164,8 @@ FORTRAN_ARRAY_DIMS: dict[str, str] = {
     "vel_wrt": "3",
     "amr_block_beg": "3",
     "amr_block_end": "3",
+    "amr_l2_block_beg": "3",
+    "amr_l2_block_end": "3",
 }
 
 # Derived-type namelist variables whose Fortran declarations come from generated_decls.fpp.
@@ -1362,12 +1365,15 @@ _nv(
     "amr",
     "amr_block_beg",
     "amr_block_end",
+    "amr_l2_block_beg",
+    "amr_l2_block_end",
     "amr_regrid_int",
     "amr_tag_eps",
     "amr_buf",
     "amr_subcycle",
     "amr_max_blocks",
     "amr_ref_ratio",
+    "amr_max_levels",
     "amr_cluster_eff",
     "alf_factor",
     "num_igr_iters",

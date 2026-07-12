@@ -54,8 +54,11 @@ module m_amr
     !> One refined level: its own grid + conservative fields. Field arrays are device-resident (@:ALLOCATE); coords/metadata
     !! host-only.
     type t_level
-        integer                         :: ref_ratio
-        type(t_box)                     :: region          !< block extent in parent (level-0) cell indices
+        integer :: ref_ratio
+        integer :: level = 1   !< refinement level (1 = refined over the base; 2 = refined over an L1 patch). Multilevel P2+.
+        integer :: parent = 0  !< for level >= 2, the amr_slots index of the parent (coarser) patch; 0 = base grid
+        !> block extent in PARENT-level cell indices (base cells for level 1; parent-patch fine cells for level >= 2)
+        type(t_box)                     :: region
         integer                         :: m, n, p         !< this level's interior extents
         integer                         :: buff_size
         type(int_bounds_info)           :: idwbuff(3)
@@ -84,6 +87,8 @@ module m_amr
     !! slot amr_cur (m_global_parameters) selects which slot every per-block routine operates on.
     type(t_level), allocatable :: amr_slots(:)
     integer                    :: amr_maxc(3)  !< max coarse block cells per dim: (m_glb+1)/2 etc.; 1 for collapsed dims
+    !> slot index of the single static level-2 block (0 = none); set at init when amr_max_levels>=2 (multilevel P2)
+    integer :: amr_l2_slot = 0
 
     !> Per-slot field-array sizing (module-scope so s_amr_alloc_slot/s_amr_free_slot, called from init/regrid/restart/finalize, see
     !! them): max fine cells per dim (2*maxc_loc-1) and the buffered array bounds. amr_slot_live(k) tracks whether slot k's
@@ -420,6 +425,9 @@ contains
             call s_amr_select_slot(1)  ! refresh the per-block mirrors for slot 1 (geometry loop left them on the last tile)
             deallocate (tiled)
         end block
+
+        ! Multilevel P2: place ONE static level-2 block nested inside the (single, np=1) level-1 block.
+        if (amr_max_levels >= 2) call s_amr_init_l2_block()
 
     end subroutine s_initialize_amr_module
 
@@ -941,6 +949,86 @@ contains
         amr_xchg_coarse_ghosts = bad_glb == 1
 
     end subroutine s_set_amr_fine_geometry
+
+    !> Multilevel P2: geometry for the single static level-2 slot nested inside level-1 parent slot `par`. lo/hi are the L2 box in
+    !! the PARENT slot's FINE-cell indices (region is stored in that frame - see t_level%region). np=1 only (rank 0 owns
+    !! everything): no cross-rank intersection / coarse-ghost-exchange logic (that is P3). Coords come from the parent slot's
+    !! fine-cell boundaries via s_build_level_coords (parent frame == L1 fine cells; lbound -1).
+    impure subroutine s_set_amr_l2_geometry(l2, par, lo, hi)
+
+        integer, intent(in) :: l2, par, lo(3), hi(3)
+        integer             :: rr
+
+        rr = amr_ref_ratio
+        amr_slots(l2)%level = 2
+        amr_slots(l2)%parent = par
+        amr_slots(l2)%ref_ratio = rr
+        amr_slots(l2)%region%lo = lo; amr_slots(l2)%region%hi = hi
+
+        amr_slots(l2)%m = rr*(hi(1) - lo(1) + 1) - 1
+        amr_slots(l2)%n = 0; amr_slots(l2)%p = 0
+        if (n_glb > 0) amr_slots(l2)%n = rr*(hi(2) - lo(2) + 1) - 1
+        if (p_glb > 0) amr_slots(l2)%p = rr*(hi(3) - lo(3) + 1) - 1
+
+        amr_slots(l2)%idwbuff(1)%beg = -buff_size; amr_slots(l2)%idwbuff(1)%end = amr_slots(l2)%m + buff_size
+        amr_slots(l2)%idwbuff(2)%beg = 0; amr_slots(l2)%idwbuff(2)%end = 0
+        amr_slots(l2)%idwbuff(3)%beg = 0; amr_slots(l2)%idwbuff(3)%end = 0
+        if (n_glb > 0) then
+            amr_slots(l2)%idwbuff(2)%beg = -buff_size; amr_slots(l2)%idwbuff(2)%end = amr_slots(l2)%n + buff_size
+        end if
+        if (p_glb > 0) then
+            amr_slots(l2)%idwbuff(3)%beg = -buff_size; amr_slots(l2)%idwbuff(3)%end = amr_slots(l2)%p + buff_size
+        end if
+
+        ! coords: subdivide the PARENT slot's fine cells. slot x_cb has lbound -1 (see s_amr_alloc_slot).
+        call s_build_level_coords(amr_slots(par)%x_cb, -1, lo(1), amr_slots(l2)%m, amr_slots(l2)%x_cb, amr_slots(l2)%x_cc, &
+                                  & amr_slots(l2)%dx)
+        if (n_glb > 0) call s_build_level_coords(amr_slots(par)%y_cb, -1, lo(2), amr_slots(l2)%n, amr_slots(l2)%y_cb, &
+            & amr_slots(l2)%y_cc, amr_slots(l2)%dy)
+        if (p_glb > 0) call s_build_level_coords(amr_slots(par)%z_cb, -1, lo(3), amr_slots(l2)%p, amr_slots(l2)%z_cb, &
+            & amr_slots(l2)%z_cc, amr_slots(l2)%dz)
+
+    end subroutine s_set_amr_l2_geometry
+
+    !> Multilevel P2: allocate + place the ONE static level-2 block from amr_l2_block_beg/end (in L1 fine-cell indices). P2
+    !! restrictions (all silent-abort guarded): single rank, single level-1 tile (slot 1), L2 strictly nested in L1, and the L2 fine
+    !! extent must fit the slot arrays (sized max_f). Geometry only - gather/advance/restrict/reflux come in S3-S5.
+    impure subroutine s_amr_init_l2_block()
+
+        integer :: lo(3), hi(3), l2, par, d, mx(3)
+
+        par = 1
+        l2 = amr_num_blocks + 1
+        if (num_procs > 1) call s_mpi_abort('multilevel (amr_max_levels>=2) is single-rank only (P2)')
+        if (amr_num_blocks /= 1) call s_mpi_abort('multilevel (amr_max_levels>=2) requires a single level-1 tile (P2)')
+        if (l2 > amr_max_blocks) call s_mpi_abort('multilevel: no free slot for the level-2 block; raise amr_max_blocks')
+
+        lo = 0; hi = 0
+        lo(1) = amr_l2_block_beg(1); hi(1) = amr_l2_block_end(1)
+        if (n_glb > 0) then; lo(2) = amr_l2_block_beg(2); hi(2) = amr_l2_block_end(2); end if
+        if (p_glb > 0) then; lo(3) = amr_l2_block_beg(3); hi(3) = amr_l2_block_end(3); end if
+
+        ! proper nesting: the L2 box (L1 fine-cell indices) must lie inside the L1 interior [0, m1] x [0, n1] x [0, p1]
+        mx = 0; mx(1) = amr_slots(par)%m
+        if (n_glb > 0) mx(2) = amr_slots(par)%n
+        if (p_glb > 0) mx(3) = amr_slots(par)%p
+        do d = 1, 3
+            if (hi(d) < lo(d)) call s_mpi_abort('multilevel: amr_l2_block_end < amr_l2_block_beg')
+            if (lo(d) < 0 .or. hi(d) > mx(d)) call s_mpi_abort('multilevel: level-2 block is not nested inside the level-1 block')
+        end do
+        ! P2 sizing: the L2 slot reuses the level-1 array sizing (max_f); its fine extent must fit
+        if (amr_ref_ratio*(hi(1) - lo(1) + 1) - 1 > max_f1 .or. (n_glb > 0 .and. amr_ref_ratio*(hi(2) - lo(2) + 1) - 1 > max_f2) &
+            & .or. (p_glb > 0 .and. amr_ref_ratio*(hi(3) - lo(3) + 1) - 1 > max_f3)) &
+            & call s_mpi_abort('multilevel: level-2 block too large for the slot arrays (P2: L2 parent-cell extent must be <= amr_maxc)')
+
+        call s_amr_alloc_slot(l2)
+        call s_set_amr_l2_geometry(l2, par, lo, hi)
+        amr_l2_slot = l2
+
+        if (proc_rank == 0) print '(A,3(1X,I0),A,3(1X,I0),A,3(1X,I0))', ' [amr] level-2 block: L1-fine lo', lo, ' hi', hi, &
+            & ' -> fine m/n/p', amr_slots(l2)%m, amr_slots(l2)%n, amr_slots(l2)%p
+
+    end subroutine s_amr_init_l2_block
 
     !> Conservative-linear prolongation for a single variable pair. Reads coarse interior/ghost from qc; writes fine interior to qf.
     !! Minmod-limited slopes.
