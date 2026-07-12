@@ -2752,6 +2752,26 @@ contains
         real(wp), dimension(:,:,:,:,:), intent(inout)              :: rhs_pb, rhs_mv
         real(wp), intent(inout)                                    :: time_avg
 
+        ! thin wrapper: rhs then update back-to-back (bit-identical to the pre-split routine). The split lets multilevel P2 (S5)
+        ! inject the L1<->L2 reflux into the parent's rhs between the two halves - the analogue of base rhs@480 / update@538.
+
+        call s_amr_fine_stage_rhs(s, bc_type, q_T_sf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg)
+        call s_amr_fine_stage_update(s, coefs)
+
+    end subroutine s_amr_fine_stage_advance
+
+    !> RHS half of a fine RK stage (owner-only): step-entry backup (s==1), swap to the fine grid, s_compute_rhs into the block's
+    !! rhs, restore the coarse grid. Leaves amr_slots(amr_cur)%rhs filled for s_amr_fine_stage_update. Boundary-flux registers are
+    !! captured inside s_compute_rhs (freg on this fine block; multilevel also captures creg for a child L2 block here).
+    impure subroutine s_amr_fine_stage_rhs(s, bc_type, q_T_sf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg)
+
+        integer, intent(in)                                        :: s, t_step
+        type(integer_field), dimension(1:num_dims,1:2), intent(in) :: bc_type
+        type(scalar_field), intent(inout)                          :: q_T_sf
+        real(stp), dimension(:,:,:,:,:), intent(inout)             :: pb_in, mv_in
+        real(wp), dimension(:,:,:,:,:), intent(inout)              :: rhs_pb, rhs_mv
+        real(wp), intent(inout)                                    :: time_avg
+
         if (.not. amr) return
         if (.not. amr_rank_owns_block) return
         if (rank_time_wrt) call s_rank_time_tic()
@@ -2782,6 +2802,20 @@ contains
         end if
         call s_amr_restore_coarse()
         amr_in_fine_advance = .false.
+        if (rank_time_wrt) call s_rank_time_toc()
+
+    end subroutine s_amr_fine_stage_rhs
+
+    !> UPDATE half of a fine RK stage (owner-only): SSP-RK combine from the block's rhs, plus the QBMM/6eq/moving-IB/IB-correct
+    !! per-stage steps. Reads amr_slots(amr_cur)%rhs left by s_amr_fine_stage_rhs (multilevel P2 refluxes into it in between).
+    impure subroutine s_amr_fine_stage_update(s, coefs)
+
+        integer, intent(in)  :: s
+        real(wp), intent(in) :: coefs(4)
+
+        if (.not. amr) return
+        if (.not. amr_rank_owns_block) return
+        if (rank_time_wrt) call s_rank_time_tic()
 
         ! RK stage update (device kernel; mirror of the coarse form - under IGR the rhs already
         ! embeds dt, matching the coarse igr update, so the dt factor is 1)
@@ -2798,7 +2832,7 @@ contains
         call s_amr_ib_correct_fine()
         if (rank_time_wrt) call s_rank_time_toc()
 
-    end subroutine s_amr_fine_stage_advance
+    end subroutine s_amr_fine_stage_update
 
     !> Subcycled fine advance (amr_subcycle): two dt/2 SSP-RK3 substeps AFTER the coarse step. q_old/q_new are the coarse t^n and
     !! t^{n+1} states; each stage's ghosts are the linear time interpolation at the stage time theta = (substep-1 + c_s)/2 with
