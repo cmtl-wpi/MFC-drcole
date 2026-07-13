@@ -75,3 +75,12 @@ interfacial measurement — recover the concentration `Γ = Γ̃/|∇c|` on the 
 The steadily rising ratio is the behaviour expected of a diffuse-interface surface operator as the band
 thickness `w/R` shrinks, and — together with exact mass conservation — is consistent with a convergent,
 correct operator. The precise rate of convergence is not established here, only bracketed (see caveat).
+
+## References
+
+The prior work backing the surfactant model and the eigenmode-decay validation is listed in the
+[1D README](../1D_solutocapillary_diffusion#references). Most relevant here: spherical harmonics are
+eigenfunctions of the surface Laplacian with eigenvalue `l(l+1)/R²`, so the `l = 1` mode decays at
+`2D_s/R²` — the sphere instance of the standard Laplace–Beltrami eigenmode-decay test (Dziuk & Elliott
+2013; Macdonald, Brandman & Ruuth 2011). James & Lowengrub (2004) is the closest single precedent using
+both a surface-diffusion-on-a-drop check and a coupled surfactant benchmark.

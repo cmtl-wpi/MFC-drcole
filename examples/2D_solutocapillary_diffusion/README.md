@@ -62,3 +62,10 @@ interfacial estimator — recover the concentration `Γ = Γ̃/|∇c|` on the ba
   ```
   examples/2D_solutocapillary_diffusion/run_convergence.sh   # R/Δx = 8, 16, 32, 43 (release, multi-rank)
   ```
+
+## References
+
+The prior work backing the surfactant model and the eigenmode-decay validation is listed in the
+[1D README](../1D_solutocapillary_diffusion#references). Most relevant here: the circle `cos mθ` mode
+decaying at `m²D_s/R²` is the 2D instance of the standard Laplace–Beltrami eigenmode-decay test
+(Dziuk & Elliott 2013; Macdonald, Brandman & Ruuth 2011).

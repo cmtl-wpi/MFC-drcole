@@ -121,3 +121,57 @@ measurement (recover `Γ = Γ̃/|∇c|` on the band and project onto the mode); 
 (tangent at 45°, exact `D_s k²`) to isolate the projection from curvature; and the coupled
 surfactant-laden-drop benchmarks (e.g. Stone & Leal), which also need a resolved interface plus an
 imposed strain — all future work.
+
+## References
+
+The surfactant machinery validated here (this example and the [2D-circle](../2D_solutocapillary_diffusion)
+and [3D-sphere](../3D_solutocapillary_diffusion) companions) follows established interfacial-surfactant
+modeling. Each piece traces to prior work:
+
+*Interfacial surfactant transport (the physics).*
+- Stone, H. A. (1990). A simple derivation of the time-dependent convective–diffusion equation for
+  surfactant transport along a deforming interface. *Phys. Fluids A* **2**(1), 111–112.
+  doi:10.1063/1.857686 — the canonical derivation of the surface transport equation this operator solves.
+
+*Diffuse-interface representation (smeared area-density `Γ̃ = Γ|∇c|`, conserved then recovered).*
+- Teigen, K. E., Li, X., Lowengrub, J., Wang, F. & Voigt, A. (2009). A diffuse-interface approach for
+  modelling transport, diffusion and adsorption/desorption of material quantities on a deformable
+  interface. *Commun. Math. Sci.* **7**(4), 1009–1037.
+- Teigen, K. E., Song, P., Lowengrub, J. & Voigt, A. (2011). A diffuse-interface method for two-phase
+  flows with soluble surfactants. *J. Comput. Phys.* **230**(2), 375–393. doi:10.1016/j.jcp.2010.09.020
+  — closest precedent: smeared surfactant density on a diffuse interface, conservative transport, `σ(Γ)`.
+- James, A. J. & Lowengrub, J. (2004). A surfactant-conserving volume-of-fluid method for interfacial
+  flows with insoluble surfactant. *J. Comput. Phys.* **201**(2), 685–722. doi:10.1016/j.jcp.2004.06.013
+  — Eulerian conserve-then-recover ancestor with a `σ(Γ)` CSF force.
+
+  Note: the exact recipe used here (advect `Γ̃ = Γ|∇c|` conservatively, then divide by `|∇c|` on the
+  band) is a consolidation of Teigen 2011 and James & Lowengrub 2004, not lifted verbatim — Teigen 2011
+  uses a double-well surface delta inside the transport PDE and reserves `|∇c|` for the CSF term.
+
+*Surface (Laplace–Beltrami) diffusion operator on a diffuse interface.*
+- Rätz, A. & Voigt, A. (2006). PDE's on surfaces — a diffuse interface approach. *Commun. Math. Sci.*
+  **4**(3), 575–590. — surface diffusion embedded in the interface band with `|∇φ|` weighting.
+
+*Surface tension → Marangoni stress via CSF, and the `σ(Γ)` closure.*
+- Brackbill, J. U., Kothe, D. B. & Zemach, C. (1992). A continuum method for modeling surface tension.
+  *J. Comput. Phys.* **100**(2), 335–354. doi:10.1016/0021-9991(92)90240-Y — the CSF force pathway
+  (already in MFC; a spatially varying `σ` makes the Marangoni stress automatic).
+- Pawar, Y. & Stebe, K. J. (1996). Marangoni effects on drop deformation in an extensional flow… I.
+  Insoluble surfactants. *Phys. Fluids* **8**(7), 1738–1751. doi:10.1063/1.868958 — the linear and
+  Langmuir/Frumkin `σ(Γ)` equations of state.
+
+*Validation methodology.*
+- Dziuk, G. & Elliott, C. M. (2013). Finite element methods for surface PDEs. *Acta Numerica* **22**,
+  289–396. doi:10.1017/S0962492913000056; and Macdonald, C. B., Brandman, J. & Ruuth, S. J. (2011).
+  Solving eigenvalue problems on curved surfaces using the Closest Point Method. *J. Comput. Phys.*
+  **230**(22), 7944–7956. — the Laplace–Beltrami eigenmode-decay test used here is standard surface-PDE
+  practice (spherical harmonics are eigenfunctions of the surface Laplacian, eigenvalue `l(l+1)/R²`).
+- Xu, J.-J., Li, Z., Lowengrub, J. & Zhao, H. (2006). A level-set method for interfacial flows with
+  surfactant. *J. Comput. Phys.* **212**(2), 590–616. doi:10.1016/j.jcp.2005.07.016 — surfactant-transport
+  convergence and the mode-decay check.
+- Stone, H. A. & Leal, L. G. (1990). The effects of surfactants on drop deformation and breakup.
+  *J. Fluid Mech.* **220**, 161–186. doi:10.1017/S0022112090003226 — the canonical coupled
+  surfactant-drop-in-extensional-flow benchmark (a target for future Marangoni-coupling validation, not
+  yet done here). Related coupling physics: Milliken, Stone & Leal (1993), *Phys. Fluids A* **5**(1),
+  69–79, doi:10.1063/1.858790; Eggleton, Tsai & Stebe (2001), *Phys. Rev. Lett.* **87**, 048302,
+  doi:10.1103/PhysRevLett.87.048302.
