@@ -108,28 +108,28 @@ The surfactant density `Γ̃` on the interface, rendered with the built-in viewe
 | ![initial](figures/surfactant_field_initial.png) | ![final](figures/surfactant_field_final.png) |
 
 The surfactant stays concentrated on the interface at `y = 0` (dark bulk everywhere else — the
-tangential projection leaks no surfactant off the interface), while the along-interface `cos kx`
+tangential projection leaks no surfactant off *this flat* interface), while the along-interface `cos kx`
 modulation — bright at the crest, dim at the troughs at `t = 0` — homogenizes into a uniform band as
 it diffuses. Same colour scale in both frames.
 
 ## Note on curved / non-aligned interfaces
 
-Because this flat interface is grid-aligned, the projection `(I − n⊗n)` contributes nothing here, so
-the 1D test alone cannot tell whether a curved-interface error is finite band thickness (converges) or
-a projection bug. The **[3D sphere convergence study](../3D_solutocapillary_diffusion)** speaks to that:
-the `l = 1` mode should decay at the sphere eigenvalue `l(l+1)D_s/R² = 2D_s/R²` (note: the *sphere*
-value, not the flat/circle `D_s k²`), and the measured rate rises toward it as the interface is
-resolved (`rate/exact ≈ 0.53 → 0.79 → 0.88` for `R/Δx = 5.3 → 10.7 → 16`), with surfactant conserved to
-round-off. That is consistent with a resolution effect rather than a bug — **but** those numbers come
-from a whole-field moment that is only an approximate estimator (a 2D-circle cross-check reads the same
-moment as either 0.6× or 1.8× exact depending on masking, bracketing the true value), so the *rate* of
-convergence is bracketed, not pinned. Read the caveat in the 3D README.
+Because this flat interface is grid-aligned, the projection `(I − n⊗n)` contributes nothing here, so the
+1D test alone cannot tell whether the operator behaves on a *curved* interface. The curved companions
+answer that — and the answer is **it does not**: on a circle and a sphere the operator **leaks
+surfactant off the interface** (the discrete projection fails to remove the normal component), so it
+does not reproduce the exact rate there. See the
+[2D-circle diagnosis](../2D_solutocapillary_diffusion) — a controlled on/off experiment shows the
+surfactant band spreading radially into the bulk — and the corrected
+[3D note](../3D_solutocapillary_diffusion). So the surface-diffusion operator is validated on flat,
+grid-aligned interfaces only; curved-interface surface diffusion needs a curvature-aware fix. This does
+**not** affect the core surfactant advection or σ(Γ) Marangoni coupling, which do not use `surf_diff`
+(default `0`).
 
-Still open, and needed to make the curved-interface convergence quantitative: a proper interfacial
-measurement (recover `Γ = Γ̃/|∇c|` on the band and project onto the mode); a **tilted flat interface**
-(tangent at 45°, exact `D_s k²`) to isolate the projection from curvature; and the coupled
-surfactant-laden-drop benchmarks (e.g. Stone & Leal), which also need a resolved interface plus an
-imposed strain — all future work.
+Still open: the curvature-aware operator fix (normal stabilization / a proper surface delta, per Teigen
+et al. 2011 and Rätz & Voigt 2006) so `Γ̃` stays pinned to the band; a **tilted flat interface**
+(tangent at 45°) to probe the projection without curvature; and the coupled surfactant-laden-drop
+benchmarks (e.g. Stone & Leal) — all future work.
 
 ## References
 

@@ -27,12 +27,12 @@ mu = 0.1
 rho0 = 0.2
 sigma0 = 0.1
 laplace = sigma0 / R  # 2D circle Laplace jump sigma/R
-D_s = 0.2  # surface diffusivity; m=1 decay time tau = R^2/D_s = 1.25
+D_s = float(os.environ.get("MFC_DS", "0.2"))  # surface diffusivity; MFC_DS=0 = diffusion-off control
 eps = 0.3
 surf_expr = f"1.0 + {eps / R:.6f}*x"  # Gamma0=1, m=1 mode ~ 1 + eps*x/R
 
 c_max = (gam * (p0 + p_inf) / rho0) ** 0.5
-mydt = min(0.3 * dx / c_max, 0.3 * dx**2 / (4.0 * D_s))  # min(acoustic, 2D surface-diffusion) CFL
+mydt = min(0.3 * dx / c_max, 0.3 * dx**2 / (4.0 * 0.2))  # min(acoustic, surface-diffusion) CFL, fixed at D_s=0.2
 t_step_stop = round(1.5 / mydt)  # ~1.2 tau
 t_step_save = max(1, t_step_stop // 60)
 
