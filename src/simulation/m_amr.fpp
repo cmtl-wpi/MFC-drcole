@@ -22,7 +22,7 @@ module m_amr
         & s_mpi_allreduce_max, s_mpi_allreduce_integer_sum, s_mpi_sendrecv_variables_buffers, s_mpi_allreduce_array_max
     use m_rhs, only: s_compute_rhs
     use m_phase_change, only: s_infinite_relaxation_k
-    use m_amr_registers, only: s_amr_zero_fine_registers, freg
+    use m_amr_registers, only: s_amr_zero_fine_registers, freg, creg
     use m_rank_timing, only: s_rank_time_tic, s_rank_time_toc
     use m_ibm, only: s_ibm_alloc_fine, s_ibm_setup_fine, s_ibm_swap_to_fine, s_ibm_restore_from_fine, s_ibm_correct_state, &
         & s_update_mib, moving_immersed_boundary_flag, num_gps
@@ -37,11 +37,12 @@ module m_amr
 
     private
     public :: t_level, amr_maxc, amr_maxc_fit, amr_dt_fine, s_initialize_amr_module, s_populate_amr_fine, &
-        & s_interpolate_coarse_to_fine, s_restrict_fine_to_coarse, s_amr_conservation_check, s_finalize_amr_module, &
-        & s_amr_swap_to_fine, s_amr_restore_coarse, s_amr_fill_fine_ghosts, s_amr_operator_checks, s_amr_fine_stage_fill, &
-        & s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, s_amr_conservation_defect, &
-        & s_set_amr_fine_geometry, s_amr_regrid, s_write_amr_restart, s_read_amr_restart, s_amr_relax_fine, s_amr_setup_ib, &
-        & s_amr_check_active_box_containment, s_amr_p2p_reflux_faces
+        & s_interpolate_coarse_to_fine, s_restrict_fine_to_coarse, s_amr_conservation_check, s_amr_l2_conservation_check, &
+        & s_finalize_amr_module, s_amr_swap_to_fine, s_amr_restore_coarse, s_amr_fill_fine_ghosts, s_amr_operator_checks, &
+        & s_amr_fine_stage_fill, s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, &
+        & s_amr_conservation_defect, s_set_amr_fine_geometry, s_amr_regrid, s_write_amr_restart, s_read_amr_restart, &
+        & s_amr_relax_fine, s_amr_setup_ib, s_amr_check_active_box_containment, s_amr_p2p_reflux_faces, s_amr_fill_l2_ghosts, &
+        & s_amr_advance_l2_stage, s_amr_restrict_l2_to_l1, s_amr_fine_stage_rhs, s_amr_fine_stage_update, s_amr_reflux_l2
 
     !> Fine-level time step for subcycling (= 0.5*dt after init; 0 when amr is off).
     real(wp) :: amr_dt_fine = 0._wp
@@ -54,8 +55,11 @@ module m_amr
     !> One refined level: its own grid + conservative fields. Field arrays are device-resident (@:ALLOCATE); coords/metadata
     !! host-only.
     type t_level
-        integer                         :: ref_ratio
-        type(t_box)                     :: region          !< block extent in parent (level-0) cell indices
+        integer :: ref_ratio
+        integer :: level = 1   !< refinement level (1 = refined over the base; 2 = refined over an L1 patch). Multilevel P2+.
+        integer :: parent = 0  !< for level >= 2, the amr_slots index of the parent (coarser) patch; 0 = base grid
+        !> block extent in PARENT-level cell indices (base cells for level 1; parent-patch fine cells for level >= 2)
+        type(t_box)                     :: region
         integer                         :: m, n, p         !< this level's interior extents
         integer                         :: buff_size
         type(int_bounds_info)           :: idwbuff(3)
@@ -84,6 +88,7 @@ module m_amr
     !! slot amr_cur (m_global_parameters) selects which slot every per-block routine operates on.
     type(t_level), allocatable :: amr_slots(:)
     integer                    :: amr_maxc(3)  !< max coarse block cells per dim: (m_glb+1)/2 etc.; 1 for collapsed dims
+    ! amr_l2_slot / amr_l2_parent live in m_global_parameters so m_amr_registers (which cannot `use m_amr`) sees them (S5 reflux)
 
     !> Per-slot field-array sizing (module-scope so s_amr_alloc_slot/s_amr_free_slot, called from init/regrid/restart/finalize, see
     !! them): max fine cells per dim (2*maxc_loc-1) and the buffered array bounds. amr_slot_live(k) tracks whether slot k's
@@ -420,6 +425,9 @@ contains
             call s_amr_select_slot(1)  ! refresh the per-block mirrors for slot 1 (geometry loop left them on the last tile)
             deallocate (tiled)
         end block
+
+        ! Multilevel P2: place ONE static level-2 block nested inside the (single, np=1) level-1 block.
+        if (amr_max_levels >= 2) call s_amr_init_l2_block()
 
     end subroutine s_initialize_amr_module
 
@@ -942,6 +950,114 @@ contains
 
     end subroutine s_set_amr_fine_geometry
 
+    !> Multilevel P2: geometry for the single static level-2 slot nested inside level-1 parent slot `par`. lo/hi are the L2 box in
+    !! the PARENT slot's FINE-cell indices (region is stored in that frame - see t_level%region). np=1 only (rank 0 owns
+    !! everything): no cross-rank intersection / coarse-ghost-exchange logic (that is P3). Coords come from the parent slot's
+    !! fine-cell boundaries via s_build_level_coords (parent frame == L1 fine cells; lbound -1).
+    impure subroutine s_set_amr_l2_geometry(l2, par, lo, hi)
+
+        integer, intent(in) :: l2, par, lo(3), hi(3)
+        integer             :: rr
+
+        rr = amr_ref_ratio
+        amr_slots(l2)%level = 2
+        amr_slots(l2)%parent = par
+        amr_slots(l2)%ref_ratio = rr
+        amr_slots(l2)%region%lo = lo; amr_slots(l2)%region%hi = hi
+        ! mirror the L2 region (in parent-fine-cell indices) so m_amr_registers reads the L1<->L2 interface for the reflux (S5)
+        amr_region_lo_all(:,l2) = lo; amr_region_hi_all(:,l2) = hi
+        amr_isect_lo_all(:,l2) = lo; amr_isect_hi_all(:,l2) = hi
+        amr_owns_all(l2) = .true.
+
+        amr_slots(l2)%m = rr*(hi(1) - lo(1) + 1) - 1
+        amr_slots(l2)%n = 0; amr_slots(l2)%p = 0
+        if (n_glb > 0) amr_slots(l2)%n = rr*(hi(2) - lo(2) + 1) - 1
+        if (p_glb > 0) amr_slots(l2)%p = rr*(hi(3) - lo(3) + 1) - 1
+
+        amr_slots(l2)%idwbuff(1)%beg = -buff_size; amr_slots(l2)%idwbuff(1)%end = amr_slots(l2)%m + buff_size
+        amr_slots(l2)%idwbuff(2)%beg = 0; amr_slots(l2)%idwbuff(2)%end = 0
+        amr_slots(l2)%idwbuff(3)%beg = 0; amr_slots(l2)%idwbuff(3)%end = 0
+        if (n_glb > 0) then
+            amr_slots(l2)%idwbuff(2)%beg = -buff_size; amr_slots(l2)%idwbuff(2)%end = amr_slots(l2)%n + buff_size
+        end if
+        if (p_glb > 0) then
+            amr_slots(l2)%idwbuff(3)%beg = -buff_size; amr_slots(l2)%idwbuff(3)%end = amr_slots(l2)%p + buff_size
+        end if
+
+        ! coords: subdivide the PARENT slot's fine cells. slot x_cb has lbound -1 (see s_amr_alloc_slot).
+        call s_build_level_coords(amr_slots(par)%x_cb, -1, lo(1), amr_slots(l2)%m, amr_slots(l2)%x_cb, amr_slots(l2)%x_cc, &
+                                  & amr_slots(l2)%dx)
+        if (n_glb > 0) call s_build_level_coords(amr_slots(par)%y_cb, -1, lo(2), amr_slots(l2)%n, amr_slots(l2)%y_cb, &
+            & amr_slots(l2)%y_cc, amr_slots(l2)%dy)
+        if (p_glb > 0) call s_build_level_coords(amr_slots(par)%z_cb, -1, lo(3), amr_slots(l2)%p, amr_slots(l2)%z_cb, &
+            & amr_slots(l2)%z_cc, amr_slots(l2)%dz)
+
+    end subroutine s_set_amr_l2_geometry
+
+    !> Multilevel P2: allocate + place the ONE static level-2 block from amr_l2_block_beg/end (in L1 fine-cell indices). P2
+    !! restrictions (all silent-abort guarded): single rank, single level-1 tile (slot 1), L2 strictly nested in L1, and the L2 fine
+    !! extent must fit the slot arrays (sized max_f). Geometry only - gather/advance/restrict/reflux come in S3-S5.
+    impure subroutine s_amr_init_l2_block()
+
+        integer :: lo(3), hi(3), l2, par, d, mx(3), own
+
+        par = 1
+        if (amr_num_blocks /= 1) call s_mpi_abort('multilevel (amr_max_levels>=2) requires a single level-1 tile ' &
+            & // '(P3: a multi-block level-1 parent is not yet supported)')
+        ! P3: the whole 2-level tower (the level-1 tile plus its nested level-2 block) is co-located on the rank that owns the
+        ! level-1 tile. Non-owner ranks hold no level-2 slot (amr_l2_slot=0) and no-op every L2 op, so all level-1<->level-2
+        ! coupling (fill/advance/restrict/reflux) stays rank-local on the owner - no collectives, so the no-owner no-ops cannot
+        ! deadlock. amr_block_owner is deterministic + identical on every rank, so exactly one rank proceeds past this guard.
+        own = amr_block_owner(par)
+        if (proc_rank /= own) then
+            amr_l2_slot = 0; amr_l2_parent = 0
+            return
+        end if
+        l2 = amr_num_blocks + 1
+        if (l2 > amr_max_blocks) call s_mpi_abort('multilevel: no free slot for the level-2 block; raise amr_max_blocks')
+
+        lo = 0; hi = 0
+        lo(1) = amr_l2_block_beg(1); hi(1) = amr_l2_block_end(1)
+        if (n_glb > 0) then; lo(2) = amr_l2_block_beg(2); hi(2) = amr_l2_block_end(2); end if
+        if (p_glb > 0) then; lo(3) = amr_l2_block_beg(3); hi(3) = amr_l2_block_end(3); end if
+
+        ! proper nesting: the L2 box (L1 fine-cell indices) must lie inside the L1 interior [0, m1] x [0, n1] x [0, p1]
+        mx = 0; mx(1) = amr_slots(par)%m
+        if (n_glb > 0) mx(2) = amr_slots(par)%n
+        if (p_glb > 0) mx(3) = amr_slots(par)%p
+        do d = 1, 3
+            if (hi(d) < lo(d)) call s_mpi_abort('multilevel: amr_l2_block_end < amr_l2_block_beg')
+            if (lo(d) < 0 .or. hi(d) > mx(d)) call s_mpi_abort('multilevel: level-2 block is not nested inside the level-1 block')
+        end do
+        ! P2 sizing: the L2 slot reuses the level-1 array sizing (max_f); its fine extent must fit
+        if (amr_ref_ratio*(hi(1) - lo(1) + 1) - 1 > max_f1 .or. (n_glb > 0 .and. amr_ref_ratio*(hi(2) - lo(2) + 1) - 1 > max_f2) &
+            & .or. (p_glb > 0 .and. amr_ref_ratio*(hi(3) - lo(3) + 1) - 1 > max_f3)) &
+            & call s_mpi_abort('multilevel: level-2 block too large for the slot arrays (P2: L2 parent-cell extent must be <= amr_maxc)')
+
+        call s_amr_alloc_slot(l2)
+        call s_set_amr_l2_geometry(l2, par, lo, hi)
+        amr_l2_slot = l2; amr_l2_parent = par
+
+        if (proc_rank == own) print '(A,3(1X,I0),A,3(1X,I0),A,3(1X,I0))', ' [amr] level-2 block: L1-fine lo', lo, ' hi', hi, &
+            & ' -> fine m/n/p', amr_slots(l2)%m, amr_slots(l2)%n, amr_slots(l2)%p
+
+    end subroutine s_amr_init_l2_block
+
+    !> Multilevel P2: make the level-2 slot the working slot in its PARENT-fine frame (np=1). Unlike s_amr_select_slot (base frame),
+    !! the L2 coarse source is the parent slot indexed in its native L1-fine cells: the patch offset is 0 and the intersection ==
+    !! the L2 region (the covered parent-fine cells). Owner is always this rank at np=1.
+    subroutine s_amr_select_l2(l2)
+
+        integer, intent(in) :: l2
+
+        amr_cur = l2
+        amr_region_lo = amr_slots(l2)%region%lo; amr_region_hi = amr_slots(l2)%region%hi
+        amr_isect_lo = amr_slots(l2)%region%lo; amr_isect_hi = amr_slots(l2)%region%hi
+        amr_cpat_off = 0
+        amr_rank_owns_block = .true.
+
+    end subroutine s_amr_select_l2
+
     !> Conservative-linear prolongation for a single variable pair. Reads coarse interior/ghost from qc; writes fine interior to qf.
     !! Minmod-limited slopes.
     impure subroutine s_prolong_one_var(qc, qf, pos, inject)
@@ -993,9 +1109,11 @@ contains
     !> Conservative-linear prolongation: fill amr_fine interior from coarse (level-0), minmod-limited. Symmetric child offsets
     !! (+/-1/4 of a coarse cell) => the ref_ratio^d children average to the coarse value. Multi-fluid volume fractions take the
     !! sum-preserving closure path instead (single-fluid runs never branch, so their prolongation is untouched).
-    impure subroutine s_interpolate_coarse_to_fine()
+    impure subroutine s_interpolate_coarse_to_fine(qc_src)
 
-        integer :: i, bstride
+        !> coarse source (base->L1: amr_cg; L1->L2: parent slot q_cons)
+        type(scalar_field), dimension(sys_size), intent(in) :: qc_src
+        integer                                             :: i, bstride
 
         bstride = 1
         if (bubbles_euler) bstride = (eqn_idx%bub%end - eqn_idx%bub%beg + 1)/nb
@@ -1010,13 +1128,13 @@ contains
             ! cell's realizable moment set exactly). Non-QBMM Euler-Euler bubbles instead floor their POSITIVE
             ! moments (radius nR, non-polytropic partial pressure npb / vapor mass nmv); the signed velocity moment
             ! nV (offset 1 in each bin's stride) prolongs freely.
-            call s_prolong_one_var(amr_cg(i), amr_slots(amr_cur)%q_cons(i), &
+            call s_prolong_one_var(qc_src(i), amr_slots(amr_cur)%q_cons(i), &
                                    & pos=bubbles_euler .and. .not. qbmm .and. i >= eqn_idx%bub%beg .and. i <= eqn_idx%bub%end &
                                    & .and. mod(i - eqn_idx%bub%beg, bstride) /= 1, &
                                    & inject=qbmm .and. i >= eqn_idx%bub%beg .and. i <= eqn_idx%bub%end)
         end do
-        if (num_fluids > 1 .and. (.not. bubbles_lagrange)) call s_prolong_alphas_closure(amr_cg, amr_slots(amr_cur)%q_cons)
-        if (chemistry) call s_prolong_species_closure(amr_cg, amr_slots(amr_cur)%q_cons)
+        if (num_fluids > 1 .and. (.not. bubbles_lagrange)) call s_prolong_alphas_closure(qc_src, amr_slots(amr_cur)%q_cons)
+        if (chemistry) call s_prolong_species_closure(qc_src, amr_slots(amr_cur)%q_cons)
 
     end subroutine s_interpolate_coarse_to_fine
 
@@ -1149,7 +1267,7 @@ contains
     impure subroutine s_populate_amr_fine(q_cons_base)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_base
-        integer                                                :: i, islot
+        integer                                                :: i, islot, saved_cpat_off(3)
 
         if (.not. amr) return
         ! Prolong EVERY block (max_grid_size tiling can make several) from its gathered coarse patch. The P2P gather pulls each
@@ -1159,7 +1277,7 @@ contains
             call s_amr_select_slot(islot)
             call s_amr_gather_coarse_patch(q_cons_base, .false.)
             if (amr_rank_owns_block) then
-                call s_interpolate_coarse_to_fine()
+                call s_interpolate_coarse_to_fine(amr_cg)
                 do i = 1, sys_size
                     $:GPU_UPDATE(device='[amr_slots(amr_cur)%q_cons(i)%sf]')
                 end do
@@ -1167,6 +1285,18 @@ contains
                 if (qbmm .and. .not. polytropic) call s_amr_prolong_pbmv()
             end if
         end do
+        ! Multilevel P2: fill the level-2 block interior by prolonging from its (now-populated) level-1 parent slot. Save/restore
+        ! amr_cpat_off: s_amr_select_l2 zeroes it (parent-native frame), but the downstream L1 restrict-prolong check reads the
+        ! last L1 block's gather offset (s_amr_select_slot does not touch amr_cpat_off).
+        if (amr_l2_slot > 0) then
+            saved_cpat_off = amr_cpat_off
+            call s_amr_select_l2(amr_l2_slot)
+            call s_interpolate_coarse_to_fine(amr_slots(amr_slots(amr_l2_slot)%parent)%q_cons)
+            do i = 1, sys_size
+                $:GPU_UPDATE(device='[amr_slots(amr_cur)%q_cons(i)%sf]')
+            end do
+            amr_cpat_off = saved_cpat_off
+        end if
         call s_amr_select_slot(1)
 
     end subroutine s_populate_amr_fine
@@ -1806,6 +1936,227 @@ contains
         deallocate (scratch)
 
     end subroutine s_amr_conservation_check
+
+    !> Multilevel P2 gate G3a: the level-1<->level-2 analogue of s_amr_conservation_check. Restricts the L2 fine interior into a
+    !! scratch buffer (parent L1-fine frame, amr_cpat_off=0) and compares to the level-1 parent slot over the covered cells - the
+    !! conservative prolong/restrict pair is exact, so err ~ round-off. np=1 self-test; no-op unless an L2 block exists.
+    impure subroutine s_amr_l2_conservation_check()
+
+        type(scalar_field), dimension(:), allocatable :: scratch
+        integer                                       :: i, ci, cj, ck, par, lo(3), hi(3), saved_cpat_off(3)
+        real(wp)                                      :: err, e
+
+        if (amr_l2_slot <= 0) return
+        par = amr_slots(amr_l2_slot)%parent
+        saved_cpat_off = amr_cpat_off
+        call s_amr_select_l2(amr_l2_slot)  ! amr_cur=l2, amr_isect_lo/hi=region, amr_cpat_off=0
+        lo = amr_isect_lo; hi = amr_isect_hi
+        ! scratch is indexed at native L1-fine cell (amr_cpat_off=0) over [lo,hi] <= [0,m_parent], so size to the parent fine extent
+        allocate (scratch(1:sys_size))
+        do i = 1, sys_size
+            allocate (scratch(i)%sf(0:max_f1,0:max_f2,0:max_f3))
+        end do
+        do i = 1, sys_size
+            call s_restrict_one_var(amr_slots(amr_l2_slot)%q_cons(i), scratch(i))
+        end do
+        err = 0._wp
+        do i = 1, sys_size
+            do ck = lo(3), merge(hi(3), lo(3), p_glb > 0)
+                do cj = lo(2), merge(hi(2), lo(2), n_glb > 0)
+                    do ci = lo(1), hi(1)
+                        e = abs(real(scratch(i)%sf(ci, cj, ck), wp) - real(amr_slots(par)%q_cons(i)%sf(ci, cj, ck), wp))
+                        if (e > err) err = e
+                    end do
+                end do
+            end do
+        end do
+        print '(A,ES12.4)', ' [amr] L2 restrict-prolong conservation err = ', err
+        do i = 1, sys_size
+            deallocate (scratch(i)%sf)
+        end do
+        deallocate (scratch)
+        amr_cpat_off = saved_cpat_off
+        call s_amr_select_slot(1)
+
+    end subroutine s_amr_l2_conservation_check
+
+    !> Multilevel P2 (S4): fill the level-2 block's ghost shell from its level-1 parent's current (stage-entry) interior. Device
+    !! kernel in the parent-native frame (amr_cpat_off=0); saves/restores amr_cpat_off and returns the parent as the working slot.
+    impure subroutine s_amr_fill_l2_ghosts()
+
+        integer :: par, saved_cpat_off(3)
+
+        if (amr_l2_slot <= 0) return
+        saved_cpat_off = amr_cpat_off
+        par = amr_slots(amr_l2_slot)%parent
+        call s_amr_select_l2(amr_l2_slot)
+        call s_amr_fill_fine_ghosts(amr_slots(par)%q_cons, amr_slots(amr_l2_slot)%q_cons)
+        amr_cpat_off = saved_cpat_off
+        call s_amr_select_slot(par)
+
+    end subroutine s_amr_fill_l2_ghosts
+
+    !> Multilevel P2 (S4): advance the level-2 block one RK stage (lockstep). Thin wrapper - select the L2 frame and reuse the
+    !! generic per-block s_amr_fine_stage_advance (it swaps the global grid to the L2 slot's geometry), then restore the parent.
+    impure subroutine s_amr_advance_l2_stage(s, coefs, bc_type, q_T_sf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg)
+
+        integer, intent(in)                                        :: s, t_step
+        real(wp), intent(in)                                       :: coefs(4)
+        type(integer_field), dimension(1:num_dims,1:2), intent(in) :: bc_type
+        type(scalar_field), intent(inout)                          :: q_T_sf
+        real(stp), dimension(:,:,:,:,:), intent(inout)             :: pb_in, mv_in
+        real(wp), dimension(:,:,:,:,:), intent(inout)              :: rhs_pb, rhs_mv
+        real(wp), intent(inout)                                    :: time_avg
+        integer                                                    :: saved_cpat_off(3)
+
+        if (amr_l2_slot <= 0) return
+        saved_cpat_off = amr_cpat_off
+        call s_amr_select_l2(amr_l2_slot)
+        call s_amr_fine_stage_advance(s, coefs, bc_type, q_T_sf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg)
+        amr_cpat_off = saved_cpat_off
+        call s_amr_select_slot(amr_slots(amr_l2_slot)%parent)
+
+    end subroutine s_amr_advance_l2_stage
+
+    !> Multilevel P2 (S4): fold the level-2 block back into its level-1 parent (child-average the L2 interior into the covered L1
+    !! cells) once per step - the L2<->L1 analogue of the L1->base restrict. Host restrict with a device sync: pull L2 to host,
+    !! restrict into the L1 slot (amr_cpat_off=0 -> native L1-fine index), push the L1 slot to device. Leaves the parent selected.
+    impure subroutine s_amr_restrict_l2_to_l1()
+
+        integer :: par, l2, rr, dj_hi, dk_hi, nchild, bl(3), bh(3), rlo(3)
+
+        if (amr_l2_slot <= 0) return
+        l2 = amr_l2_slot; par = amr_slots(l2)%parent
+        rr = amr_ref_ratio
+        nchild = rr; if (n_glb > 0) nchild = nchild*rr; if (p_glb > 0) nchild = nchild*rr
+        dj_hi = merge(rr - 1, 0, n_glb > 0); dk_hi = merge(rr - 1, 0, p_glb > 0)
+        bl = 0; bh = 0
+        bl(1) = amr_slots(l2)%region%lo(1); bh(1) = amr_slots(l2)%region%hi(1)
+        if (n_glb > 0) then; bl(2) = amr_slots(l2)%region%lo(2); bh(2) = amr_slots(l2)%region%hi(2); end if
+        if (p_glb > 0) then; bl(3) = amr_slots(l2)%region%lo(3); bh(3) = amr_slots(l2)%region%hi(3); end if
+        rlo = bl  ! fine child fi0 = (ci - region_lo)*rr indexes the L2 interior
+        ! device-native (s_amr_restrict_overwrite_device): child-average the L2 interior into ONLY the covered L1 cells on device.
+        ! A whole-array host->device push (the naive host restrict) would clobber the device-advanced non-covered L1 cells with a
+        ! stale host copy - the 0a615747 GPU bug class; invisible on CPU, corrupts a moving interface on GPU. Bit-identical on CPU.
+        call s_amr_restrict_overwrite_device(amr_slots(par)%q_cons, amr_slots(l2)%q_cons, bl, bh, 0, 0, 0, rlo, rr, dj_hi, dk_hi, &
+                                             & nchild)
+
+    end subroutine s_amr_restrict_l2_to_l1
+
+    !> Multilevel P2 (S5c): apply the L1<->L2 reflux into the level-1 parent's rhs (public no-arg wrapper; passes the parent slot's
+    !! rhs to the kernel so the device descriptor is carried on the actual argument - amr_slots itself is not device-mapped).
+    impure subroutine s_amr_reflux_l2()
+
+        if (amr_l2_slot <= 0) return
+        call s_amr_apply_reflux_l2(amr_slots(amr_l2_parent)%rhs)
+
+    end subroutine s_amr_reflux_l2
+
+    !> Correct the level-1 rhs in the cells just OUTSIDE the level-2 block so the L1 update sees the child-averaged L2 flux at every
+    !! L2 c/f face. Mirror of s_amr_apply_reflux (m_amr_registers) but targets the L1 slot rhs with the L1 slot's dx (read as host
+    !! scalars - as s_amr_apply_reflux reads the global dx). creg(L2) captured in L1's rhs half; freg(L2) when L2 advanced. Signs
+    !! follow rhs=(F_left-F_right)/dx: low face is the outside cell's RIGHT face. np=1: all faces owned, sidx=0, tlo/thi=region.
+    impure subroutine s_amr_apply_reflux_l2(rhs_l1)
+
+        type(scalar_field), dimension(sys_size), intent(inout) :: rhs_l1
+        integer :: eq, c1, c2, f10, f20, dd1, dd2, nch, l2, par, dd1_hi, dd2_hi, rr
+        integer :: bh1, bh2, bh3, ol1, ol2, ol3, oh1, oh2, oh3, tl1, tl2, tl3, rlo(3), rhi(3)
+        logical :: d2, d3
+        real(wp) :: fblo, fbhi, mlo, mhi
+
+        if (igr) return  ! stage-1 IGR: restriction-only coupling (no captured fluxes)
+        l2 = amr_l2_slot; par = amr_l2_parent
+        rr = amr_ref_ratio; d2 = n_glb > 0; d3 = p_glb > 0
+        rlo = amr_slots(l2)%region%lo; rhi = amr_slots(l2)%region%hi
+        bh1 = rhi(1) - rlo(1); bh2 = rhi(2) - rlo(2); bh3 = rhi(3) - rlo(3)
+        ol1 = rlo(1) - 1; oh1 = rhi(1) + 1; ol2 = rlo(2) - 1; oh2 = rhi(2) + 1; ol3 = rlo(3) - 1; oh3 = rhi(3) + 1
+        tl1 = rlo(1); tl2 = rlo(2); tl3 = rlo(3)
+
+        ! x-faces: transverse (y, z)
+        nch = 1; if (d2) nch = nch*rr; if (d3) nch = nch*rr
+        dd1_hi = merge(rr - 1, 0, d2); dd2_hi = merge(rr - 1, 0, d3)
+        mlo = amr_slots(par)%dx(ol1); mhi = amr_slots(par)%dx(oh1)
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[f10, f20, dd1, dd2, fblo, fbhi]')
+        do eq = 1, sys_size
+            do c2 = 0, bh3
+                do c1 = 0, bh2
+                    f20 = 0; if (d3) f20 = rr*c2
+                    f10 = 0; if (d2) f10 = rr*c1
+                    fblo = 0._wp; fbhi = 0._wp
+                    do dd2 = 0, dd2_hi
+                        do dd1 = 0, dd1_hi
+                            fblo = fblo + freg(1)%lo(eq, f10 + dd1, f20 + dd2, l2)
+                            fbhi = fbhi + freg(1)%hi(eq, f10 + dd1, f20 + dd2, l2)
+                        end do
+                    end do
+                    fblo = fblo/real(nch, wp); fbhi = fbhi/real(nch, wp)
+                    rhs_l1(eq)%sf(ol1, tl2 + c1, tl3 + c2) = rhs_l1(eq)%sf(ol1, tl2 + c1, tl3 + c2) + (creg(1)%lo(eq, c1, c2, &
+                           & l2) - fblo)/mlo
+                    rhs_l1(eq)%sf(oh1, tl2 + c1, tl3 + c2) = rhs_l1(eq)%sf(oh1, tl2 + c1, tl3 + c2) + (fbhi - creg(1)%hi(eq, c1, &
+                           & c2, l2))/mhi
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+        ! y-faces (n_glb > 0): transverse (x always active, z)
+        if (d2) then
+            nch = rr; if (d3) nch = nch*rr
+            dd2_hi = merge(rr - 1, 0, d3)
+            mlo = amr_slots(par)%dy(ol2); mhi = amr_slots(par)%dy(oh2)
+            $:GPU_PARALLEL_LOOP(collapse=3, private='[f10, f20, dd1, dd2, fblo, fbhi]')
+            do eq = 1, sys_size
+                do c2 = 0, bh3
+                    do c1 = 0, bh1
+                        f20 = 0; if (d3) f20 = rr*c2
+                        f10 = rr*c1
+                        fblo = 0._wp; fbhi = 0._wp
+                        do dd2 = 0, dd2_hi
+                            do dd1 = 0, rr - 1
+                                fblo = fblo + freg(2)%lo(eq, f10 + dd1, f20 + dd2, l2)
+                                fbhi = fbhi + freg(2)%hi(eq, f10 + dd1, f20 + dd2, l2)
+                            end do
+                        end do
+                        fblo = fblo/real(nch, wp); fbhi = fbhi/real(nch, wp)
+                        rhs_l1(eq)%sf(tl1 + c1, ol2, tl3 + c2) = rhs_l1(eq)%sf(tl1 + c1, ol2, tl3 + c2) + (creg(2)%lo(eq, c1, c2, &
+                               & l2) - fblo)/mlo
+                        rhs_l1(eq)%sf(tl1 + c1, oh2, tl3 + c2) = rhs_l1(eq)%sf(tl1 + c1, oh2, tl3 + c2) + (fbhi - creg(2)%hi(eq, &
+                               & c1, c2, l2))/mhi
+                    end do
+                end do
+            end do
+            $:END_GPU_PARALLEL_LOOP()
+        end if
+
+        ! z-faces (p_glb > 0): transverse (x, y both active)
+        if (d3) then
+            nch = rr*rr
+            mlo = amr_slots(par)%dz(ol3); mhi = amr_slots(par)%dz(oh3)
+            $:GPU_PARALLEL_LOOP(collapse=3, private='[f10, f20, dd1, dd2, fblo, fbhi]')
+            do eq = 1, sys_size
+                do c2 = 0, bh2
+                    do c1 = 0, bh1
+                        f20 = rr*c2
+                        f10 = rr*c1
+                        fblo = 0._wp; fbhi = 0._wp
+                        do dd2 = 0, rr - 1
+                            do dd1 = 0, rr - 1
+                                fblo = fblo + freg(3)%lo(eq, f10 + dd1, f20 + dd2, l2)
+                                fbhi = fbhi + freg(3)%hi(eq, f10 + dd1, f20 + dd2, l2)
+                            end do
+                        end do
+                        fblo = fblo/real(nch, wp); fbhi = fbhi/real(nch, wp)
+                        rhs_l1(eq)%sf(tl1 + c1, tl2 + c2, ol3) = rhs_l1(eq)%sf(tl1 + c1, tl2 + c2, ol3) + (creg(3)%lo(eq, c1, c2, &
+                               & l2) - fblo)/mlo
+                        rhs_l1(eq)%sf(tl1 + c1, tl2 + c2, oh3) = rhs_l1(eq)%sf(tl1 + c1, tl2 + c2, oh3) + (fbhi - creg(3)%hi(eq, &
+                               & c1, c2, l2))/mhi
+                    end do
+                end do
+            end do
+            $:END_GPU_PARALLEL_LOOP()
+        end if
+
+    end subroutine s_amr_apply_reflux_l2
 
     !> Swap the global grid state to the fine block. MUST be paired with s_amr_restore_coarse.
     impure subroutine s_amr_swap_to_fine()
@@ -2528,6 +2879,26 @@ contains
         real(wp), dimension(:,:,:,:,:), intent(inout)              :: rhs_pb, rhs_mv
         real(wp), intent(inout)                                    :: time_avg
 
+        ! thin wrapper: rhs then update back-to-back (bit-identical to the pre-split routine). The split lets multilevel P2 (S5)
+        ! inject the L1<->L2 reflux into the parent's rhs between the two halves - the analogue of base rhs@480 / update@538.
+
+        call s_amr_fine_stage_rhs(s, bc_type, q_T_sf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg)
+        call s_amr_fine_stage_update(s, coefs)
+
+    end subroutine s_amr_fine_stage_advance
+
+    !> RHS half of a fine RK stage (owner-only): step-entry backup (s==1), swap to the fine grid, s_compute_rhs into the block's
+    !! rhs, restore the coarse grid. Leaves amr_slots(amr_cur)%rhs filled for s_amr_fine_stage_update. Boundary-flux registers are
+    !! captured inside s_compute_rhs (freg on this fine block; multilevel also captures creg for a child L2 block here).
+    impure subroutine s_amr_fine_stage_rhs(s, bc_type, q_T_sf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg)
+
+        integer, intent(in)                                        :: s, t_step
+        type(integer_field), dimension(1:num_dims,1:2), intent(in) :: bc_type
+        type(scalar_field), intent(inout)                          :: q_T_sf
+        real(stp), dimension(:,:,:,:,:), intent(inout)             :: pb_in, mv_in
+        real(wp), dimension(:,:,:,:,:), intent(inout)              :: rhs_pb, rhs_mv
+        real(wp), intent(inout)                                    :: time_avg
+
         if (.not. amr) return
         if (.not. amr_rank_owns_block) return
         if (rank_time_wrt) call s_rank_time_tic()
@@ -2558,6 +2929,20 @@ contains
         end if
         call s_amr_restore_coarse()
         amr_in_fine_advance = .false.
+        if (rank_time_wrt) call s_rank_time_toc()
+
+    end subroutine s_amr_fine_stage_rhs
+
+    !> UPDATE half of a fine RK stage (owner-only): SSP-RK combine from the block's rhs, plus the QBMM/6eq/moving-IB/IB-correct
+    !! per-stage steps. Reads amr_slots(amr_cur)%rhs left by s_amr_fine_stage_rhs (multilevel P2 refluxes into it in between).
+    impure subroutine s_amr_fine_stage_update(s, coefs)
+
+        integer, intent(in)  :: s
+        real(wp), intent(in) :: coefs(4)
+
+        if (.not. amr) return
+        if (.not. amr_rank_owns_block) return
+        if (rank_time_wrt) call s_rank_time_tic()
 
         ! RK stage update (device kernel; mirror of the coarse form - under IGR the rhs already
         ! embeds dt, matching the coarse igr update, so the dt factor is 1)
@@ -2574,7 +2959,7 @@ contains
         call s_amr_ib_correct_fine()
         if (rank_time_wrt) call s_rank_time_toc()
 
-    end subroutine s_amr_fine_stage_advance
+    end subroutine s_amr_fine_stage_update
 
     !> Subcycled fine advance (amr_subcycle): two dt/2 SSP-RK3 substeps AFTER the coarse step. q_old/q_new are the coarse t^n and
     !! t^{n+1} states; each stage's ghosts are the linear time interpolation at the stage time theta = (substep-1 + c_s)/2 with
@@ -3551,7 +3936,7 @@ contains
                 ! q_cons_base is host-current with valid ghosts from the exchange at the top of s_amr_regrid)
                 call s_amr_gather_coarse_patch(q_cons_base, .false.)
                 if (.not. amr_rank_owns_block) cycle
-                call s_interpolate_coarse_to_fine()
+                call s_interpolate_coarse_to_fine(amr_cg)
                 ! every old block's stashed fine state is now replicated in amr_slots(kk)%q_cons_stor (migration above), so copy
                 ! the overlap from EVERY covering old block regardless of who owned it - sh is the old->new LOCAL fine index shift
                 do kk = 1, old_np

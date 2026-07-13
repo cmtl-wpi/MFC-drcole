@@ -187,6 +187,10 @@ contains
             @:PROHIBIT(any(amr_block_end(1:num_dims) <= amr_block_beg(1:num_dims)), &
                        & "amr_block_end must exceed amr_block_beg on each active axis")
             @:PROHIBIT(amr_ref_ratio < 2, "amr_ref_ratio must be >= 2")
+            @:PROHIBIT(amr_max_levels < 1, "amr_max_levels must be >= 1")
+            @:PROHIBIT(amr_max_levels > 2, "amr_max_levels > 2 is not yet supported (multilevel P2 implements 2 static levels)")
+            @:PROHIBIT(amr_max_levels >= 2 .and. amr_subcycle, &
+                       & "multilevel (amr_max_levels >= 2) requires amr_subcycle = F: P2 is lockstep only (the L1<->L2 reflux is " // "applied per stage into the level-1 rhs, which assumes the lockstep coef/accum)")
             @:PROHIBIT(amr_ref_ratio /= 2 .and. .not. amr_subcycle, &
                        & "amr_ref_ratio /= 2 requires amr_subcycle = T: the fine block must subcycle dt/ref_ratio so the finer " &
                        & // "grid satisfies its own (capillary/acoustic) dt limit; advancing it at the coarse dt (lockstep) is " &

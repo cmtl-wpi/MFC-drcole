@@ -685,6 +685,9 @@ To restart the simulation from $k$-th time step, see @ref running "Restarting Ca
 | `amr_subcycle`          | Logical | Advance the coarse level at the case dt and the fine level at dt/`amr_ref_ratio` (`amr_ref_ratio` substeps; Berger-Colella refluxing). Requires `amr`; incompatible with `cfl_dt`. |
 | `amr_max_blocks`       | Integer | Number of fixed refined-block slots preallocated (each max-block sized; ~N x device memory); must be >= 1 (default 4) |
 | `amr_ref_ratio`         | Integer | Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires `amr_subcycle` (the finer grid subcycles dt/r for its own dt limit) |
+| `amr_max_levels`        | Integer | Number of refinement levels (1 = single level over the base; 2 = a level-2 block nested in a level-1 block). Default 1. Multilevel (>1) is experimental (static, lockstep, single-rank) |
+| `amr_l2_block_beg(i)`   | Integer | Level-2 block start cell index in direction $i$, in level-1 **fine**-cell index space (used only when `amr_max_levels >= 2`; must nest strictly inside the level-1 block) |
+| `amr_l2_block_end(i)`   | Integer | Level-2 block end cell index in direction $i$, in level-1 **fine**-cell index space (used only when `amr_max_levels >= 2`; must nest strictly inside the level-1 block) |
 | `amr_cluster_eff`       | Real    | Berger-Rigoutsos min tag efficiency a clustered block box reaches before splitting stops; must satisfy 0 < eff <= 1 (default 0.7) |
 | `hybrid_weno`           | Logical | Use linear-optimal reconstruction in smooth cells, full WENO only at flagged discontinuities (requires WENO reconstruction) |
 | `hybrid_weno_eps`       | Real    | Smoothness threshold for hybrid WENO shock flagging; must be > 0 (default 1e-2) |
@@ -966,6 +969,9 @@ visualization output is future work.
 | `amr_subcycle`          | Logical | Advance fine level at dt/`amr_ref_ratio` (`amr_ref_ratio` substeps per coarse step) with Berger–Colella refluxing |
 | `amr_max_blocks`       | Integer | Number of fixed refined-block slots preallocated (each max-block sized; ~N x device memory); must be >= 1 (default 4) |
 | `amr_ref_ratio`         | Integer | Fine/coarse refinement ratio r (fine cells per coarse cell per dim; default 2). r /= 2 requires `amr_subcycle` (the finer grid subcycles dt/r for its own dt limit) |
+| `amr_max_levels`        | Integer | Number of refinement levels (1 = single level over the base; 2 = a level-2 block nested in a level-1 block). Default 1. Multilevel (>1) is experimental (static, lockstep, single-rank) |
+| `amr_l2_block_beg(i)`   | Integer | Level-2 block start cell index in direction $i$, in level-1 **fine**-cell index space (used only when `amr_max_levels >= 2`; must nest strictly inside the level-1 block) |
+| `amr_l2_block_end(i)`   | Integer | Level-2 block end cell index in direction $i$, in level-1 **fine**-cell index space (used only when `amr_max_levels >= 2`; must nest strictly inside the level-1 block) |
 | `amr_cluster_eff`       | Real    | Berger-Rigoutsos min tag efficiency a clustered block box reaches before splitting stops; must satisfy 0 < eff <= 1 (default 0.7) |
 
 ### 8. Acoustic Source {#sec-acoustic-source}

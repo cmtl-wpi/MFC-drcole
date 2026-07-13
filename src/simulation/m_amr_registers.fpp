@@ -39,7 +39,7 @@ module m_amr_registers
     implicit none
 
     private; public :: s_initialize_amr_registers, s_amr_capture_boundary_flux, s_amr_apply_reflux, s_amr_zero_fine_registers, &
-        & s_amr_apply_reflux_state, s_finalize_amr_registers, s_amr_reflux_face_flags, freg
+        & s_amr_apply_reflux_state, s_finalize_amr_registers, s_amr_reflux_face_flags, freg, creg
 
     !> SSP-RK3 effective flux weights: q^{n+1} = q^n + dt*(L(q^n)/6 + L(q^(1))/6 + 2*L(q^(2))/3).
     real(wp), parameter :: rk3_w(3) = [1._wp/6._wp, 1._wp/6._wp, 2._wp/3._wp]
@@ -328,6 +328,10 @@ contains
                 end do
                 $:END_GPU_PARALLEL_LOOP()
             end if
+            ! multilevel P2 (S5b): if this fine block (level 1) is the parent of the level-2 block, ALSO capture its flux at the
+            ! L2 sub-boundary into creg(:, :, :, amr_l2_slot) - the coarse side of the L1<->L2 reflux (freg is captured when L2
+            ! advances). Non-subcycle => coef=1, accum=F, matching the base<->L1 lockstep; applied per stage into the L1 slot rhs.
+            if (amr_l2_slot > 0 .and. amr_cur == amr_l2_parent) call s_amr_capture_l2_creg(id, flux_dir, flux_src, coef, accum)
         else
             ! coarse branch: a face's capture runs on the rank owning the coarse cells just OUTSIDE it (its
             ! flux_n covers that face; at a rank-interior face the same rank also holds the inside cells).
@@ -501,6 +505,99 @@ contains
         end if
 
     end subroutine s_amr_capture_boundary_flux
+
+    !> Multilevel P2 (S5b): capture the level-1 parent's flux (flux_dir) at the level-2 block's low/high c/f faces in direction id
+    !! into creg(:, :, :, amr_l2_slot). Runs during the L1 fine advance (grid swapped to L1; flux_dir indexed in L1-fine cells,
+    !! natively 0-based, so the L2 region in L1-fine cells reads directly). Transverse index t is 0-based from the L2 region low
+    !! corner, aligned with freg(:, :, :, amr_l2_slot) captured when L2 advances. Inviscid+surface-tension: the capillary stress
+    !! rides flux_dir (as it must for the base<->L1 reflux to conserve inviscid ST), so flux_dir alone is captured (viscous L2
+    !! reflux, which would also need flux_src, is gated off in the checker - P2 is inviscid).
+    impure subroutine s_amr_capture_l2_creg(id, flux_dir, flux_src, coef, accum)
+
+        integer, intent(in)            :: id
+        type(vector_field), intent(in) :: flux_dir, flux_src
+        real(wp), intent(in)           :: coef
+        logical, intent(in)            :: accum
+        integer                        :: eq, t1, t2, t1_hi, t2_hi, jlo, jhi, o1, o2, l2, rlo(3), rhi(3)
+
+        l2 = amr_l2_slot
+        rlo = amr_region_lo_all(:,l2); rhi = amr_region_hi_all(:,l2)
+        select case (id)
+        case (1); jlo = rlo(1) - 1; jhi = rhi(1); t1_hi = rhi(2) - rlo(2); t2_hi = rhi(3) - rlo(3); o1 = rlo(2); o2 = rlo(3)
+        case (2); jlo = rlo(2) - 1; jhi = rhi(2); t1_hi = rhi(1) - rlo(1); t2_hi = rhi(3) - rlo(3); o1 = rlo(1); o2 = rlo(3)
+        case (3); jlo = rlo(3) - 1; jhi = rhi(3); t1_hi = rhi(1) - rlo(1); t2_hi = rhi(2) - rlo(2); o1 = rlo(1); o2 = rlo(2)
+        end select
+        $:GPU_PARALLEL_LOOP(collapse=3)
+        do t2 = 0, t2_hi
+            do t1 = 0, t1_hi
+                do eq = 1, sys_size
+                    select case (id)
+                    case (1)
+                        if (accum) then
+                            creg(1)%lo(eq, t1, t2, l2) = creg(1)%lo(eq, t1, t2, l2) + coef*real(flux_dir%vf(eq)%sf(jlo, o1 + t1, &
+                                 & o2 + t2), wp)
+                            creg(1)%hi(eq, t1, t2, l2) = creg(1)%hi(eq, t1, t2, l2) + coef*real(flux_dir%vf(eq)%sf(jhi, o1 + t1, &
+                                 & o2 + t2), wp)
+                        else
+                            creg(1)%lo(eq, t1, t2, l2) = coef*real(flux_dir%vf(eq)%sf(jlo, o1 + t1, o2 + t2), wp)
+                            creg(1)%hi(eq, t1, t2, l2) = coef*real(flux_dir%vf(eq)%sf(jhi, o1 + t1, o2 + t2), wp)
+                        end if
+                    case (2)
+                        if (accum) then
+                            creg(2)%lo(eq, t1, t2, l2) = creg(2)%lo(eq, t1, t2, l2) + coef*real(flux_dir%vf(eq)%sf(o1 + t1, jlo, &
+                                 & o2 + t2), wp)
+                            creg(2)%hi(eq, t1, t2, l2) = creg(2)%hi(eq, t1, t2, l2) + coef*real(flux_dir%vf(eq)%sf(o1 + t1, jhi, &
+                                 & o2 + t2), wp)
+                        else
+                            creg(2)%lo(eq, t1, t2, l2) = coef*real(flux_dir%vf(eq)%sf(o1 + t1, jlo, o2 + t2), wp)
+                            creg(2)%hi(eq, t1, t2, l2) = coef*real(flux_dir%vf(eq)%sf(o1 + t1, jhi, o2 + t2), wp)
+                        end if
+                    case (3)
+                        if (accum) then
+                            creg(3)%lo(eq, t1, t2, l2) = creg(3)%lo(eq, t1, t2, l2) + coef*real(flux_dir%vf(eq)%sf(o1 + t1, &
+                                 & o2 + t2, jlo), wp)
+                            creg(3)%hi(eq, t1, t2, l2) = creg(3)%hi(eq, t1, t2, l2) + coef*real(flux_dir%vf(eq)%sf(o1 + t1, &
+                                 & o2 + t2, jhi), wp)
+                        else
+                            creg(3)%lo(eq, t1, t2, l2) = coef*real(flux_dir%vf(eq)%sf(o1 + t1, o2 + t2, jlo), wp)
+                            creg(3)%hi(eq, t1, t2, l2) = coef*real(flux_dir%vf(eq)%sf(o1 + t1, o2 + t2, jhi), wp)
+                        end if
+                    end select
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+        ! total-flux matching: add the viscous momentum/energy face fluxes (flux_src) into creg(L2), always accumulating on top of
+        ! the advective+ST flux_dir above - mirrors the base<->L1 freg viscous capture. Inviscid skips this (registers unchanged).
+        if (viscous) then
+            $:GPU_PARALLEL_LOOP(collapse=3)
+            do t2 = 0, t2_hi
+                do t1 = 0, t1_hi
+                    do eq = eqn_idx%mom%beg, eqn_idx%E
+                        select case (id)
+                        case (1)
+                            creg(1)%lo(eq, t1, t2, l2) = creg(1)%lo(eq, t1, t2, l2) + coef*real(flux_src%vf(eq)%sf(jlo, o1 + t1, &
+                                 & o2 + t2), wp)
+                            creg(1)%hi(eq, t1, t2, l2) = creg(1)%hi(eq, t1, t2, l2) + coef*real(flux_src%vf(eq)%sf(jhi, o1 + t1, &
+                                 & o2 + t2), wp)
+                        case (2)
+                            creg(2)%lo(eq, t1, t2, l2) = creg(2)%lo(eq, t1, t2, l2) + coef*real(flux_src%vf(eq)%sf(o1 + t1, jlo, &
+                                 & o2 + t2), wp)
+                            creg(2)%hi(eq, t1, t2, l2) = creg(2)%hi(eq, t1, t2, l2) + coef*real(flux_src%vf(eq)%sf(o1 + t1, jhi, &
+                                 & o2 + t2), wp)
+                        case (3)
+                            creg(3)%lo(eq, t1, t2, l2) = creg(3)%lo(eq, t1, t2, l2) + coef*real(flux_src%vf(eq)%sf(o1 + t1, &
+                                 & o2 + t2, jlo), wp)
+                            creg(3)%hi(eq, t1, t2, l2) = creg(3)%hi(eq, t1, t2, l2) + coef*real(flux_src%vf(eq)%sf(o1 + t1, &
+                                 & o2 + t2, jhi), wp)
+                        end select
+                    end do
+                end do
+            end do
+            $:END_GPU_PARALLEL_LOOP()
+        end if
+
+    end subroutine s_amr_capture_l2_creg
 
     !> Correct the coarse rhs in the first cell OUTSIDE each block face so the coarse update sees the (child-averaged) fine flux at
     !! every c/f face. Signs follow rhs = (flux_left - flux_right)/dx: low face is the outside cell's RIGHT face => rhs += (F_coarse

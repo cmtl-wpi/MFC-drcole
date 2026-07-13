@@ -302,6 +302,11 @@ module m_global_parameters
     integer, allocatable :: amr_isect_lo_all(:,:), amr_isect_hi_all(:,:)
     logical, allocatable :: amr_owns_all(:)
 
+    !> Multilevel P2 (S5): the single static level-2 block. amr_l2_slot = its slot index (0 = none), amr_l2_parent = the level-1
+    !! slot it nests in. Here (not m_amr) so m_amr_registers reads them for the L1<->L2 flux-register capture. Its region lives in
+    !! amr_region_lo_all/hi_all(:, amr_l2_slot) (in level-1 fine-cell indices), set by s_set_amr_l2_geometry.
+    integer :: amr_l2_slot = 0, amr_l2_parent = 0
+
     !> Fine-level distribution map (fine-SFC-distribution work): SFC/work-balanced single-owner rank per active block. PHASE 1
     !! computes and reports it but does NOT apply it - the mirror decomposition (amr_owns_all) still governs ownership, so behavior
     !! is unchanged. Phase 2 switches amr_rank_owns_block to (amr_block_owner(k) == proc_rank) + coarse<->fine gather/scatter. See
@@ -491,12 +496,15 @@ contains
         amr = .false.
         amr_block_beg(:) = 0
         amr_block_end(:) = 0
+        amr_l2_block_beg(:) = 0
+        amr_l2_block_end(:) = 0
         amr_regrid_int = 0
         amr_tag_eps = 0.1_wp
         amr_buf = 3
         amr_subcycle = .false.
         amr_max_blocks = 4
         amr_ref_ratio = 2
+        amr_max_levels = 1
         amr_cluster_eff = 0.7_wp
         hybrid_smooth_flux = 2
         partition_tile_size = 8
