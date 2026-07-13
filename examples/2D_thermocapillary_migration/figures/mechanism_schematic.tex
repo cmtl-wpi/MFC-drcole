@@ -1,69 +1,85 @@
-% Thermocapillary (Marangoni) migration of a droplet -- introduction schematic.
+% Thermocapillary (Marangoni) migration of a droplet -- publication schematic.
 % Companion to examples/2D_thermocapillary_migration (Samareh et al. 2014, Test Case 1).
 %
 % Compile:  pdflatex mechanism_schematic.tex   (or lualatex / tectonic)
 %
-% A drop in an imposed linear temperature field, oriented as the 2D case is: the gradient runs
-% along +y (cold floor at the BOTTOM, hot ceiling at the TOP). Surface tension falls with T, so
-% sigma varies CONTINUOUSLY around the interface -- drawn as a gradient: dark/heavy = high sigma
-% on the cold (bottom) side, light/thin = low sigma on the hot (top) side. That tangential
-% sigma-gradient is the Marangoni stress; it drives interfacial fluid hot -> cold (top -> bottom)
-% and an internal recirculation, and by reaction the drop migrates UPWARD toward the hot ceiling (U).
+% Physics: a drop sits in an imposed linear temperature field (cold floor, hot ceiling).
+% Surface tension falls with temperature, so sigma is high on the cold (bottom) side and
+% low on the hot (top) side -- drawn as a graded interface (dark/heavy = high sigma). The
+% tangential sigma-gradient is the Marangoni stress; it drags interfacial fluid from hot
+% to cold (top -> bottom) and drives an internal recirculation, so by reaction the drop
+% migrates toward the hot ceiling (U). Annotations are split for legibility: the graded
+% interface and sigma callouts sit on the left, the resulting Marangoni stress on the
+% right; the stress is of course axisymmetric about the migration axis.
 
-\documentclass[border=4pt]{standalone}
+\documentclass[border=6pt]{standalone}
 \usepackage{amsmath}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta}
+\usetikzlibrary{arrows.meta, decorations.markings}
 
 % restrained, print-friendly palette
 \definecolor{coldc}{RGB}{46,86,149}
 \definecolor{hotc}{RGB}{171,57,52}
 \definecolor{marac}{RGB}{31,107,99}
-\definecolor{flowc}{RGB}{125,125,125}
-\definecolor{inkc}{RGB}{30,30,30}
+\definecolor{flowc}{RGB}{124,131,143}
+\definecolor{inkc}{RGB}{28,28,30}
 
 \begin{document}
-\begin{tikzpicture}[>=Stealth, font=\footnotesize, line cap=round]
-  \def\R{1.6}
+\begin{tikzpicture}[
+    >=Stealth, font=\small, line cap=round, line join=round,
+    lead/.style={inkc!55, line width=0.4pt},                 % thin annotation leaders
+    marr/.style={marac, line width=1.05pt,                   % Marangoni tangential arrow
+      decoration={markings, mark=at position 0.52 with {\arrow{Stealth[length=4.2pt]}}},
+      postaction=decorate},
+  ]
+  \def\R{1.5}                                                % droplet radius
 
-  % imposed temperature field (subtle) + thin domain frame: cold FLOOR (bottom) -> hot CEILING (top)
-  \shade[bottom color=coldc!14, top color=hotc!16] (-2.5,-4) rectangle (2.5,4);
-  \draw[gray!50, line width=0.4pt] (-2.5,-4) rectangle (2.5,4);
-  \node[coldc] at (0,-3.62) {cold};
-  \node[hotc]  at (0, 3.62) {hot};
+  %--- imposed temperature field: cold floor (bottom) -> hot ceiling (top) ---------------
+  \shade[bottom color=coldc!16, top color=hotc!18] (-2.7,-3.5) rectangle (2.7,3.5);
+  \draw[inkc!35, line width=0.5pt] (-2.7,-3.5) rectangle (2.7,3.5);
+  \node[hotc]  at (0, 3.14) {hot wall};
+  \node[coldc] at (0,-3.14) {cold wall};
 
-  % temperature-gradient arrow: points UP (+y), along the left margin
-  \draw[->, gray!65, line width=0.7pt] (-2.92,-2.3) -- (-2.92,2.3);
-  \node[gray!70, rotate=90] at (-3.18,0) {$\nabla T$};
+  %--- temperature legend + gradient direction (left margin) -----------------------------
+  \shade[bottom color=coldc, top color=hotc] (-3.32,-2.15) rectangle (-3.04,2.15);
+  \draw[inkc!45, line width=0.4pt] (-3.32,-2.15) rectangle (-3.04,2.15);
+  \node[hotc,  anchor=west, font=\footnotesize] at (-3.0, 2.15) {$T_h$};
+  \node[coldc, anchor=west, font=\footnotesize] at (-3.0,-2.15) {$T_c$};
+  \draw[->, inkc!55, line width=0.7pt] (-2.5,-1.55) -- (-2.5,1.55);
+  \node[inkc!75, anchor=west] at (-2.44,0) {$\nabla T$};
 
-  % droplet interior (lightened so the interior arrows read cleanly)
-  \fill[white, opacity=0.55] (0,0) circle (\R);
-
-  % INTERFACE drawn as a gradient in sigma: each arc segment is shaded by its local
-  % temperature (y = R sin a). cold/bottom -> high sigma (dark, heavy); hot/top -> low
-  % sigma (light, thin). This is the surface-tension gradient that drives the flow.
-  \foreach \a in {0,4,...,356}{
-    \pgfmathsetmacro{\t}{(sin(\a)+1)/2}      % 0 at cold (bottom) pole, 1 at hot (top) pole
-    \pgfmathsetmacro{\dk}{90-50*\t}          % line darkness  (high sigma -> dark)
-    \pgfmathsetmacro{\lw}{1.9-1.0*\t}        % line weight    (high sigma -> heavy)
-    \draw[black!\dk, line width=\lw pt] (\a:\R) arc[start angle=\a, end angle=\a+5, radius=\R];
+  %--- droplet: lightly shaded interior + interface graded by local sigma ----------------
+  \shade[inner color=white, outer color=inkc!7] (0,0) circle (\R);
+  % interface -- each arc segment shaded/weighted by local sigma (high on cold pole):
+  \foreach \a in {0,3,...,357}{
+    \pgfmathsetmacro{\t}{(sin(\a)+1)/2}       % 0 at cold pole (bottom), 1 at hot pole (top)
+    \pgfmathsetmacro{\dk}{92-48*\t}           % darkness -- high sigma reads dark
+    \pgfmathsetmacro{\lw}{2.0-1.1*\t}         % weight   -- high sigma reads heavy
+    \draw[inkc!\dk, line width=\lw pt] (\a:\R) arc[start angle=\a, end angle=\a+4, radius=\R];
   }
-  \node[hotc,  anchor=east] at (-1.16, 1.20) {low $\sigma$};
-  \node[coldc, anchor=east] at (-1.16,-1.20) {high $\sigma$};
 
-  % Marangoni surface stress: tangential, hot -> cold (TOP -> BOTTOM) down the right and left sides
-  \def\Mr{1.86}
-  \draw[marac, line width=1.1pt, ->] (66:\Mr)  arc[start angle=66,  end angle=-66,  radius=\Mr];
-  \draw[marac, line width=1.1pt, ->] (114:\Mr) arc[start angle=114, end angle=246,  radius=\Mr];
-  \node[marac, anchor=west] at (1.98,1.35) {Marangoni stress $\;\nabla_{\!s}\sigma$};
+  %--- sigma magnitude callouts (left) ---------------------------------------------------
+  \draw[lead] (150:\R) -- (-1.7,1.0);
+  \node[hotc,  anchor=east, font=\footnotesize] at (-1.66,1.0) {low $\sigma$};
+  \draw[lead] (210:\R) -- (-1.7,-1.0);
+  \node[coldc, anchor=east, font=\footnotesize] at (-1.66,-1.0) {high $\sigma$};
 
-  % internal recirculation (subtle): two vortices -- surface fluid down the sides, return up the middle
-  \draw[flowc, line width=0.7pt, ->] (-0.82,0.76) arc[start angle=90, end angle=390,  x radius=0.48, y radius=0.76];
-  \draw[flowc, line width=0.7pt, ->] ( 0.82,0.76) arc[start angle=90, end angle=-210, x radius=0.48, y radius=0.76];
+  %--- Marangoni tangential stress (right): interfacial fluid driven hot -> cold ---------
+  \draw[marr] (62:1.82)  arc[start angle=62,  end angle=8,   radius=1.82];
+  \draw[marr] (-8:1.82)  arc[start angle=-8,  end angle=-62, radius=1.82];
+  \draw[lead] (1.82,0) -- (2.28,0.02);
+  \node[marac, anchor=west, align=left] at (2.24,0) {Marangoni\\stress $\;\nabla_{\!s}\sigma$};
 
-  % migration of the drop toward the hot side = UPWARD
-  \draw[inkc, line width=2.0pt, ->] (0,-0.15) -- (0,2.7);
-  \node[inkc] at (0.34,2.18) {$U$};
+  %--- internal recirculation (subordinate): surface down the sides, return up the core --
+  % left loop CCW, right loop CW -- outer flanks descend, core rises (arrowheads on the core)
+  \draw[flowc, line width=0.7pt, ->]
+    (-0.70,0.906) arc[start angle=100, end angle=400,  x radius=0.44, y radius=0.92];
+  \draw[flowc, line width=0.7pt, ->]
+    ( 0.70,0.906) arc[start angle=80,  end angle=-220, x radius=0.44, y radius=0.92];
+
+  %--- drop migration toward the hot side (upward) ---------------------------------------
+  \draw[inkc, line width=2.1pt, ->] (0,-0.2) -- (0,2.02);
+  \node[inkc, anchor=west] at (0.16,1.78) {$U$};
 
 \end{tikzpicture}
 \end{document}
