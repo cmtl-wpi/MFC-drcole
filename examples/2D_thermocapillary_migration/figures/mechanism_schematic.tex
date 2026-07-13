@@ -40,13 +40,9 @@
   \node[hotc]  at (0, 3.14) {hot wall};
   \node[coldc] at (0,-3.14) {cold wall};
 
-  %--- temperature legend + gradient direction (left margin) -----------------------------
-  \shade[bottom color=coldc, top color=hotc] (-3.32,-2.15) rectangle (-3.04,2.15);
-  \draw[inkc!45, line width=0.4pt] (-3.32,-2.15) rectangle (-3.04,2.15);
-  \node[hotc,  anchor=west, font=\footnotesize] at (-3.0, 2.15) {$T_h$};
-  \node[coldc, anchor=west, font=\footnotesize] at (-3.0,-2.15) {$T_c$};
-  \draw[->, inkc!55, line width=0.7pt] (-2.5,-1.55) -- (-2.5,1.55);
-  \node[inkc!75, anchor=west] at (-2.44,0) {$\nabla T$};
+  %--- imposed-gradient direction (left margin) ------------------------------------------
+  \draw[->, inkc!55, line width=0.7pt] (-2.95,-1.7) -- (-2.95,1.7);
+  \node[inkc!75, rotate=90] at (-3.14,0) {$\nabla T$};
 
   %--- droplet: lightly shaded interior + interface graded by local sigma ----------------
   \shade[inner color=white, outer color=inkc!7] (0,0) circle (\R);
