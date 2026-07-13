@@ -999,12 +999,21 @@ contains
     !! extent must fit the slot arrays (sized max_f). Geometry only - gather/advance/restrict/reflux come in S3-S5.
     impure subroutine s_amr_init_l2_block()
 
-        integer :: lo(3), hi(3), l2, par, d, mx(3)
+        integer :: lo(3), hi(3), l2, par, d, mx(3), own
 
         par = 1
+        if (amr_num_blocks /= 1) call s_mpi_abort('multilevel (amr_max_levels>=2) requires a single level-1 tile ' &
+            & // '(P3: a multi-block level-1 parent is not yet supported)')
+        ! P3: the whole 2-level tower (the level-1 tile plus its nested level-2 block) is co-located on the rank that owns the
+        ! level-1 tile. Non-owner ranks hold no level-2 slot (amr_l2_slot=0) and no-op every L2 op, so all level-1<->level-2
+        ! coupling (fill/advance/restrict/reflux) stays rank-local on the owner - no collectives, so the no-owner no-ops cannot
+        ! deadlock. amr_block_owner is deterministic + identical on every rank, so exactly one rank proceeds past this guard.
+        own = amr_block_owner(par)
+        if (proc_rank /= own) then
+            amr_l2_slot = 0; amr_l2_parent = 0
+            return
+        end if
         l2 = amr_num_blocks + 1
-        if (num_procs > 1) call s_mpi_abort('multilevel (amr_max_levels>=2) is single-rank only (P2)')
-        if (amr_num_blocks /= 1) call s_mpi_abort('multilevel (amr_max_levels>=2) requires a single level-1 tile (P2)')
         if (l2 > amr_max_blocks) call s_mpi_abort('multilevel: no free slot for the level-2 block; raise amr_max_blocks')
 
         lo = 0; hi = 0
@@ -1029,7 +1038,7 @@ contains
         call s_set_amr_l2_geometry(l2, par, lo, hi)
         amr_l2_slot = l2; amr_l2_parent = par
 
-        if (proc_rank == 0) print '(A,3(1X,I0),A,3(1X,I0),A,3(1X,I0))', ' [amr] level-2 block: L1-fine lo', lo, ' hi', hi, &
+        if (proc_rank == own) print '(A,3(1X,I0),A,3(1X,I0),A,3(1X,I0))', ' [amr] level-2 block: L1-fine lo', lo, ' hi', hi, &
             & ' -> fine m/n/p', amr_slots(l2)%m, amr_slots(l2)%n, amr_slots(l2)%p
 
     end subroutine s_amr_init_l2_block
