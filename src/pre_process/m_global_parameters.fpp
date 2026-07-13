@@ -132,6 +132,11 @@ contains
         ! Logistics (pre-specific)
         old_grid = .false.
         old_ic = .false.
+        ! AMR: pre_process generates each fine block's IC at fine resolution (s_generate_amr_fine_ic)
+        amr = .false.
+        amr_block_beg(:) = 0
+        amr_block_end(:) = 0
+        amr_ref_ratio = 2
         t_step_old = dflt_int
         cfl_dt = .false.
 

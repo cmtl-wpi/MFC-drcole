@@ -4143,7 +4143,9 @@ contains
             else
                 ts = t_step_start
             end if
-            if (ts == 0) return  ! fresh start: the fine level is prolonged from the pre_process ICs
+            ! ts == 0 (fresh start): read a pre_process-written fine-resolution IC (lustre_amr_0) if it exists, so the
+            ! fine block starts at its own resolution instead of a prolonged (coarse-width) interface; if absent, fall
+            ! through to the missing-file branch below, which returns quietly and lets s_populate_amr_fine prolong.
 
             if (.not. parallel_io) then
                 write (file_loc, '(A,I0,A,I0,A)') trim(case_dir) // '/p_all/p', proc_rank, '/', ts, '/amr_fine.dat'
@@ -4155,7 +4157,8 @@ contains
             have_loc = merge(1, 0, file_exist)
             call s_mpi_allreduce_integer_min(have_loc, have_glb)
             if (have_glb == 0) then
-                if (proc_rank == 0) then
+                ! fresh start with no fine IC: the normal path - stay quiet and let s_populate_amr_fine prolong from coarse
+                if (ts > 0 .and. proc_rank == 0) then
                     print '(A)', &
                         & ' [amr] WARNING: no AMR restart file at this step; the fine level is re-initialized by ' &
                         & // 'prolongation from coarse (fine-level accuracy is lost across this restart)'

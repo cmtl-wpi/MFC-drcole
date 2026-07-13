@@ -1387,6 +1387,11 @@ _nv(
 # post_process reads the `amr` flag (only) to overlay the refined fine blocks on the coarse
 # mesh; the fine-block geometry is recovered from the AMR restart file, not from these params.
 _nv(_SIM_POST, "amr")
+# pre_process ALSO generates each fine block's initial condition at fine resolution (written as
+# lustre_amr_0, read back by the simulation) so the interface starts sharp instead of prolonged
+# from the coarse grid; that needs the flag, the static block geometry, and the refinement ratio.
+_nv(_ALL, "amr")
+_nv(_PRE_SIM, "amr_block_beg", "amr_block_end", "amr_ref_ratio")
 _nv(
     _PRE,
     "stretch_x",
