@@ -1,17 +1,23 @@
-# 1D solutocapillary surface diffusion — mode-decay validation
+# Surfactant surface diffusion, validated against exact theory (1D)
 
-Validates MFC's tangential (interfacial) surfactant diffusion operator against an exact analytic
-solution: the decay of a surface-concentration mode under pure surface diffusion.
+**In one line:** a surfactant film spreads along an interface at a rate that theory predicts exactly,
+and MFC reproduces that rate to within **0.1%**.
 
-**Scope (what this does and does not test).** The interface here is flat and grid-aligned, so the
-surface diffusion is effectively 1D (along `x`) and the surface Laplacian reduces to `∂²/∂x²`. This
-validates the operator's flux/divergence **scaling** (that the measured rate equals `D_s k²`), and it
-is exact to −0.1% below. It does **not** exercise the tangential projection `(I − n⊗n)`: with the
-normal `n = (0,1)` along a grid axis, the projection's cross-derivative terms are multiplied by
-`n_x = 0` and contribute nothing. Validating the projection needs an interface whose tangent is not
-grid-aligned (a tilted flat interface, or a resolved curved interface — see the note at the end).
+## The test, in plain terms
 
-## Problem
+A surfactant — a soap-like film riding on the interface between two fluids — does not sit still. Where
+it is bunched up, it spreads out along the interface to even itself out. This is *surface diffusion*,
+and theory gives its exact speed: a ripple of wavelength `λ` in the coating fades away at the rate
+`D_s k²` (with `k = 2π/λ` and `D_s` the surfactant's diffusivity). Tighter ripples fade faster, by a
+precise amount.
+
+This case puts a single ripple in the surfactant coating on a flat interface, lets it spread, and
+measures how fast MFC smooths it out — against that exact rate. Nothing else happens: there is no flow,
+the interface just sits there while the coating evens out. (This flat, grid-aligned interface is the
+clean baseline; curved interfaces are checked in the [2D-circle](../2D_solutocapillary_diffusion) and
+[3D-sphere](../3D_solutocapillary_diffusion) companions.)
+
+## What it is compared against — exact theory
 
 An insoluble surfactant on an interface is transported along it and diffuses along it with surface
 diffusivity `D_s`. On a **flat** interface the surface-transport equation reduces, for a passive
@@ -47,25 +53,28 @@ interface, and the total `∫Γ̃` is conserved.
 python3 measure.py
 ```
 
+The measured ripple amplitude (points) falls right on the exact exponential (line):
+
 ![mode decay](figures/decay.png)
 
-| quantity | value |
+| | value |
 |---|---|
-| exact rate `D_s k²` | 1.9739 |
+| exact decay rate — theory (`D_s k²`) | 1.9739 |
 | MFC measured rate | 1.9711 |
-| relative error | **−0.1 %** |
-| total surfactant drift | 0.000 % |
+| **error** | **−0.1 %** |
+| total surfactant gained or lost | **0.000 %** (conserved) |
 
-The amplitude tracks the exact exponential to within 0.1 % on this grid, and the total surfactant is
-conserved to round-off — the surface-diffusion operator reproduces the analytic Laplace–Beltrami rate.
+In plain terms: MFC smooths the coating at the theoretical rate to a tenth of a percent, and not a
+speck of surfactant is created or lost along the way. (The exact rate is the analytic Laplace–Beltrami
+eigenvalue for this mode.)
 
-## Dispersion — the full eigenvalue spectrum
+## It holds for every ripple, not just one
 
-The canonical surface-diffusion benchmark is not a single mode but the whole spectrum: every mode `k`
-must decay at its Laplace–Beltrami eigenvalue rate `D_s k²` (Xu, Li, Lowengrub & Zhao, *J. Comput.
-Phys.* 2006; the surface-FEM literature, Dziuk & Elliott). Because the operator is linear, seeding a
-superposition of modes and letting them decay independently recovers the entire `rate(k)` curve in one
-run:
+The stronger test is not one ripple but all of them: every wavelength must fade at its own correct rate
+`D_s k²` — tighter ripples faster. This "fades faster the tighter it is" curve is the standard
+surface-diffusion benchmark (Xu, Li, Lowengrub & Zhao, *J. Comput. Phys.* 2006; the surface-finite-element
+literature, Dziuk & Elliott). Seeding several ripples at once and letting them fade independently traces
+the whole curve in a single run:
 
 ```
 ./mfc.sh run sweep.py -n 1 -t pre_process simulation
