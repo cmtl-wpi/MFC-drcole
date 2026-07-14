@@ -3013,6 +3013,15 @@ def list_cases() -> typing.List[TestCaseBuilder]:
         stack.push("6eq", {"model_eqns": 3})
         cases.append(define_case_d(stack, "", {}))
         stack.pop()
+        # fine-resolution block initialization (static block + parallel_io + single rank): the ONLY
+        # path where pre_process writes the fine IC (lustre_amr_0) and the simulation reads + restricts
+        # it, so the fine block starts at the fine interface width rather than the prolonged coarse
+        # width (the material interface at x=0.5 sits inside the static block 16..47). Static + np=1 +
+        # parallel_io are exactly the trigger conditions; restart_check + honor_io_keys fold the MPI-IO
+        # fine state into the compared golden, so a regression in the write/read/restrict path is caught
+        stack.push("static block -> fine-IC init -> parallel_io", {"amr_regrid_int": 0, "parallel_io": "T"})
+        cases.append(define_case_d(stack, "", {}, restart_check=True, honor_io_keys=True))
+        stack.pop()
         stack.pop()
 
         # (d2) hypoelasticity: the suite's 1D hypoelastic shock config (stiff water EOS + shear

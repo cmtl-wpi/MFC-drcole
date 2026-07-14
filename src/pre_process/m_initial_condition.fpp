@@ -229,7 +229,8 @@ contains
         allocate (fq_prim(sys_size), fq_cons(sys_size))
         do i = 1, sys_size
             allocate (fq_prim(i)%sf(0:fm,0:fn,0:fp)); allocate (fq_cons(i)%sf(0:fm,0:fn,0:fp))
-        end do
+            fq_prim(i)%sf = -1.e-6_stp  ! background sentinel, exactly as s_initialize_initial_condition_module seeds the base
+        end do  ! grid before patching - without it, cells no patch fully overwrites keep allocation garbage
         allocate (fpid(0:fm,0:fn,0:fp)); fpid = 0
         call s_apply_icpp_patches(fpid, fq_prim)
         call s_convert_primitive_to_conservative_variables(fq_prim, fq_cons)
