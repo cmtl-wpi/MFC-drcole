@@ -3615,7 +3615,7 @@ contains
             logical                                                :: old_owns(amr_max_blocks), any_xchg, same, merged
             integer                                                :: ci, cj, ck, fi, fj, fk, ofi, ofj, ofk, i
             integer                                                :: sidx(3), tg_lo(3), tg_hi(3), nboxes
-            real(wp)                                               :: r0, g
+            real(wp)                                               :: r0, g, aC
 
             ! valid coarse CONS ghosts at internal rank boundaries: the tag sweep reads +/-1 across seams and the rebuild
             ! prolongation
@@ -3652,6 +3652,28 @@ contains
                         if (p_glb > 0) g = max(g, abs(f_amr_rho_tot(q_cons_base, ci, cj, ck + 1) - f_amr_rho_tot(q_cons_base, ci, &
                             & cj, ck - 1)))
                         if (g/(2._wp*r0) > amr_tag_eps) tag_grid(ci, cj, ck) = .true.
+                        ! interface criterion (num_fluids > 1): also tag cells straddling the alpha = 0.5 phase boundary. It is
+                        ! threshold-free and independent of density contrast, so it catches interfaces the density-gradient tagger
+                        ! misses (matched-density / low-contrast) and, unlike that tagger, never over-tags the light fluid - whose
+                        ! small absolute density fluctuations inflate the local-density-normalized gradient and pull blocks off the
+                        ! interface. Lagrangian alphas sum to the local liquid fraction (not 1), so 0.5 is not a phase boundary
+                        ! there.
+                        if (num_fluids > 1 .and. .not. bubbles_lagrange) then
+                            aC = f_amr_alpha1(q_cons_base, ci, cj, ck) - 5e-1_wp
+                            if (aC*(f_amr_alpha1(q_cons_base, ci + 1, cj, &
+                                & ck) - 5e-1_wp) < 0._wp .or. aC*(f_amr_alpha1(q_cons_base, ci - 1, cj, &
+                                & ck) - 5e-1_wp) < 0._wp) tag_grid(ci, cj, ck) = .true.
+                            if (n_glb > 0) then
+                                if (aC*(f_amr_alpha1(q_cons_base, ci, cj + 1, &
+                                    & ck) - 5e-1_wp) < 0._wp .or. aC*(f_amr_alpha1(q_cons_base, ci, cj - 1, &
+                                    & ck) - 5e-1_wp) < 0._wp) tag_grid(ci, cj, ck) = .true.
+                            end if
+                            if (p_glb > 0) then
+                                if (aC*(f_amr_alpha1(q_cons_base, ci, cj, &
+                                    & ck + 1) - 5e-1_wp) < 0._wp .or. aC*(f_amr_alpha1(q_cons_base, ci, cj, &
+                                    & ck - 1) - 5e-1_wp) < 0._wp) tag_grid(ci, cj, ck) = .true.
+                            end if
+                        end if
                         ! the acoustic source support stays coarse (its spatials are coarse cell
                         ! indices): suppress tags there so the clusterer splits around the source
                         if (acoustic_source .and. tag_grid(ci, cj, ck)) then
@@ -4518,6 +4540,17 @@ contains
             end do
 
         end function f_amr_rho_tot
+
+        !> First-fluid volume fraction at a coarse cell - the interface indicator for the regrid tagger.
+        pure function f_amr_alpha1(q, ci, cj, ck) result(a)
+
+            type(scalar_field), dimension(:), intent(in) :: q
+            integer, intent(in)                          :: ci, cj, ck
+            real(wp)                                     :: a
+
+            a = real(q(eqn_idx%adv%beg)%sf(ci, cj, ck), wp)
+
+        end function f_amr_alpha1
 
         !> minmod slope limiter: 0 if a,b differ in sign, else the smaller-magnitude argument.
         pure elemental function minmod(a, b) result(m)
