@@ -1400,7 +1400,6 @@ class CaseValidator:
         time_stepper = self.get("time_stepper")
         model_eqns = self.get("model_eqns")
         num_fluids = self.get("num_fluids")
-        surface_tension = self.get("surface_tension", "F") == "T"
         hyperelasticity = self.get("hyperelasticity", "F") == "T"
         bubbles_lagrange = self.get("bubbles_lagrange", "F") == "T"
         mhd = self.get("mhd", "F") == "T"

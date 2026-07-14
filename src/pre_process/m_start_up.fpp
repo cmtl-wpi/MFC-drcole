@@ -565,6 +565,9 @@ contains
             call s_write_data_files(ic%q_cons_vf, ic%q_prim_vf, ic%bc_type)
         end if
 
+        ! AMR: also write each fine block's IC at fine resolution (lustre_amr_0) so the fine level starts sharp
+        call s_generate_amr_fine_ic()
+
         call cpu_time(finish)
 
     end subroutine s_apply_initial_condition

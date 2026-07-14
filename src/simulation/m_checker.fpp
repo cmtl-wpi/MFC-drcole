@@ -13,7 +13,7 @@ module m_checker
     use m_helper
     use m_helper_basic
     use m_constants, only: recon_type_weno, recon_type_muscl, muscl_order_first_order, time_stepper_rk3, riemann_solver_hllc, &
-        & BC_RIEMANN_EXTRAP
+        & BC_RIEMANN_EXTRAP, int_comp_mthinc
 
     implicit none
 
@@ -115,6 +115,12 @@ contains
                        & "amr does not support Riemann-extrapolation boundary conditions (bc = -4): they alter the WENO coefficient rows near the boundary, which the fine-block reconstruction cannot inherit correctly")
             @:PROHIBIT(num_fluids > 1 .and. (.not. mpp_lim) .and. (.not. bubbles_lagrange), &
                        & "amr with num_fluids > 1 requires mpp_lim (its volume-fraction clamp+renormalize maintains coarse/fine alpha consistency); Lagrangian bubbles are exempt (their alphas sum to the local liquid fraction and prolong without the sum-to-one closure)")
+            ! MTHINC (int_comp = 2) keeps its normal/position buffers (mthinc_nhat, mthinc_d) module-scoped and sized ONCE to the
+            ! base-grid idwbuff in s_initialize_thinc_module, but the fine advance swaps idwbuff to the block's (larger) bounds
+            ! before s_compute_rhs -> s_compute_mthinc_normals writes over them, corrupting memory or the reconstructed normals.
+            ! Directional THINC (int_comp = 1) is buffer-free and AMR-safe. Lift only once the buffers are per-block.
+            @:PROHIBIT(int_comp == int_comp_mthinc, &
+                       & "amr does not support MTHINC (int_comp = 2): its normal buffers are sized to the base grid and overrun on the fine block; use directional THINC (int_comp = 1), which is AMR-safe")
             ! EXPERIMENT (amr-st containment, PR 1628): the surface_tension gate is
             ! lifted here to characterize a contained-interface case (interface kept far
             ! from the 2:1 seam so |grad-c| < capillary_cutoff in the seam band, where the

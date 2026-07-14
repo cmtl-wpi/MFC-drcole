@@ -903,6 +903,16 @@ contains
         ! s_populate is skipped (fine state is restored, not prolonged), so the check is both inapplicable and unarmed
         if (.not. amr_restored) call s_amr_conservation_check(q_cons_ts(1)%vf)
         if (.not. amr_restored) call s_amr_l2_conservation_check()  ! multilevel P2: L1<->L2 restrict-prolong self-test
+        ! a restored fine level (esp. a fresh-start fine-resolution IC from pre_process, sharper than the coarse
+        ! covered cells) may not agree with the coarse; restrict it down so coarse/fine are consistent before the
+        ! conservation baseline is taken (idempotent for an ordinary consistent restart)
+        if (amr_restored) then
+            do i = 1, amr_num_blocks
+                call s_amr_select_slot(i)
+                call s_restrict_fine_to_coarse(q_cons_ts(1)%vf)
+            end do
+            call s_amr_select_slot(1)
+        end if
         call s_amr_conservation_defect(q_cons_ts(1)%vf, .false.)
 
         if (model_eqns == model_eqns_6eq) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
