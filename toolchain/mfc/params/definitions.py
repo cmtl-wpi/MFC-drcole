@@ -629,6 +629,8 @@ def _load():
     _r("sigma_dTdT", REAL, {"surface_tension"})
     _r("surfactant", LOG, {"surface_tension"})
     _r("sigma_dGamma", REAL, {"surface_tension"})
+    _r("sigma_El", REAL, {"surface_tension"})
+    _r("surf_max", REAL, {"surface_tension"})
     _r("surf_diff", REAL, {"surface_tension"})
 
     # Bulk thermal conduction
@@ -1242,6 +1244,8 @@ _nv(
     "sigma_dTdT",
     "surfactant",
     "sigma_dGamma",
+    "sigma_El",
+    "surf_max",
     "surf_diff",
     "adv_n",
     "hypoelasticity",

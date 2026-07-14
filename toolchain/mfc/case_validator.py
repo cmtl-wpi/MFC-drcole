@@ -774,9 +774,10 @@ class CaseValidator:
 
         # Thermal Marangoni: linear sigma(T) closure (sigma_model = 1)
         # Solutocapillary Marangoni: linear sigma(Gamma) closure (sigma_model = 2)
+        #                            nonlinear Langmuir sigma(Gamma) closure (sigma_model = 3)
         self.prohibit(
-            sigma_model is not None and sigma_model not in [0, 1, 2],
-            "sigma_model must be 0 (constant), 1 (linear in temperature), or 2 (linear in surfactant concentration)",
+            sigma_model is not None and sigma_model not in [0, 1, 2, 3],
+            "sigma_model must be 0 (constant), 1 (linear in temperature), 2 (linear in surfactant concentration), " "or 3 (nonlinear Langmuir in surfactant concentration)",
         )
         self.prohibit(
             (sigma_model == 1 or sigma_dTdT is not None or sigma_T_ref is not None) and not surface_tension,
@@ -819,6 +820,21 @@ class CaseValidator:
         self.prohibit(
             sigma_model == 2 and sigma_dGamma is None,
             "sigma_model = 2 (solutocapillary Marangoni) requires sigma_dGamma (dsigma/dGamma) to be set",
+        )
+        # Nonlinear Langmuir closure sigma = sigma0*(1 + E*ln(1 - Gamma/surf_max)) (sigma_model = 3)
+        sigma_El = self.get("sigma_El")
+        surf_max = self.get("surf_max")
+        self.prohibit(
+            sigma_model == 3 and not surfactant,
+            "sigma_model = 3 (Langmuir solutocapillary Marangoni) requires surfactant to be enabled",
+        )
+        self.prohibit(
+            sigma_model == 3 and (sigma_El is None or surf_max is None),
+            "sigma_model = 3 (Langmuir) requires sigma_El (elasticity E) and surf_max (max packing Gamma_inf) to be set",
+        )
+        self.prohibit(
+            surf_max is not None and surf_max <= 0,
+            "surf_max (max-packing surfactant concentration) must be positive",
         )
 
     def check_mhd(self):

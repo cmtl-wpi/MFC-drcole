@@ -455,6 +455,8 @@ contains
         sigma_dTdT = 0._wp
         surfactant = .false.
         sigma_dGamma = 0._wp
+        sigma_El = 0._wp
+        surf_max = 1._wp
         surf_diff = 0._wp
         bubbles_lagrange = .false.
 

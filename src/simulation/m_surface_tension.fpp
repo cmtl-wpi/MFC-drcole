@@ -333,6 +333,17 @@ contains
                                 c_sigma(j, k, l) = c_sigma(j, k, l) + sigma_dGamma*Gamma_surf
                             end if
                         end if
+                        if (sigma_model == 3) then
+                            ! Nonlinear Langmuir closure sigma = sigma0*(1 + E*ln(1 - Gamma/Gamma_inf)); the
+                            ! (1 - Gamma/surf_max) argument is floored positive so the physical dive of sigma
+                            ! toward -inf near max packing is caught by the floor below, not a log of a
+                            ! non-positive number. Overwrites the base sigma (standalone nonlinear closure).
+                            normc = c_divs(num_dims + 1)%sf(j, k, l)
+                            if (normc > capillary_cutoff) then
+                                Gamma_surf = q_prim_vf(eqn_idx%surf)%sf(j, k, l)/normc
+                                c_sigma(j, k, l) = sigma*(1._wp + sigma_El*log(max(1._wp - Gamma_surf/surf_max, capillary_cutoff)))
+                            end if
+                        end if
                         ! Floor sigma at a small positive value: a strongly negative sigma(Gamma) or
                         ! sigma(T) closure (e.g. a saturating surfactant) must not drive sigma <= 0,
                         ! which crashes the capillary force. Inert in normal operation (c_sigma >> floor).
