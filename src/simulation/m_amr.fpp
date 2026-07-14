@@ -1048,6 +1048,69 @@ contains
 
     end subroutine s_amr_init_l2_block
 
+    !> Multilevel P4 (S2): choose the new level-2 box (parent-fine indices) by tagging the level-1 parent's fine cells straddling
+    !! the alpha = 0.5 interface (the same threshold-free criterion as the level-1 tagger), taking their bounding box padded by
+    !! amr_buf, then clamping to the parent interior with a 1-cell nesting margin (so the prolong reads valid parent neighbours) and
+    !! to the level-2 slot's fine capacity. If no cell is tagged (the interface is not inside this parent) the current box is kept
+    !! so the level-2 block does not collapse. Neighbour reads are bounds-guarded to the parent interior (never its ghosts).
+    impure subroutine s_amr_l2_target(par, olo, ohi, lo, hi)
+
+        integer, intent(in)  :: par, olo(3), ohi(3)
+        integer, intent(out) :: lo(3), hi(3)
+        integer              :: ci, cj, ck, mpar(3), tlo(3), thi(3), cap(3), d
+        logical              :: any_tag, straddle
+        real(wp)             :: aC
+
+        mpar(1) = amr_slots(par)%m
+        mpar(2) = merge(amr_slots(par)%n, 0, n_glb > 0)
+        mpar(3) = merge(amr_slots(par)%p, 0, p_glb > 0)
+
+        tlo = huge(0); thi = -1; any_tag = .false.
+        do ck = 0, mpar(3)
+            do cj = 0, mpar(2)
+                do ci = 0, mpar(1)
+                    aC = f_amr_alpha1(amr_slots(par)%q_cons, ci, cj, ck) - 5e-1_wp
+                    straddle = (ci < mpar(1) .and. aC*(f_amr_alpha1(amr_slots(par)%q_cons, ci + 1, cj, &
+                                & ck) - 5e-1_wp) < 0._wp) .or. (ci > 0 .and. aC*(f_amr_alpha1(amr_slots(par)%q_cons, ci - 1, cj, &
+                                & ck) - 5e-1_wp) < 0._wp)
+                    if (n_glb > 0) straddle = straddle .or. (cj < mpar(2) .and. aC*(f_amr_alpha1(amr_slots(par)%q_cons, ci, &
+                        & cj + 1, ck) - 5e-1_wp) < 0._wp) .or. (cj > 0 .and. aC*(f_amr_alpha1(amr_slots(par)%q_cons, ci, cj - 1, &
+                        & ck) - 5e-1_wp) < 0._wp)
+                    if (p_glb > 0) straddle = straddle .or. (ck < mpar(3) .and. aC*(f_amr_alpha1(amr_slots(par)%q_cons, ci, cj, &
+                        & ck + 1) - 5e-1_wp) < 0._wp) .or. (ck > 0 .and. aC*(f_amr_alpha1(amr_slots(par)%q_cons, ci, cj, &
+                        & ck - 1) - 5e-1_wp) < 0._wp)
+                    if (straddle) then
+                        tlo(1) = min(tlo(1), ci); thi(1) = max(thi(1), ci)
+                        if (n_glb > 0) then; tlo(2) = min(tlo(2), cj); thi(2) = max(thi(2), cj); end if
+                        if (p_glb > 0) then; tlo(3) = min(tlo(3), ck); thi(3) = max(thi(3), ck); end if
+                        any_tag = .true.
+                    end if
+                end do
+            end do
+        end do
+
+        if (.not. any_tag) then
+            lo = olo; hi = ohi
+            return
+        end if
+
+        ! pad by amr_buf and clamp to the parent interior with a 1-cell nesting margin (prolong reads lo-1 .. hi+1); then cap to
+        ! the slot's fine capacity (rr*(size) - 1 <= max_f, i.e. size <= (max_f + 1)/rr), centre-cropping + warning if exceeded
+        cap = [(max_f1 + 1)/amr_ref_ratio, (max_f2 + 1)/amr_ref_ratio, (max_f3 + 1)/amr_ref_ratio]
+        lo = 0; hi = 0
+        do d = 1, 3
+            if ((d == 2 .and. n_glb == 0) .or. (d == 3 .and. p_glb == 0)) cycle
+            lo(d) = max(1, tlo(d) - amr_buf)
+            hi(d) = min(mpar(d) - 1, thi(d) + amr_buf)
+            if (hi(d) - lo(d) + 1 > cap(d)) then
+                if (proc_rank == 0) print '(A,I0,A,I0)', ' [amr] WARNING: level-2 target too large in dim ', d, &
+                    & ', cropping to slot capacity ', cap(d)
+                lo(d) = max(1, (lo(d) + hi(d) - cap(d) + 1)/2); hi(d) = lo(d) + cap(d) - 1
+            end if
+        end do
+
+    end subroutine s_amr_l2_target
+
     !> Multilevel P4 (dynamic L2): re-place the single nested level-2 block inside its parent level-1 tile at the target box,
     !! conservatively. Fires at the regrid cadence AFTER the level-1 regrid, which left the parent state current and (via the
     !! s_amr_reconcile_slots guard) preserved the level-2 slot holding its pre-regrid fine state. Reset the level-2 geometry to the
@@ -1067,9 +1130,9 @@ contains
         olo = amr_slots(l2)%region%lo; ohi = amr_slots(l2)%region%hi
         oext(1) = amr_slots(l2)%m; oext(2) = amr_slots(l2)%n; oext(3) = amr_slots(l2)%p
 
-        ! target box for the new level-2 block. S1: the current box unchanged - a verifiable no-op re-place that isolates the
-        ! re-placement machinery. S2 will tag the level-1 fine cells straddling alpha = 0.5 and use their bounding box.
-        lo = olo; hi = ohi
+        ! target box for the new level-2 block: the interface bounding box inside the parent (falls back to the current box when
+        ! the interface is not in this parent, so the block stays put rather than collapsing)
+        call s_amr_l2_target(par, olo, ohi, lo, hi)
 
         if (proc_rank == 0) print '(A,3(1X,I0),A,3(1X,I0))', ' [amr] level-2 re-placed: lo', lo, ' hi', hi
 
