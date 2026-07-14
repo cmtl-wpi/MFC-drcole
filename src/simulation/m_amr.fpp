@@ -3612,10 +3612,10 @@ contains
             integer                                                :: old_ilo(3, amr_max_blocks), old_ext(3, amr_max_blocks)
             integer                                                :: old_chi(3, amr_max_blocks)
             integer                                                :: old_owner(amr_max_blocks)
-            logical                                                :: old_owns(amr_max_blocks), any_xchg, same, merged
+            logical                                                :: old_owns(amr_max_blocks), any_xchg, same, merged, covered
             integer                                                :: ci, cj, ck, fi, fj, fk, ofi, ofj, ofk, i
-            integer                                                :: sidx(3), tg_lo(3), tg_hi(3), nboxes
-            real(wp)                                               :: r0, g
+            integer                                                :: sidx(3), tg_lo(3), tg_hi(3), nboxes, kb, escaped, escaped_glb
+            real(wp)                                               :: r0, g, aC
 
             ! valid coarse CONS ghosts at internal rank boundaries: the tag sweep reads +/-1 across seams and the rebuild
             ! prolongation
@@ -3640,6 +3640,7 @@ contains
             if (n_glb > 0) then; tg_lo(2) = merge(1, 0, sidx(2) == 0); tg_hi(2) = merge(n - 1, n, sidx(2) + n == n_glb); end if
             if (p_glb > 0) then; tg_lo(3) = merge(1, 0, sidx(3) == 0); tg_hi(3) = merge(p - 1, p, sidx(3) + p == p_glb); end if
             allocate (tag_grid(0:m,0:n,0:p)); tag_grid = .false.
+            escaped = 0
             do ck = tg_lo(3), tg_hi(3)
                 do cj = tg_lo(2), tg_hi(2)
                     do ci = tg_lo(1), tg_hi(1)
@@ -3652,6 +3653,28 @@ contains
                         if (p_glb > 0) g = max(g, abs(f_amr_rho_tot(q_cons_base, ci, cj, ck + 1) - f_amr_rho_tot(q_cons_base, ci, &
                             & cj, ck - 1)))
                         if (g/(2._wp*r0) > amr_tag_eps) tag_grid(ci, cj, ck) = .true.
+                        ! interface criterion (num_fluids > 1): also tag cells straddling the alpha = 0.5 phase boundary. It is
+                        ! threshold-free and independent of density contrast, so it catches interfaces the density-gradient tagger
+                        ! misses (matched-density / low-contrast) and, unlike that tagger, never over-tags the light fluid - whose
+                        ! small absolute density fluctuations inflate the local-density-normalized gradient and pull blocks off the
+                        ! interface. Lagrangian alphas sum to the local liquid fraction (not 1), so 0.5 is not a phase boundary
+                        ! there.
+                        if (num_fluids > 1 .and. .not. bubbles_lagrange) then
+                            aC = f_amr_alpha1(q_cons_base, ci, cj, ck) - 5e-1_wp
+                            if (aC*(f_amr_alpha1(q_cons_base, ci + 1, cj, &
+                                & ck) - 5e-1_wp) < 0._wp .or. aC*(f_amr_alpha1(q_cons_base, ci - 1, cj, &
+                                & ck) - 5e-1_wp) < 0._wp) tag_grid(ci, cj, ck) = .true.
+                            if (n_glb > 0) then
+                                if (aC*(f_amr_alpha1(q_cons_base, ci, cj + 1, &
+                                    & ck) - 5e-1_wp) < 0._wp .or. aC*(f_amr_alpha1(q_cons_base, ci, cj - 1, &
+                                    & ck) - 5e-1_wp) < 0._wp) tag_grid(ci, cj, ck) = .true.
+                            end if
+                            if (p_glb > 0) then
+                                if (aC*(f_amr_alpha1(q_cons_base, ci, cj, &
+                                    & ck + 1) - 5e-1_wp) < 0._wp .or. aC*(f_amr_alpha1(q_cons_base, ci, cj, &
+                                    & ck - 1) - 5e-1_wp) < 0._wp) tag_grid(ci, cj, ck) = .true.
+                            end if
+                        end if
                         ! the acoustic source support stays coarse (its spatials are coarse cell
                         ! indices): suppress tags there so the clusterer splits around the source
                         if (acoustic_source .and. tag_grid(ci, cj, ck)) then
@@ -3662,9 +3685,32 @@ contains
                         if (bubbles_lagrange .and. tag_grid(ci, cj, ck)) then
                             if (f_in_lag_support(ci + sidx(1), cj + sidx(2), ck + sidx(3))) tag_grid(ci, cj, ck) = .false.
                         end if
+                        ! escape detection (diagnostic): a cell still tagged after suppression that lies outside EVERY current
+                        ! block has drifted out of the refined region since the last regrid - it was un-refined for part of the
+                        ! interval. amr_region_*_all still holds the current (pre-rebuild) blocks here, and each already includes
+                        ! its
+                        ! amr_buf padding, so a tag outside a block means the feature outran that padding.
+                        if (tag_grid(ci, cj, ck)) then
+                            covered = .false.
+                            do kb = 1, amr_num_blocks
+                                if (ci + sidx(1) >= amr_region_lo_all(1, kb) .and. ci + sidx(1) <= amr_region_hi_all(1, &
+                                    & kb) .and. (n_glb == 0 .or. (cj + sidx(2) >= amr_region_lo_all(2, &
+                                    & kb) .and. cj + sidx(2) <= amr_region_hi_all(2, &
+                                    & kb))) .and. (p_glb == 0 .or. (ck + sidx(3) >= amr_region_lo_all(3, &
+                                    & kb) .and. ck + sidx(3) <= amr_region_hi_all(3, kb)))) then
+                                    covered = .true.; exit
+                                end if
+                            end do
+                            if (.not. covered) escaped = 1
+                        end if
                     end do
                 end do
             end do
+            call s_mpi_allreduce_integer_max(escaped, escaped_glb)
+            if (escaped_glb > 0 .and. proc_rank == 0) print '(A)', &
+                & ' [amr] WARNING: a tagged feature (interface or shock) ' &
+                & // 'drifted outside the fine-block coverage before this regrid - it lost refinement for part of the interval; ' &
+                & // 'reduce amr_regrid_int or increase amr_buf to keep it covered'
 
             ! 2) cluster into a list of separated boxes (deterministic on all ranks)
             call s_amr_cluster(tag_grid, boxes, nboxes)
@@ -4518,6 +4564,17 @@ contains
             end do
 
         end function f_amr_rho_tot
+
+        !> First-fluid volume fraction at a coarse cell - the interface indicator for the regrid tagger.
+        pure function f_amr_alpha1(q, ci, cj, ck) result(a)
+
+            type(scalar_field), dimension(:), intent(in) :: q
+            integer, intent(in)                          :: ci, cj, ck
+            real(wp)                                     :: a
+
+            a = real(q(eqn_idx%adv%beg)%sf(ci, cj, ck), wp)
+
+        end function f_amr_alpha1
 
         !> minmod slope limiter: 0 if a,b differ in sign, else the smaller-magnitude argument.
         pure elemental function minmod(a, b) result(m)

@@ -3024,6 +3024,57 @@ def list_cases() -> typing.List[TestCaseBuilder]:
         stack.pop()
         stack.pop()
 
+        # (d') matched-density composition interface: the ONLY test that exercises the alpha=0.5
+        # interface tag criterion. Two identical fluids (same density, EOS, p, u) separated by a
+        # volume-fraction interface at x=0.5, so the total-density field is UNIFORM and the density-
+        # gradient tagger tags nothing. The initial block sits OFF the interface (cells 6..21); only
+        # the interface criterion can relocate it onto the interface at regrid (verified: the block
+        # moves to ~cells 29..34 with the criterion, and stays at 6..21 without it, leaving the
+        # interface unrefined). That makes the golden sensitive to the criterion.
+        stack.push(
+            "AMR -> 1D -> matched-density interface -> dynamic regrid",
+            {
+                **amr_1d_base,
+                "amr_regrid_int": 4,
+                "amr_tag_eps": 0.1,
+                "amr_buf": 2,
+                "amr_subcycle": "T",
+                "amr_block_beg(1)": 6,
+                "amr_block_end(1)": 21,
+                "num_fluids": 2,
+                "mpp_lim": "T",
+                "fluid_pp(2)%gamma": 1.0e00 / (1.4e00 - 1.0e00),
+                "fluid_pp(2)%pi_inf": 0.0,
+                "fluid_pp(2)%cv": 0.0,
+                "fluid_pp(2)%qv": 0.0,
+                "fluid_pp(2)%qvp": 0.0,
+                "patch_icpp(1)%pres": 1.0,
+                "patch_icpp(2)%pres": 1.0,
+                "patch_icpp(3)%pres": 1.0,
+                "patch_icpp(1)%vel(1)": 0.5,
+                "patch_icpp(2)%vel(1)": 0.5,
+                "patch_icpp(3)%vel(1)": 0.5,
+                "patch_icpp(2)%x_centroid": 0.25,
+                "patch_icpp(2)%length_x": 0.5,
+                "patch_icpp(3)%x_centroid": 0.75,
+                "patch_icpp(3)%length_x": 0.5,
+                "patch_icpp(1)%alpha_rho(1)": (1.0 - eps_a) * 1.0,
+                "patch_icpp(1)%alpha_rho(2)": eps_a * 1.0,
+                "patch_icpp(1)%alpha(1)": 1.0 - eps_a,
+                "patch_icpp(1)%alpha(2)": eps_a,
+                "patch_icpp(2)%alpha_rho(1)": (1.0 - eps_a) * 1.0,
+                "patch_icpp(2)%alpha_rho(2)": eps_a * 1.0,
+                "patch_icpp(2)%alpha(1)": 1.0 - eps_a,
+                "patch_icpp(2)%alpha(2)": eps_a,
+                "patch_icpp(3)%alpha_rho(1)": eps_a * 1.0,
+                "patch_icpp(3)%alpha_rho(2)": (1.0 - eps_a) * 1.0,
+                "patch_icpp(3)%alpha(1)": eps_a,
+                "patch_icpp(3)%alpha(2)": 1.0 - eps_a,
+            },
+        )
+        cases.append(define_case_d(stack, "", {}))
+        stack.pop()
+
         # (d2) hypoelasticity: the suite's 1D hypoelastic shock config (stiff water EOS + shear
         # modulus G) on a static 2:1 fine block over the wave region. Stress components prolong
         # via the generic conservative-linear path; the fine swap recomputes the spacing-dependent
