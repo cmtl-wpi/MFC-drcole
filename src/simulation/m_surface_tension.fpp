@@ -44,14 +44,6 @@ module m_surface_tension
     !> @}
     $:GPU_DECLARE(create='[c_sigma]')
 
-    !> @name cell-centered gradient of the surfactant density Gamma*|grad c|, used to build the
-    !> tangential surface-diffusion flux (allocated unconditionally when surface tension is active
-    !> so the device descriptor is valid; only written/read when surfactant .and. surf_diff > 0)
-    !> @{
-    real(wp), allocatable, dimension(:,:,:,:) :: dGamma_tilde
-    !> @}
-    $:GPU_DECLARE(create='[dGamma_tilde]')
-
     type(int_bounds_info) :: is1, is2, is3, iv
     $:GPU_DECLARE(create='[is1, is2, is3, iv]')
 
@@ -75,11 +67,6 @@ contains
         ! Allocated unconditionally so the device descriptor is always valid in the capillary
         ! source-flux kernel; it is only written (s_get_capillary) and read when sigma_model == 1.
         @:ALLOCATE(c_sigma(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end))
-
-        ! Surfactant-density gradient work array (tangential surface diffusion); allocated
-        ! unconditionally for a valid device descriptor, written/read only for surf_diff > 0.
-        @:ALLOCATE(dGamma_tilde(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end, &
-                   & 1:num_dims))
 
     end subroutine s_initialize_surface_tension_module
 
@@ -352,44 +339,24 @@ contains
             $:END_GPU_PARALLEL_LOOP()
         end if
 
-        ! Cell-centered gradient of the surfactant density Gamma*|grad c| (= q_prim(surf)) over
-        ! the interior plus one buffer layer; the diffusion flux producer averages these to faces
-        ! for the tangential (non-idir) components. q_prim_vf ghost cells are already populated.
-        if (surfactant .and. surf_diff > 0._wp) then
-            $:GPU_PARALLEL_LOOP(collapse=3)
-            do l = idwbuff(3)%beg + 1, idwbuff(3)%end - 1
-                do k = idwbuff(2)%beg + 1, idwbuff(2)%end - 1
-                    do j = idwbuff(1)%beg + 1, idwbuff(1)%end - 1
-                        dGamma_tilde(j, k, l, 1) = (q_prim_vf(eqn_idx%surf)%sf(j + 1, k, l) - q_prim_vf(eqn_idx%surf)%sf(j - 1, &
-                                     & k, l))/(x_cc(j + 1) - x_cc(j - 1))
-                        dGamma_tilde(j, k, l, 2) = (q_prim_vf(eqn_idx%surf)%sf(j, k + 1, l) - q_prim_vf(eqn_idx%surf)%sf(j, &
-                                     & k - 1, l))/(y_cc(k + 1) - y_cc(k - 1))
-                        if (p > 0) then
-                            dGamma_tilde(j, k, l, 3) = (q_prim_vf(eqn_idx%surf)%sf(j, k, l + 1) - q_prim_vf(eqn_idx%surf)%sf(j, &
-                                         & k, l - 1))/(z_cc(l + 1) - z_cc(l - 1))
-                        end if
-                    end do
-                end do
-            end do
-            $:END_GPU_PARALLEL_LOOP()
-        end if
-
     end subroutine s_get_capillary
 
-    !> Accumulate the tangential surfactant-diffusion face flux -D_s*(I - n(x)n)*grad(Gamma_tilde) into the surfactant slot of
-    !! flux_src_vf for sweep direction idir. The projection (I - n(x)n) removes the across-interface (normal) gradient so surfactant
-    !! diffuses only along the interface, and the divergence of the resulting flux conserves total surfactant. The idir gradient
-    !! component uses the compact two-point difference; the tangential components are the cell-centered gradients averaged to the
-    !! face. The flux at index x is the face between cells x and x+1 (thermal-conduction convention).
+    !> Accumulate the Jain (2024) interface-confined surfactant-diffusion face flux into the surfactant slot of flux_src_vf for
+    !! sweep direction idir. Flux = D_s*( d(Gamma_tilde)/dx_idir - 2*(0.5 - c)*n_idir*Gamma_tilde/eps ): isotropic diffusion of the
+    !! smeared density Gamma_tilde plus an interfacial SHARPENING flux (second term, coefficient a = 2) that re-confines it to the
+    !! interface from both sides, reproducing surface diffusion at the exact Laplace-Beltrami rate without the fragile
+    !! Gamma_tilde/|grad c| division. c = q_prim(eqn_idx%c) is the color function, n = grad(c)/|grad c| the interface unit normal,
+    !! eps ~= dx the interface thickness. The divergence of this flux conserves total surfactant. Flux at index x is the face
+    !! between cells x and x+1 (thermal-conduction convention). Ref: Jain, JCP 515 (2024) 113277, Eq. (6).
     subroutine s_compute_surfactant_diffusion_flux(idir, q_prim_vf, flux_src_vf, irx, iry, irz)
 
-        integer, intent(in) :: idir
-        type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
+        integer, intent(in)                                    :: idir
+        type(scalar_field), dimension(sys_size), intent(in)    :: q_prim_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: flux_src_vf
-        type(int_bounds_info), intent(in) :: irx, iry, irz
-        real(wp) :: normc_f, nrm1, nrm2, nrm3, gt1, gt2, gt3, ndotg, grid_spacing, flux_idir
-        integer :: x, y, z
-        integer, dimension(3) :: off
+        type(int_bounds_info), intent(in)                      :: irx, iry, irz
+        real(wp)                                               :: normc_f, n_idir, c_face, gtil_face, dgtil, eps, flux_idir
+        integer                                                :: x, y, z
+        integer, dimension(3)                                  :: off
 
         is1 = irx; is2 = iry; is3 = irz
         $:GPU_UPDATE(device='[is1, is2, is3]')
@@ -397,8 +364,8 @@ contains
         off = 0
         off(idir) = 1
 
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[x, y, z, normc_f, nrm1, nrm2, nrm3, gt1, gt2, gt3, ndotg, grid_spacing, &
-                            & flux_idir]', copyin='[off]')
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[x, y, z, normc_f, n_idir, c_face, gtil_face, dgtil, eps, flux_idir]', &
+                            & copyin='[off]')
         do z = is3%beg, is3%end
             do y = is2%beg, is2%end
                 do x = is1%beg, is1%end
@@ -406,41 +373,27 @@ contains
                                       & z + off(3)))
 
                     if (normc_f > capillary_cutoff) then
-                        ! Face-averaged interface unit normal n = grad(c)/|grad c|
-                        nrm1 = 0.5_wp*(c_divs(1)%sf(x, y, z) + c_divs(1)%sf(x + off(1), y + off(2), z + off(3)))/normc_f
-                        nrm2 = 0.5_wp*(c_divs(2)%sf(x, y, z) + c_divs(2)%sf(x + off(1), y + off(2), z + off(3)))/normc_f
-                        nrm3 = 0._wp
-                        if (p > 0) nrm3 = 0.5_wp*(c_divs(3)%sf(x, y, z) + c_divs(3)%sf(x + off(1), y + off(2), z + off(3)))/normc_f
-
-                        ! Face gradient of Gamma_tilde: tangential components averaged from cell gradients
-                        gt1 = 0.5_wp*(dGamma_tilde(x, y, z, 1) + dGamma_tilde(x + off(1), y + off(2), z + off(3), 1))
-                        gt2 = 0.5_wp*(dGamma_tilde(x, y, z, 2) + dGamma_tilde(x + off(1), y + off(2), z + off(3), 2))
-                        gt3 = 0._wp
-                        if (p > 0) gt3 = 0.5_wp*(dGamma_tilde(x, y, z, 3) + dGamma_tilde(x + off(1), y + off(2), z + off(3), 3))
-
-                        ! Sharper compact two-point difference for the idir component
+                        ! idir component of the interface unit normal n = grad(c)/|grad c|, face-averaged
+                        n_idir = 0.5_wp*(c_divs(idir)%sf(x, y, z) + c_divs(idir)%sf(x + off(1), y + off(2), z + off(3)))/normc_f
+                        ! face-averaged color function and surfactant density; compact idir gradient of Gamma_tilde
+                        c_face = 0.5_wp*(q_prim_vf(eqn_idx%c)%sf(x, y, z) + q_prim_vf(eqn_idx%c)%sf(x + off(1), y + off(2), &
+                                         & z + off(3)))
+                        gtil_face = 0.5_wp*(q_prim_vf(eqn_idx%surf)%sf(x, y, z) + q_prim_vf(eqn_idx%surf)%sf(x + off(1), &
+                                            & y + off(2), z + off(3)))
                         select case (idir)
                         case (1)
-                            grid_spacing = x_cc(x + 1) - x_cc(x)
-                            gt1 = (q_prim_vf(eqn_idx%surf)%sf(x + 1, y, z) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/grid_spacing
+                            eps = x_cc(x + 1) - x_cc(x)
+                            dgtil = (q_prim_vf(eqn_idx%surf)%sf(x + 1, y, z) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/eps
                         case (2)
-                            grid_spacing = y_cc(y + 1) - y_cc(y)
-                            gt2 = (q_prim_vf(eqn_idx%surf)%sf(x, y + 1, z) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/grid_spacing
+                            eps = y_cc(y + 1) - y_cc(y)
+                            dgtil = (q_prim_vf(eqn_idx%surf)%sf(x, y + 1, z) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/eps
                         case (3)
-                            grid_spacing = z_cc(z + 1) - z_cc(z)
-                            gt3 = (q_prim_vf(eqn_idx%surf)%sf(x, y, z + 1) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/grid_spacing
+                            eps = z_cc(z + 1) - z_cc(z)
+                            dgtil = (q_prim_vf(eqn_idx%surf)%sf(x, y, z + 1) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/eps
                         end select
 
-                        ! Tangential projection: subtract the normal component of grad(Gamma_tilde)
-                        ndotg = nrm1*gt1 + nrm2*gt2 + nrm3*gt3
-                        select case (idir)
-                        case (1)
-                            flux_idir = surf_diff*(gt1 - nrm1*ndotg)
-                        case (2)
-                            flux_idir = surf_diff*(gt2 - nrm2*ndotg)
-                        case (3)
-                            flux_idir = surf_diff*(gt3 - nrm3*ndotg)
-                        end select
+                        ! Jain Eq. (6): isotropic diffusion minus interfacial sharpening flux (sharpening coefficient a = 2)
+                        flux_idir = surf_diff*(dgtil - 2._wp*(0.5_wp - c_face)*n_idir*gtil_face/eps)
 
                         flux_src_vf(eqn_idx%surf)%sf(x, y, z) = flux_src_vf(eqn_idx%surf)%sf(x, y, z) - flux_idir
                     end if
@@ -491,8 +444,6 @@ contains
         @:DEALLOCATE(gL_x, gR_x)
 
         @:DEALLOCATE(c_sigma)
-
-        @:DEALLOCATE(dGamma_tilde)
 
     end subroutine s_finalize_surface_tension_module
 
