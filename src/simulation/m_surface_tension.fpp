@@ -333,6 +333,10 @@ contains
                                 c_sigma(j, k, l) = c_sigma(j, k, l) + sigma_dGamma*Gamma_surf
                             end if
                         end if
+                        ! Floor sigma at a small positive value: a strongly negative sigma(Gamma) or
+                        ! sigma(T) closure (e.g. a saturating surfactant) must not drive sigma <= 0,
+                        ! which crashes the capillary force. Inert in normal operation (c_sigma >> floor).
+                        c_sigma(j, k, l) = max(c_sigma(j, k, l), 1.e-3_wp*sigma)
                     end do
                 end do
             end do
