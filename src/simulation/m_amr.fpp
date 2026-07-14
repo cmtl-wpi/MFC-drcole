@@ -42,7 +42,8 @@ module m_amr
         & s_amr_fine_stage_fill, s_amr_fine_stage_advance, s_amr_fine_fine_halo, s_advance_amr_fine_substeps, &
         & s_amr_conservation_defect, s_set_amr_fine_geometry, s_amr_regrid, s_write_amr_restart, s_read_amr_restart, &
         & s_amr_relax_fine, s_amr_setup_ib, s_amr_check_active_box_containment, s_amr_p2p_reflux_faces, s_amr_fill_l2_ghosts, &
-        & s_amr_advance_l2_stage, s_amr_restrict_l2_to_l1, s_amr_fine_stage_rhs, s_amr_fine_stage_update, s_amr_reflux_l2
+        & s_amr_advance_l2_stage, s_amr_restrict_l2_to_l1, s_amr_fine_stage_rhs, s_amr_fine_stage_update, s_amr_reflux_l2, &
+        & s_amr_regrid_l2
 
     !> Fine-level time step for subcycling (= 0.5*dt after init; 0 when amr is off).
     real(wp) :: amr_dt_fine = 0._wp
@@ -142,6 +143,10 @@ module m_amr
 
     !> Conservation-defect baselines (level-0 interior integrals at init; per-fluid masses + energy)
     real(wp) :: amr_mass0(num_fluids_max) = 0._wp, amr_energy0 = 0._wp
+
+    !> Multilevel dynamic L2: the level-1 tile's base-coarse origin captured at the TOP of s_amr_regrid (before it rebuilds the
+    !! tile), so s_amr_regrid_l2 can shift the retained level-2 fine detail by the parent displacement when the tile itself moved.
+    integer :: amr_l1_lo_pre_regrid(3) = 0
 
     !> True (identically on all ranks) iff some rank's fine ghost-fill stencil reads its coarse GHOST cells - the solver populates
     !! only PRIM ghosts, so the CONS ghosts the fill prolongs from must be halo-exchanged first. Never true at np=1 (block faces sit
@@ -1042,6 +1047,80 @@ contains
             & ' -> fine m/n/p', amr_slots(l2)%m, amr_slots(l2)%n, amr_slots(l2)%p
 
     end subroutine s_amr_init_l2_block
+
+    !> Multilevel P4 (dynamic L2): re-place the single nested level-2 block inside its parent level-1 tile at the target box,
+    !! conservatively. Fires at the regrid cadence AFTER the level-1 regrid, which left the parent state current and (via the
+    !! s_amr_reconcile_slots guard) preserved the level-2 slot holding its pre-regrid fine state. Reset the level-2 geometry to the
+    !! target box, prolong its interior from the current parent, then overwrite the overlap with the retained old fine data
+    !! (old->new fine index shift) so refined detail survives the move. Owner-only (amr_l2_slot > 0); non-owner ranks no-op.
+    impure subroutine s_amr_regrid_l2(par)
+
+        integer, intent(in)                           :: par
+        type(scalar_field), dimension(:), allocatable :: stash
+        integer                                       :: l2, i, lo(3), hi(3), olo(3), ohi(3), oext(3), sh(3)
+        integer                                       :: fi, fj, fk, ofi, ofj, ofk, saved_cpat_off(3)
+
+        if (amr_l2_slot <= 0) return
+        l2 = amr_l2_slot
+
+        ! old level-2 box (parent-fine indices) + fine extent, retained across the level-1 regrid (reconcile kept the slot)
+        olo = amr_slots(l2)%region%lo; ohi = amr_slots(l2)%region%hi
+        oext(1) = amr_slots(l2)%m; oext(2) = amr_slots(l2)%n; oext(3) = amr_slots(l2)%p
+
+        ! target box for the new level-2 block. S1: the current box unchanged - a verifiable no-op re-place that isolates the
+        ! re-placement machinery. S2 will tag the level-1 fine cells straddling alpha = 0.5 and use their bounding box.
+        lo = olo; hi = ohi
+
+        if (proc_rank == 0) print '(A,3(1X,I0),A,3(1X,I0))', ' [amr] level-2 re-placed: lo', lo, ' hi', hi
+
+        ! stash the old level-2 interior before the prolong overwrites it (owner-only, one slot -> a local copy)
+        allocate (stash(1:sys_size))
+        do i = 1, sys_size
+            allocate (stash(i)%sf(0:oext(1),0:oext(2),0:oext(3)))
+            stash(i)%sf(:,:,:) = amr_slots(l2)%q_cons(i)%sf(0:oext(1),0:oext(2),0:oext(3))
+        end do
+
+        ! reset the level-2 geometry to the target box (also mirrors the region into amr_region_*_all for the reflux)
+        call s_set_amr_l2_geometry(l2, par, lo, hi)
+
+        ! prolong the new interior from the current level-1 parent (parent-native frame, amr_cpat_off = 0)
+        saved_cpat_off = amr_cpat_off
+        call s_amr_select_l2(l2)
+        call s_interpolate_coarse_to_fine(amr_slots(par)%q_cons)
+
+        ! overwrite the overlap with the retained old fine data. The old data is anchored to the OLD parent frame; in a global
+        ! level-2-resolution index the same physical cell is  rr^2 * L1_region_lo + rr * (level-2 box lo) + local, so equating
+        ! old and new gives the shift below (old local fine index = new local fine index + sh). The rr^2 term realigns the detail
+        ! when the level-1 tile itself moved this regrid; it is 0 in the static case (parent unchanged), giving sh = rr*(lo - olo).
+        sh = amr_ref_ratio*amr_ref_ratio*(amr_slots(par)%region%lo - amr_l1_lo_pre_regrid) + amr_ref_ratio*(lo - olo)
+        do i = 1, sys_size
+            do fk = 0, amr_slots(l2)%p
+                ofk = fk + sh(3)
+                if (p_glb > 0 .and. (ofk < 0 .or. ofk > oext(3))) cycle
+                do fj = 0, amr_slots(l2)%n
+                    ofj = fj + sh(2)
+                    if (n_glb > 0 .and. (ofj < 0 .or. ofj > oext(2))) cycle
+                    do fi = 0, amr_slots(l2)%m
+                        ofi = fi + sh(1)
+                        if (ofi < 0 .or. ofi > oext(1)) cycle
+                        amr_slots(l2)%q_cons(i)%sf(fi, fj, fk) = stash(i)%sf(ofi, ofj, ofk)
+                    end do
+                end do
+            end do
+        end do
+        do i = 1, sys_size
+            $:GPU_UPDATE(device='[amr_slots(l2)%q_cons(i)%sf]')
+        end do
+
+        amr_cpat_off = saved_cpat_off
+        call s_amr_select_slot(par)
+
+        do i = 1, sys_size
+            deallocate (stash(i)%sf)
+        end do
+        deallocate (stash)
+
+    end subroutine s_amr_regrid_l2
 
     !> Multilevel P2: make the level-2 slot the working slot in its PARENT-fine frame (np=1). Unlike s_amr_select_slot (base frame),
     !! the L2 coarse source is the parent slot indexed in its native L1-fine cells: the patch offset is 0 and the intersection ==
@@ -3617,6 +3696,11 @@ contains
             integer                                                :: sidx(3), tg_lo(3), tg_hi(3), nboxes, kb, escaped, escaped_glb
             real(wp)                                               :: r0, g, aC
 
+            ! dynamic multilevel: capture the level-1 tile's origin BEFORE the rebuild, so s_amr_regrid_l2 can realign the
+            ! retained level-2 fine detail if the tile moves this regrid (single tile -> slot 1)
+
+            if (amr_max_levels >= 2) amr_l1_lo_pre_regrid = amr_slots(1)%region%lo
+
             ! valid coarse CONS ghosts at internal rank boundaries: the tag sweep reads +/-1 across seams and the rebuild
             ! prolongation
             ! reads past the new intersection (ALL ranks call: pairwise per-direction exchange; complete no-op at np=1).
@@ -3967,6 +4051,11 @@ contains
                 end block
             end if
 #endif
+
+            ! dynamic multilevel supports a single level-1 tile only (the nested level-2 slot lives just above it and reconcile
+            ! keeps it); a multi-tile level-1 parent is a follow-on. Abort rather than let a 2nd tile overwrite the level-2 slot.
+            if (amr_max_levels >= 2 .and. nboxes /= 1) call s_mpi_abort('dynamic multilevel (amr_max_levels >= 2) requires ' &
+                & // 'the level-1 tagger to cluster to a single tile (a multi-tile level-1 parent is not yet supported)')
 
             ! 6) build each new slot: geometry (collective on all ranks), prolong, then overlap-copy from every covering old slot
             any_xchg = .false.
@@ -4704,6 +4793,8 @@ contains
             do k = 1, amr_max_blocks
                 needed = k <= amr_num_blocks
                 if (needed) needed = amr_block_owner(k) == proc_rank
+                ! dynamic multilevel: keep the nested level-2 slot (and its retained fine state); s_amr_regrid_l2 re-places it
+                if (amr_max_levels >= 2 .and. amr_l2_slot > 0 .and. k == amr_l2_slot) needed = .true.
                 if (needed) then
                     call s_amr_alloc_slot(k)
                 else
