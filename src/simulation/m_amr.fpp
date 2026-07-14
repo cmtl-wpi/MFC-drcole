@@ -3612,9 +3612,9 @@ contains
             integer                                                :: old_ilo(3, amr_max_blocks), old_ext(3, amr_max_blocks)
             integer                                                :: old_chi(3, amr_max_blocks)
             integer                                                :: old_owner(amr_max_blocks)
-            logical                                                :: old_owns(amr_max_blocks), any_xchg, same, merged
+            logical                                                :: old_owns(amr_max_blocks), any_xchg, same, merged, covered
             integer                                                :: ci, cj, ck, fi, fj, fk, ofi, ofj, ofk, i
-            integer                                                :: sidx(3), tg_lo(3), tg_hi(3), nboxes
+            integer                                                :: sidx(3), tg_lo(3), tg_hi(3), nboxes, kb, escaped, escaped_glb
             real(wp)                                               :: r0, g, aC
 
             ! valid coarse CONS ghosts at internal rank boundaries: the tag sweep reads +/-1 across seams and the rebuild
@@ -3640,6 +3640,7 @@ contains
             if (n_glb > 0) then; tg_lo(2) = merge(1, 0, sidx(2) == 0); tg_hi(2) = merge(n - 1, n, sidx(2) + n == n_glb); end if
             if (p_glb > 0) then; tg_lo(3) = merge(1, 0, sidx(3) == 0); tg_hi(3) = merge(p - 1, p, sidx(3) + p == p_glb); end if
             allocate (tag_grid(0:m,0:n,0:p)); tag_grid = .false.
+            escaped = 0
             do ck = tg_lo(3), tg_hi(3)
                 do cj = tg_lo(2), tg_hi(2)
                     do ci = tg_lo(1), tg_hi(1)
@@ -3684,9 +3685,32 @@ contains
                         if (bubbles_lagrange .and. tag_grid(ci, cj, ck)) then
                             if (f_in_lag_support(ci + sidx(1), cj + sidx(2), ck + sidx(3))) tag_grid(ci, cj, ck) = .false.
                         end if
+                        ! escape detection (diagnostic): a cell still tagged after suppression that lies outside EVERY current
+                        ! block has drifted out of the refined region since the last regrid - it was un-refined for part of the
+                        ! interval. amr_region_*_all still holds the current (pre-rebuild) blocks here, and each already includes
+                        ! its
+                        ! amr_buf padding, so a tag outside a block means the feature outran that padding.
+                        if (tag_grid(ci, cj, ck)) then
+                            covered = .false.
+                            do kb = 1, amr_num_blocks
+                                if (ci + sidx(1) >= amr_region_lo_all(1, kb) .and. ci + sidx(1) <= amr_region_hi_all(1, &
+                                    & kb) .and. (n_glb == 0 .or. (cj + sidx(2) >= amr_region_lo_all(2, &
+                                    & kb) .and. cj + sidx(2) <= amr_region_hi_all(2, &
+                                    & kb))) .and. (p_glb == 0 .or. (ck + sidx(3) >= amr_region_lo_all(3, &
+                                    & kb) .and. ck + sidx(3) <= amr_region_hi_all(3, kb)))) then
+                                    covered = .true.; exit
+                                end if
+                            end do
+                            if (.not. covered) escaped = 1
+                        end if
                     end do
                 end do
             end do
+            call s_mpi_allreduce_integer_max(escaped, escaped_glb)
+            if (escaped_glb > 0 .and. proc_rank == 0) print '(A)', &
+                & ' [amr] WARNING: a tagged feature (interface or shock) ' &
+                & // 'drifted outside the fine-block coverage before this regrid - it lost refinement for part of the interval; ' &
+                & // 'reduce amr_regrid_int or increase amr_buf to keep it covered'
 
             ! 2) cluster into a list of separated boxes (deterministic on all ranks)
             call s_amr_cluster(tag_grid, boxes, nboxes)
