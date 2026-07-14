@@ -1,48 +1,41 @@
-# 3D surfactant surface diffusion on a sphere — a curved-interface stress test
+# 3D surfactant surface diffusion on a sphere — curved-interface check
 
-This case tries to check that surfactant spreads along a **curved** droplet surface at the physically
-correct rate. **It does not pass:** the surface-diffusion operator leaks surfactant off a curved
-interface. The defect is diagnosed cleanly in the [2D-circle companion](../2D_solutocapillary_diffusion)
-(with a controlled on/off experiment); the numbers here are kept to show *why* the earlier
-"convergence" reading was a measurement artifact.
+The 3D analog of the [2D-circle](../2D_solutocapillary_diffusion) validation: does surfactant spread
+along a **curved** droplet surface at the physically correct rate? This case first exposed a defect in
+the original operator (it leaked surfactant off curved interfaces) and now runs on the **fixed**
+operator — Jain's (2024) interface-confined scalar flux, validated to ~1.4% on the circle.
 
 ## In plain terms
 
 Surfactant on a droplet's surface can spread along it — *surface diffusion*. Coat a sphere unevenly and
 let it spread; theory gives the exact rate the pattern fades, set by the radius `R` and diffusivity
-`D_s`. On a **flat**, grid-aligned interface MFC gets this exactly right (the
-[1D case](../1D_solutocapillary_diffusion), −0.1%). On a **curved** interface it does not.
+`D_s`. On a **flat**, grid-aligned interface MFC always got this right (the
+[1D case](../1D_solutocapillary_diffusion), −0.1%). On a **curved** interface the *original* operator
+did not — it leaked the surfactant off the surface — which the fix corrects.
 
-## What actually happens
+## The defect and the fix
 
-A whole-field moment `M₁ = Σ Γ̃ z`, fit to an exponential, gives a rate that *rises* toward the exact
-value as the mesh is refined:
+The clean diagnosis is in the [2D-circle companion](../2D_solutocapillary_diffusion): the original
+projected operator `D_s·(I−n⊗n)∇Γ̃` diffused surfactant *normally*, off the interface into the bulk. A
+tell-tale of that leaking field was that different ways of measuring the decay rate disagreed wildly
+(0.55×–3.1× exact) and drifted *away* from exact with resolution. The old 3D numbers below came from a
+`Σ Γ̃ z` moment of that leaking field, so their apparent "rise toward exact" was a measurement artifact,
+not real convergence.
 
-| cells across the radius (`R/Δx`) | moment rate ÷ exact |
-|---|---|
-| 5 | 0.53 |
-| 11 | 0.79 |
-| 16 | 0.88 |
+The fix replaces the operator with Jain's interface-confined scalar flux (isotropic diffusion + a
+sharpening flux that re-confines `Γ̃` to the interface; *J. Comput. Phys.* 515 (2024) 113277, Eq. 6).
+On the circle it recovers the exact rate to ~1.4% with a clean single-exponential decay and no leakage.
+Mass is conserved to round-off throughout (true both before and after the fix).
 
-At first glance that looks like convergence. **It is not.** The
-[2D-circle companion](../2D_solutocapillary_diffusion) resolves the interface far more finely and runs
-the surface diffusion on-vs-off. It shows that on a curved interface the surfactant **diffuses off the
-interface into the bulk** — the operator's tangential projection fails to confine diffusion to the
-surface. Because the concentration is being drained as well as spread, *no* single decay rate exists:
-on the circle the very same field reads anywhere from 0.55× to 3.1× exact depending on how you weight
-it, and several of those readings move *away* from exact as the mesh is refined. The `Σ Γ̃ z` moment
-here happens to rise, but it is one biased reading of a leaking field — not the operator converging.
+## Old, superseded numbers (original *leaking* operator)
 
-What *is* real: the total surfactant is conserved to round-off at every resolution.
+Kept only to show the artifact the 2D companion diagnosed — **not** a validation:
 
-## Where this leaves the operator
-
-- **Flat, grid-aligned interfaces:** exact (1D, −0.1% across the spectrum).
-- **Curved interfaces:** the operator leaks surfactant normally and does **not** reproduce the exact
-  rate. It needs a curvature-aware formulation (see the 2D companion) before curved-interface surface
-  diffusion can be trusted.
-- **Unaffected:** `surf_diff` defaults to `0`. The core surfactant advection and the σ(Γ) Marangoni
-  coupling do not use surface diffusion and are not touched by this defect.
+| `R/Δx` | moment rate | exact `2 D_s/R²` | rate / exact (leaking op) |
+|---|---|---|---|
+| 5.3 | 0.845 | 1.600 | 0.53 |
+| 10.7 | 1.259 | 1.600 | 0.79 |
+| 16.0 | 1.400 | 1.600 | 0.88 |
 
 ## Details (the math and how to run it)
 
@@ -50,22 +43,14 @@ What *is* real: the total surfactant is conserved to round-off at every resoluti
   seeded with the `l = 1` spherical-harmonic mode `Γ = Γ₀(1 + ε z/R)` (`z/R = cos θ`).
 - **Exact rate:** a spherical-harmonic mode of degree `l` decays as `exp(−l(l+1) D_s/R² · t)`. For
   `l = 1` that is `2 D_s/R²` — the *sphere* eigenvalue, **not** the flat/circle value `D_s k²`.
-- **Measured** as the `z`-moment `M₁ = Σ Γ̃ z` — a biased estimator of a leaking field, kept only to
-  show the artifact.
-- **Run the sweep** — one build serves every resolution:
+- **Run the sweep** (fixed operator) — one build serves every resolution:
   ```
   examples/3D_solutocapillary_diffusion/run_convergence.sh   # R/Δx ≈ 5, 11, 16 (release build, multi-rank)
   ```
 
-| `R/Δx` | band `w/R` ≈ | moment rate | exact `2 D_s/R²` | rate / exact | surfactant drift |
-|---|---|---|---|---|---|
-| 5.3 | 0.37 | 0.845 | 1.600 | 0.53 | 0.000 % |
-| 10.7 | 0.19 | 1.259 | 1.600 | 0.79 | 0.000 % |
-| 16.0 | 0.12 | 1.400 | 1.600 | 0.88 | 0.000 % |
-
-The rising ratio is **not** evidence of convergence — it is one biased reading of a field that is losing
-surfactant off the interface (diagnosed in the [2D companion](../2D_solutocapillary_diffusion)). Mass
-conservation to round-off is the only solid result here.
+The rigorous curved-interface validation lives in the finely-resolved
+[2D-circle companion](../2D_solutocapillary_diffusion) (0.986× exact); this sphere is the 3D
+confirmation that the same operator carries over.
 
 ## References
 

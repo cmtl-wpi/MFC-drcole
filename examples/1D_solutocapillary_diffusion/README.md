@@ -116,20 +116,17 @@ it diffuses. Same colour scale in both frames.
 
 Because this flat interface is grid-aligned, the projection `(I − n⊗n)` contributes nothing here, so the
 1D test alone cannot tell whether the operator behaves on a *curved* interface. The curved companions
-answer that — and the answer is **it does not**: on a circle and a sphere the operator **leaks
-surfactant off the interface** (the discrete projection fails to remove the normal component), so it
-does not reproduce the exact rate there. See the
-[2D-circle diagnosis](../2D_solutocapillary_diffusion) — a controlled on/off experiment shows the
-surfactant band spreading radially into the bulk — and the corrected
-[3D note](../3D_solutocapillary_diffusion). So the surface-diffusion operator is validated on flat,
-grid-aligned interfaces only; curved-interface surface diffusion needs a curvature-aware fix. This does
-**not** affect the core surfactant advection or σ(Γ) Marangoni coupling, which do not use `surf_diff`
-(default `0`).
+answer that. They first exposed a defect — the original projected operator **leaked surfactant off**
+curved interfaces — and then validated the fix: the operator now uses Jain's (2024) interface-confined
+scalar flux (isotropic diffusion + a sharpening flux, no projection), which matches the exact rate to
+**~1.4%** on the circle. See the [2D-circle diagnosis and fix](../2D_solutocapillary_diffusion) and the
+[3D sphere](../3D_solutocapillary_diffusion). The flat 1D operator here remains exact (−0.1%); Jain's
+form reduces to ordinary along-interface diffusion when the interface is grid-aligned.
 
-Still open: the curvature-aware operator fix (normal stabilization / a proper surface delta, per Teigen
-et al. 2011 and Rätz & Voigt 2006) so `Γ̃` stays pinned to the band; a **tilted flat interface**
-(tangent at 45°) to probe the projection without curvature; and the coupled surfactant-laden-drop
-benchmarks (e.g. Stone & Leal) — all future work.
+Still open (future work): the surfactant transport currently has no sharpening under **advection**
+(only under diffusion), so on a strongly deforming interface `Γ̃` could still smear — the same Jain
+sharpening flux extends to that case (positivity limit `Pe_c ≤ 1`); a **tilted flat interface** to probe
+the operator off-axis; and the coupled surfactant-laden-drop benchmarks (e.g. Stone & Leal).
 
 ## References
 
