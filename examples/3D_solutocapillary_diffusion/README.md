@@ -27,6 +27,12 @@ sharpening flux that re-confines `Γ̃` to the interface; *J. Comput. Phys.* 515
 On the circle it recovers the exact rate to ~1.4% with a clean single-exponential decay and no leakage.
 Mass is conserved to round-off throughout (true both before and after the fix).
 
+On the **sphere with the fixed operator**, the `l = 1` mode (measured with the mass-normalized angular
+moment, which is unbiased once the field no longer leaks) decays at **0.949× the exact `2 D_s/R²`** at
+`R/Δx = 10.7`, mass conserved to round-off — consistent with the finer 2D-circle result (0.986× at
+`R/Δx = 21`) and confirming the fix carries over to 3D. (Contrast the pre-fix `Σ Γ̃ z` moment below,
+whose "0.79×" at this resolution was a biased reading of the leaking field, not a real rate.)
+
 ## Old, superseded numbers (original *leaking* operator)
 
 Kept only to show the artifact the 2D companion diagnosed — **not** a validation:
