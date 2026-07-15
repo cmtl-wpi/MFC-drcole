@@ -1,83 +1,117 @@
-# 2D surfactant transport under a prescribed flow (M0)
+# 2D surfactant transport under flow (M0) — what it establishes, and what it does not
 
-Validates that an insoluble interfacial surfactant is **transported correctly along a moving/deforming
-interface** — the advection half of the model, complementary to the
-[surface-diffusion validation](../2D_solutocapillary_diffusion). Two prescribed-velocity tests
-(guide milestone "M0"): a translating drop (interface **confinement**) and a drop in extensional flow
-(the interface-**stretching** term). Both decouple the surfactant transport from the flow solver by
-imposing a known velocity, so any error is in the transport, not the hydrodynamics.
+**Read this first: these are consistency and characterization checks, not a benchmark validation.**
+Nothing here is compared against a published result or an exact solution. That is a real limitation, it is
+not fixable in MFC, and the reason is explained below. The one surfactant test that *does* have an exact
+analytic reference is the [surface-diffusion validation](../2D_solutocapillary_diffusion) (Laplace–Beltrami
+decay rate, 0.986× exact) — that is where the quantitative evidence for the operator lives.
 
-## Why prescribed velocity, and why these two flows
+## Why there is no reference solution here
 
-MFC is a full compressible solver; the only velocity field it maintains *exactly* is **uniform
-translation** (Galilean invariance). An **extensional** flow `u=(εx,−εy)` is divergence-free, so it is
-low-Mach-friendly and holds well enough over a short advective time to drive a clean redistribution.
-Together they exercise the two things interfacial transport must get right:
+The guide's M0 rung points at Xu & Zhao (2003) and Jain (2024, §6.2). Those come from codes that **impose an
+arbitrary velocity field and solve only the transport PDE**. MFC cannot do that: it is a full compressible
+flow solver, so the velocity is always a *solution* of the momentum equations, never something you script.
+Their error tables therefore cannot be reproduced here — it is a different problem, not a harder one.
 
-- **Translation** → does the surfactant stay *confined* to the interface as it moves through the mesh,
-  or does numerical diffusion smear it into the bulk?
-- **Extensional strain** → when the interface stretches, does the surfactant *redistribute* correctly
-  (dilute where stretched, concentrate where the surface flow sweeps it)?
+That leaves only flows MFC actually holds:
+
+| flow | exact solution exists? | does MFC hold it? |
+|---|---|---|
+| Uniform translation | yes (Galilean) | **yes** — but trivial: no interface stretching |
+| Static equilibrium | yes (Γ must not move) | **yes** — but only tests parasitic currents |
+| Solid-body rotation | yes, Γ(θ−ωt) | **no** — flow-limited; measured below |
+| Extensional strain | — | no — relaxes (see Test 2) |
+| LeVeque reversal, uniform expansion | yes | no — require a scripted velocity |
 
 ## Test 1 — confinement under translation
 
 A drop with a `cosθ` surfactant pattern translates one full lap around the periodic domain
-(`surf_diff=0`, `sigma_model=0`, so pure passive advection). The surfactant should ride rigidly with the
-interface.
+(`surf_diff=0`, `sigma_model=0`: pure passive advection). Translation is the one flow MFC reproduces
+exactly, so the surfactant should ride rigidly with the interface.
 
 ![confinement](figures/confinement.png)
 
-| metric | result |
-|---|---|
-| interfacial mass | **1.00000** (conserved to machine precision) |
-| `cosθ` pattern amplitude | preserved (0.51 → 0.54) |
-| band width (radial spread) | 0.058 → 0.065 — **+11% over one full lap** (8 drop-diameters of travel) |
-| off-band leakage | ~2.4% → 3% (mostly the initial tanh tail) |
+| metric | result | what it is worth |
+|---|---|---|
+| interfacial mass | 1.00000 | **self-consistency** — the scheme is conservative by construction; this confirms the implementation, not the physics |
+| `cosθ` amplitude | 0.51 → 0.54 | preserved |
+| band width | 0.058 → 0.065 (+11% per lap, 8 drop-diameters) | **a measurement, not a pass/fail** — no reference value exists to compare it to |
+| off-band leakage | ~2.4% → 3% | mostly the initial tanh tail |
 
-The ring stays a well-defined ring — MFC's WENO interface capturing keeps `Γ̃` fairly sharp (a naively
-advected scalar would smear far more). There is a *mild* numerical-diffusion broadening (~11% per lap);
-it is small for the short trajectories of a coalescence run, and it is what a Jain-style advection
-sharpening flux would remove — at the cost of adding artificial surface diffusion (positivity requires
-`Pe_c = Δx|u|/D ≤ 1`), which is undesirable in the high-Péclet regime. Left as a documented option.
+The ring stays a well-defined ring. The +11% broadening is numerical diffusion; it is *characterized* here,
+not validated. A Jain-style advection sharpening flux would reduce it, at the cost of artificial surface
+diffusion (positivity needs `Pe_c = Δx|u|/D ≤ 1`) — undesirable in the high-Péclet regime this model targets.
 
-```
-MFC_NX=128 ./mfc.sh run examples/2D_solutocapillary_transport/case_translate.py --no-debug -n 4 -t pre_process simulation
-python3 examples/2D_solutocapillary_transport/measure_translate.py examples/2D_solutocapillary_transport
-```
+## Test 2 — stretching under extensional strain
 
-## Test 2 — the stretching term under extensional strain
-
-A drop with a **uniform** surfactant coating sits in `u=(εx,−εy)` (`ε=1`, `Ca=με R/σ=0.5`). The flow
-elongates the drop along `x`; the surface flow and interface stretching redistribute the surfactant.
+A drop with a uniform coating sits in `u=(εx,−εy)` (`ε=1`, `Ca=μεR/σ=0.5`). The surfactant redistributes
+toward the elongation tips.
 
 ![strain](figures/strain.png)
 
-Left: uniform coating at `t=0`. Right (`t=0.10`): the drop has elongated along `x` and the surfactant is
-visibly **concentrated at the x-tips** (the elongation axis) and depleted at the y-poles — the classic
-Stone & Leal trend. The `m=2` mode amplitude `a₂` rises positive (to ~0.10), and **total interfacial
-surfactant is conserved to machine precision** the whole time. This is the interface-stretching term
-`−Γ ∇ₛ·uₛ` plus surface convection working; the conservative `Γ̃ = Γ|∇c|` transport captures it
-structurally (no explicit stretching term is coded). The imposed strain is not maintained indefinitely
-(MFC relaxes it), so the deformation plateaus at `D≈0.065` — long enough to demonstrate the redistribution.
+The `m=2` amplitude `a₂` rises to ~0.10 and interfacial mass is conserved to machine precision. **This is a
+qualitative trend only** — it reproduces the *direction* Stone & Leal (1990) predict, and no number from
+them. MFC does not sustain the imposed strain (it relaxes; deformation plateaus at `D≈0.065`), which is
+exactly why a quantitative stretching check is not possible here.
+
+**The stretching term has no exact reference in MFC at all** — every flow that stretches an interface is one
+MFC will not hold. Its real evidence is the coupled benchmarks ([M1](../2D_Xu2006_surfactant_shear),
+[M3](../2D_PimentaOliveira_rheology)), where the drop deforms under its *own* flow.
+
+## Test 3 — solid-body rotation: a documented negative result
+
+Rotation looked like the one chance at an exact reference: `Γ(θ,t) = Γ₀(θ−ωt)`, returning to the initial
+condition after one period. It is a steady Euler solution if the pressure balances the centrifugal force
+(`p = p₀ + ½ρω²r²`), with matched density so the drop feels no differential centrifugal force, and inviscid
+because rigid rotation has *zero strain rate* — viscosity cannot damp it. **It does not work.**
+
+One full period, `Nx=128`, `R=0.6`, box `[−1.5,1.5]²`, 15,216 steps:
+
+| quantity | result |
+|---|---|
+| flow rate `ω_flow` | 1.000 → **0.865** (decays 13.5% per rotation) |
+| pattern rate `ω_pattern` | **0.868** — tracks `ω_flow`, *not* ω=1 |
+| L₂ vs exact `Γ(θ−ωt)` | 0.214 — but this is ~entirely the phase deficit |
+| velocity error | 0.185 at `r>1.2` → 0.159 at `r<0.7` (boundary-driven, propagating inward) |
+| drop circularity `D` | **0.0000** after a full rotation |
+| interfacial mass | **1.00000** over 15,216 steps |
+| `m=1` amplitude | decays 10.3% per rotation at `R/dx≈26` |
+
+The decisive line is `ω_pattern` tracking `ω_flow` rather than ω: **the surfactant rides the computed flow
+faithfully; the flow is what is wrong.** So the L₂ = 0.214 measures MFC's failure to hold rotation, not the
+transport scheme — reporting it as a transport error would be meaningless.
+
+**This is fundamental, not a tuning problem.** The rotation period (6.28) is ~100× the acoustic crossing
+time (~0.06), and a square box has no boundary condition that supports rotation — fluid crosses it. The
+boundary therefore gets ~100 acoustic transits to corrupt the interior before one rotation completes, which
+the radial error profile confirms. Enlarging the domain makes it *worse*: rotational velocity grows with `r`,
+so the boundary Mach number rises.
 
 ```
-MFC_NX=128 ./mfc.sh run examples/2D_solutocapillary_transport/case_strain.py --no-debug -n 4 -t pre_process simulation
-python3 examples/2D_solutocapillary_transport/measure_strain.py examples/2D_solutocapillary_transport
+MFC_NX=128 MFC_TFRAC=1.0 ./mfc.sh run examples/2D_solutocapillary_transport/case_rotation.py --no-debug -n 8 -t pre_process simulation
+python3 examples/2D_solutocapillary_transport/measure_rotation.py examples/2D_solutocapillary_transport
 ```
 
 ## What this establishes
 
-- Interfacial surfactant **mass is conserved to machine precision** under both translation and strain.
-- The surfactant **stays confined** to the interface under advection (mild, bounded numerical broadening).
-- The **stretching term is correct** — surfactant redistributes to the elongation tips as theory predicts.
+- **The conservative `Γ̃ = Γ|∇c|` form works.** Mass is exact (1.00000) under translation, strain, and 15,216
+  steps of rotation.
+- **No spurious interface deformation** — `D = 0.0000` through a full rotation.
+- **Transport is consistent with the computed flow**, to ~1%. Momentum and surfactant are independently
+  evolved fields, and Γ rotates at exactly the rate the velocity field says it should. This is a genuine
+  cross-check — just not an analytic one.
+- **Numerical diffusion is quantified**: +11% band broadening per lap; 10.3% `m=1` amplitude decay per
+  rotation at `R/dx≈26`.
 
-Together with the [surface-diffusion validation](../2D_solutocapillary_diffusion) (exact rate to ~1.4%),
-this covers the transport side of the insoluble-surfactant model. The remaining validation is the coupled
-surfactant-laden-drop-in-shear benchmark (Xu et al. 2006 / Stone & Leal), where the surfactant feeds
-back on the flow through `σ(Γ)`.
+## What this does not establish
+
+- That the transport matches **any** analytic or published solution. There is no reference here.
+- The stretching term **quantitatively** — only its direction.
+- Any convergence order for the transport operator.
 
 ## References
 
-See the [1D README](../1D_solutocapillary_diffusion#references). The extensional-flow redistribution
-trend is Stone & Leal (1990), *J. Fluid Mech.* 220, 161; the interface-confined transport formulation is
-Jain (2024), *J. Comput. Phys.* 515, 113277.
+See the [1D README](../1D_solutocapillary_diffusion#references). Extensional redistribution trend: Stone &
+Leal (1990), *J. Fluid Mech.* 220, 161. Interface-confined transport formulation: Jain (2024), *J. Comput.
+Phys.* 515, 113277. The imposed-velocity M0 benchmarks that MFC cannot reproduce: Xu & Zhao (2003); Jain
+(2024) §6.2.
