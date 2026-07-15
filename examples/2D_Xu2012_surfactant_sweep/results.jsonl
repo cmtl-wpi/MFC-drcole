@@ -1,0 +1,8 @@
+{"t_meas": 4.743, "D": 0.45455, "theta_deg": 18.677, "mass_ratio": 1.011295, "surf_nonunif": 4.1151, "group": "ca", "x": 0.2}
+{"t_meas": 4.743, "D": 0.60834, "theta_deg": 15.511, "mass_ratio": 1.010239, "surf_nonunif": 3.3837, "group": "ca", "x": 0.3}
+{"t_meas": 4.743, "D": 0.70561, "theta_deg": 13.664, "mass_ratio": 1.009574, "surf_nonunif": 2.9656, "group": "ca", "x": 0.4}
+{"t_meas": 4.743, "D": 0.61228, "theta_deg": 15.329, "mass_ratio": 1.009044, "surf_nonunif": 3.7878, "group": "lam", "x": 0.5}
+{"t_meas": 4.731, "D": 0.58202, "theta_deg": 16.075, "mass_ratio": 1.012026, "surf_nonunif": 3.4555, "group": "lam", "x": 2.0}
+{"t_meas": 4.806, "D": 0.65164, "theta_deg": 15.392, "mass_ratio": 1.011922, "surf_nonunif": 3.3647, "group": "re", "x": 2.0}
+{"t_meas": 1.997, "D": 0.47209, "theta_deg": 26.484, "mass_ratio": 1.012824, "surf_nonunif": 2.9109, "group": "pe", "x": 1.0}
+{"t_meas": 5.0, "D": 0.60975, "theta_deg": 14.651, "mass_ratio": 1.0, "surf_nonunif": 3.4616, "group": "pe", "x": 100.0}
