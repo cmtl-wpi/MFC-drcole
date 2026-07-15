@@ -1094,18 +1094,23 @@ contains
             return
         end if
 
-        ! pad by amr_buf and clamp to the parent interior with a 1-cell nesting margin (prolong reads lo-1 .. hi+1); then cap to
-        ! the slot's fine capacity (rr*(size) - 1 <= max_f, i.e. size <= (max_f + 1)/rr), centre-cropping + warning if exceeded
+        ! pad by amr_buf and clamp to the parent interior with a buff_size nesting margin: the level-2 fine advance rebuilds its
+        ! ghost-shell coordinates (s_amr_swap_to_fine) by bisecting the parent coordinate array out to buff_size cells beyond the
+        ! box, so the box must stay >= buff_size inside the parent or that stencil runs off the array. Then cap to the slot's fine
+        ! capacity (rr*(size) - 1 <= max_f, i.e. size <= (max_f + 1)/rr), centre-cropping + warning if exceeded.
         cap = [(max_f1 + 1)/amr_ref_ratio, (max_f2 + 1)/amr_ref_ratio, (max_f3 + 1)/amr_ref_ratio]
         lo = 0; hi = 0
         do d = 1, 3
             if ((d == 2 .and. n_glb == 0) .or. (d == 3 .and. p_glb == 0)) cycle
-            lo(d) = max(1, tlo(d) - amr_buf)
-            hi(d) = min(mpar(d) - 1, thi(d) + amr_buf)
+            lo(d) = max(buff_size, tlo(d) - amr_buf)
+            hi(d) = min(mpar(d) - buff_size, thi(d) + amr_buf)
+            if (hi(d) < lo(d)) then  ! parent tile too small to hold a margined box -> keep the current box
+                lo = olo; hi = ohi; return
+            end if
             if (hi(d) - lo(d) + 1 > cap(d)) then
                 if (proc_rank == 0) print '(A,I0,A,I0)', ' [amr] WARNING: level-2 target too large in dim ', d, &
                     & ', cropping to slot capacity ', cap(d)
-                lo(d) = max(1, (lo(d) + hi(d) - cap(d) + 1)/2); hi(d) = lo(d) + cap(d) - 1
+                lo(d) = max(buff_size, (lo(d) + hi(d) - cap(d) + 1)/2); hi(d) = lo(d) + cap(d) - 1
             end if
         end do
 
@@ -4128,8 +4133,17 @@ contains
                 if (amr_block_owner(k) == proc_rank) call s_amr_alloc_slot(k)  ! owned slot needs its arrays before geometry/prolong
                 call s_set_amr_fine_geometry(boxes(k)%lo, boxes(k)%hi)
                 any_xchg = any_xchg .or. amr_xchg_coarse_ghosts
-                if (proc_rank == 0) print '(A,I0,A,I0,A,I0,A,I0,A)', ' [amr]   block ', k, ': box x ', boxes(k)%lo(1), ':', &
-                    & boxes(k)%hi(1), ' (', (boxes(k)%hi(1) - boxes(k)%lo(1) + 1), ' coarse cells)'
+                if (proc_rank == 0) then
+                    if (p_glb > 0) then
+                        print '(A,I0,6(A,I0),A)', ' [amr]   block ', k, ': box x ', boxes(k)%lo(1), ':', boxes(k)%hi(1), ' y ', &
+                            & boxes(k)%lo(2), ':', boxes(k)%hi(2), ' z ', boxes(k)%lo(3), ':', boxes(k)%hi(3), ' (coarse)'
+                    else if (n_glb > 0) then
+                        print '(A,I0,4(A,I0),A)', ' [amr]   block ', k, ': box x ', boxes(k)%lo(1), ':', boxes(k)%hi(1), ' y ', &
+                            & boxes(k)%lo(2), ':', boxes(k)%hi(2), ' (coarse)'
+                    else
+                        print '(A,I0,2(A,I0),A)', ' [amr]   block ', k, ': box x ', boxes(k)%lo(1), ':', boxes(k)%hi(1), ' (coarse)'
+                    end if
+                end if
                 ! fine-level distribution: gather this new block's coarse patch (collective - before the owner-only cycle;
                 ! q_cons_base is host-current with valid ghosts from the exchange at the top of s_amr_regrid)
                 call s_amr_gather_coarse_patch(q_cons_base, .false.)
