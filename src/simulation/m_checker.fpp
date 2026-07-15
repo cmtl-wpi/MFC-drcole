@@ -210,6 +210,9 @@ contains
             @:PROHIBIT(amr_regrid_int < 0, "amr_regrid_int must be >= 0")
             @:PROHIBIT(amr_regrid_int > 0 .and. amr_tag_eps <= 0._wp, "amr_tag_eps must be > 0 when regridding")
             @:PROHIBIT(amr_regrid_int > 0 .and. amr_buf < 1, "amr_buf must be >= 1 when regridding")
+            @:PROHIBIT(amr_regrid_int > 0 .and. amr_max_levels >= 2 .and. num_procs > 1, &
+                       & "dynamic multilevel regridding (amr_regrid_int > 0 with amr_max_levels >= 2) is single-rank for now: " &
+                       & // "the level-1 owner can be reassigned at regrid, so the co-located level-2 tower is not yet migrated")
             @:PROHIBIT(amr_max_blocks < 1, "amr_max_blocks must be >= 1")
             @:PROHIBIT(amr_cluster_eff <= 0._wp .or. amr_cluster_eff > 1._wp, &
                        & "amr_cluster_eff must satisfy 0 < amr_cluster_eff <= 1")

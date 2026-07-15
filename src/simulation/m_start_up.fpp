@@ -645,7 +645,12 @@ contains
         t_step = t_step + 1
 
         if (amr .and. amr_regrid_int > 0) then
-            if (mod(t_step, amr_regrid_int) == 0) call s_amr_regrid(q_cons_ts(1)%vf)
+            if (mod(t_step, amr_regrid_int) == 0) then
+                call s_amr_regrid(q_cons_ts(1)%vf)
+                ! dynamic multilevel: re-place the nested level-2 block onto the (just-regridded) level-1 parent so the second
+                ! refinement level tracks the interface too
+                if (amr_max_levels >= 2) call s_amr_regrid_l2(1)
+            end if
         end if
 
     end subroutine s_perform_time_step
