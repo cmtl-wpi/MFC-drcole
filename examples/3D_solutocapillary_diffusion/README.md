@@ -1,5 +1,7 @@
 # 3D surfactant surface diffusion on a sphere — curved-interface check
 
+> **Context:** [Surfactant model & validation overview](../SURFACTANT_MODEL_AND_VALIDATION.md) — the equation, its discretization, and how the evidence tiers.
+
 The 3D analog of the [2D-circle](../2D_solutocapillary_diffusion) validation: does surfactant spread
 along a **curved** droplet surface at the physically correct rate? This case first exposed a defect in
 the original operator (it leaked surfactant off curved interfaces) and now runs on the **fixed**

@@ -1,5 +1,7 @@
 # Xu et al. (2012) — finite-Re surfactant drop in shear, property-ratio sweeps (M2)
 
+> **Context:** [Surfactant model & validation overview](../SURFACTANT_MODEL_AND_VALIDATION.md) — the equation, its discretization, and how the evidence tiers.
+
 The M2 rung of the guide's validation ladder: take the M1 surfactant-drop-in-shear setup and check that
 its **deformation responds correctly** as the governing groups are varied one at a time — capillary number
 `Ca`, Reynolds number `Re`, viscosity ratio `λ = μ_drop/μ_matrix`, and surface Péclet `Pe`. These are the

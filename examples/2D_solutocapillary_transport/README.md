@@ -1,5 +1,7 @@
 # 2D surfactant transport under flow (M0) — what it establishes, and what it does not
 
+> **Context:** [Surfactant model & validation overview](../SURFACTANT_MODEL_AND_VALIDATION.md) — the equation, its discretization, and how the evidence tiers.
+
 **Read this first: these are consistency and characterization checks, not a benchmark validation.**
 Nothing here is compared against a published result or an exact solution. That is a real limitation, it is
 not fixable in MFC, and the reason is explained below. The one surfactant test that *does* have an exact

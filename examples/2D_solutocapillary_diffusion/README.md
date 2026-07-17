@@ -1,5 +1,7 @@
 # 2D circle surface diffusion — curved-interface validation (diagnosis + fix)
 
+> **Context:** [Surfactant model & validation overview](../SURFACTANT_MODEL_AND_VALIDATION.md) — the equation, its discretization, and how the evidence tiers.
+
 The cheap 2D companion to the [3D sphere study](../3D_solutocapillary_diffusion). A circle is curved
 (so it stresses the surface-diffusion operator the way a real droplet does) but 2D, so the interface
 can be resolved far more finely than an affordable 3D sphere. That resolution — plus a controlled

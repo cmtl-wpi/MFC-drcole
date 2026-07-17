@@ -1,5 +1,7 @@
 # Surfactant surface diffusion, validated against exact theory (1D)
 
+> **Context:** [Surfactant model & validation overview](../SURFACTANT_MODEL_AND_VALIDATION.md) — the equation, its discretization, and how the evidence tiers.
+
 **In one line:** a surfactant film spreads along an interface at a rate that theory predicts exactly,
 and MFC reproduces that rate to within **0.1%**.
 

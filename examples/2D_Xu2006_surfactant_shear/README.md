@@ -1,5 +1,7 @@
 # Xu et al. (2006) — single insoluble-surfactant drop in simple shear (M1)
 
+> **Context:** [Surfactant model & validation overview](../SURFACTANT_MODEL_AND_VALIDATION.md) — the equation, its discretization, and how the evidence tiers.
+
 The canonical coupled surfactant benchmark: a surfactant-laden drop in an imposed shear flow deforms
 **more** as its surfactant coverage rises (surfactant lowers the interfacial tension), while the surface
 flow sweeps surfactant to the drop tips. This reproduces that benchmark's **qualitative gates** in MFC,

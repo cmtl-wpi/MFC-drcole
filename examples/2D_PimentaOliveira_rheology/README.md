@@ -1,5 +1,7 @@
 # Pimenta & Oliveira (2021) — surfactant-drop rheology in shear (M3)
 
+> **Context:** [Surfactant model & validation overview](../SURFACTANT_MODEL_AND_VALIDATION.md) — the equation, its discretization, and how the evidence tiers.
+
 The M3 rung of the guide's ladder asks a rheology question: when a surfactant-laden drop is sheared, how
 much does it add to the **bulk (effective) viscosity** of the suspension, and how does that split between a
 **capillary** contribution (from the interfacial tension holding the drop's shape) and a **Marangoni**
