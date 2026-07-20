@@ -773,9 +773,11 @@ class CaseValidator:
         self.prohibit(surface_tension and num_fluids != 2, "The surface tension model requires num_fluids = 2")
 
         # Thermal Marangoni: linear sigma(T) closure (sigma_model = 1)
+        # Solutocapillary Marangoni: linear sigma(Gamma) closure (sigma_model = 2)
+        #                            nonlinear Langmuir sigma(Gamma) closure (sigma_model = 3)
         self.prohibit(
-            sigma_model is not None and sigma_model not in [0, 1],
-            "sigma_model must be 0 (constant) or 1 (linear in temperature)",
+            sigma_model is not None and sigma_model not in [0, 1, 2, 3],
+            "sigma_model must be 0 (constant), 1 (linear in temperature), 2 (linear in surfactant concentration), " "or 3 (nonlinear Langmuir in surfactant concentration)",
         )
         self.prohibit(
             (sigma_model == 1 or sigma_dTdT is not None or sigma_T_ref is not None) and not surface_tension,
@@ -794,6 +796,46 @@ class CaseValidator:
                     cv is None or cv <= 0,
                     f"sigma_model = 1 requires fluid_pp({i})%cv > 0 (needed to evaluate temperature)",
                 )
+
+        # Solutocapillary Marangoni: insoluble interfacial surfactant transport
+        surfactant = self.get("surfactant", "F") == "T"
+        sigma_dGamma = self.get("sigma_dGamma")
+        surf_diff = self.get("surf_diff")
+        self.prohibit(
+            surfactant and not surface_tension,
+            "surfactant requires surface_tension to be enabled",
+        )
+        self.prohibit(
+            surf_diff is not None and not surfactant,
+            "surf_diff requires surfactant to be enabled",
+        )
+        self.prohibit(
+            surf_diff is not None and surf_diff < 0,
+            "surf_diff (interfacial surfactant diffusivity) must be non-negative",
+        )
+        self.prohibit(
+            sigma_model == 2 and not surfactant,
+            "sigma_model = 2 (solutocapillary Marangoni) requires surfactant to be enabled",
+        )
+        self.prohibit(
+            sigma_model == 2 and sigma_dGamma is None,
+            "sigma_model = 2 (solutocapillary Marangoni) requires sigma_dGamma (dsigma/dGamma) to be set",
+        )
+        # Nonlinear Langmuir closure sigma = sigma0*(1 + E*ln(1 - Gamma/surf_max)) (sigma_model = 3)
+        sigma_El = self.get("sigma_El")
+        surf_max = self.get("surf_max")
+        self.prohibit(
+            sigma_model == 3 and not surfactant,
+            "sigma_model = 3 (Langmuir solutocapillary Marangoni) requires surfactant to be enabled",
+        )
+        self.prohibit(
+            sigma_model == 3 and (sigma_El is None or surf_max is None),
+            "sigma_model = 3 (Langmuir) requires sigma_El (elasticity E) and surf_max (max packing Gamma_inf) to be set",
+        )
+        self.prohibit(
+            surf_max is not None and surf_max <= 0,
+            "surf_max (max-packing surfactant concentration) must be positive",
+        )
 
     def check_mhd(self):
         """Checks constraints on MHD parameters"""

@@ -293,6 +293,12 @@ contains
                 @:ACC_SETUP_SFs(q_prim_vf(eqn_idx%c))
             end if
 
+            if (surfactant) then
+                @:ALLOCATE(q_prim_vf(eqn_idx%surf)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
+                           & idwbuff(3)%beg:idwbuff(3)%end))
+                @:ACC_SETUP_SFs(q_prim_vf(eqn_idx%surf))
+            end if
+
             if (chemistry) then
                 do i = eqn_idx%species%beg, eqn_idx%species%end
                     @:ALLOCATE(q_prim_vf(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
@@ -996,6 +1002,10 @@ contains
 
             if (hyper_cleaning) then
                 @:DEALLOCATE(q_prim_vf(eqn_idx%psi)%sf)
+            end if
+
+            if (surfactant) then
+                @:DEALLOCATE(q_prim_vf(eqn_idx%surf)%sf)
             end if
 
             if (bubbles_euler) then

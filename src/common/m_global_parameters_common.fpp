@@ -93,7 +93,7 @@ module m_global_parameters_common
     $:GPU_DECLARE(create='[qbmm, pi_fac]')
     $:GPU_DECLARE(create='[R0ref]')
     $:GPU_DECLARE(create='[acoustic_source, num_source]')
-    $:GPU_DECLARE(create='[sigma, surface_tension]')
+    $:GPU_DECLARE(create='[sigma, surface_tension, surfactant]')
     $:GPU_DECLARE(create='[bubbles_lagrange]')
     $:GPU_DECLARE(create='[Bx0]')
     $:GPU_DECLARE(create='[tau_star, cont_damage_s, alpha_bar]')
@@ -301,6 +301,11 @@ contains
                 sys_size = eqn_idx%c
             end if
 
+            if (surfactant) then
+                eqn_idx%surf = sys_size + 1
+                sys_size = eqn_idx%surf
+            end if
+
             if (cont_damage) then
                 eqn_idx%damage = sys_size + 1
                 sys_size = eqn_idx%damage
@@ -448,6 +453,11 @@ contains
         sigma_model = 0
         sigma_T_ref = dflt_real
         sigma_dTdT = 0._wp
+        surfactant = .false.
+        sigma_dGamma = 0._wp
+        sigma_El = 0._wp
+        surf_max = 1._wp
+        surf_diff = 0._wp
         bubbles_lagrange = .false.
 
         ! Immersed boundaries

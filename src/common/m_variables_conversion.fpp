@@ -780,6 +780,10 @@ contains
                         qK_prim_vf(eqn_idx%c)%sf(j, k, l) = qK_cons_vf(eqn_idx%c)%sf(j, k, l)
                     end if
 
+                    if (surfactant) then
+                        qK_prim_vf(eqn_idx%surf)%sf(j, k, l) = qK_cons_vf(eqn_idx%surf)%sf(j, k, l)
+                    end if
+
                     if (cont_damage) qK_prim_vf(eqn_idx%damage)%sf(j, k, l) = qK_cons_vf(eqn_idx%damage)%sf(j, k, l)
 
                     if (hyper_cleaning) qK_prim_vf(eqn_idx%psi)%sf(j, k, l) = qK_cons_vf(eqn_idx%psi)%sf(j, k, l)
@@ -1024,6 +1028,10 @@ contains
 
                     if (surface_tension) then
                         q_cons_vf(eqn_idx%c)%sf(j, k, l) = q_prim_vf(eqn_idx%c)%sf(j, k, l)
+                    end if
+
+                    if (surfactant) then
+                        q_cons_vf(eqn_idx%surf)%sf(j, k, l) = q_prim_vf(eqn_idx%surf)%sf(j, k, l)
                     end if
 
                     if (cont_damage) q_cons_vf(eqn_idx%damage)%sf(j, k, l) = q_prim_vf(eqn_idx%damage)%sf(j, k, l)

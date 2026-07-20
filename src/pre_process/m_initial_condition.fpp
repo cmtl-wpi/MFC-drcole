@@ -119,6 +119,8 @@ contains
 
         call s_apply_icpp_patches(ic%patch_id_fp, ic%q_prim_vf)
 
+        if (surfactant) call s_seed_interfacial_surfactant(ic%q_prim_vf)
+
         if (num_bc_patches > 0) call s_apply_boundary_patches(ic%q_prim_vf, ic%bc_type)
 
         if (perturb_flow) call s_perturb_surrounding_flow(ic%q_prim_vf)
@@ -142,6 +144,38 @@ contains
         end if
 
     end subroutine s_generate_initial_condition
+
+    !> Convert the seeded surfactant field from a surface concentration to the smeared area-density Gamma*|grad c| by weighting it
+    !! with the color-function gradient magnitude. This concentrates the surfactant on the interface (interior |grad c| ~ 0), so the
+    !! recovered concentration Gamma = Gamma_tilde/|grad c| reproduces the input patch value and the total surfactant equals the
+    !! surface integral of the seeded concentration. Uses central differences on the assembled color function (one-sided at domain
+    !! edges via index clamping).
+    impure subroutine s_seed_interfacial_surfactant(q_prim_vf)
+
+        type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
+        real(wp)                                               :: gx, gy, gz
+        integer                                                :: j, k, l
+
+        ! |grad c| reads the (already assembled, unmodified) color function while surf is written
+        ! in place, so no temporary is needed.
+
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
+                    gx = (q_prim_vf(eqn_idx%c)%sf(min(j + 1, m), k, l) - q_prim_vf(eqn_idx%c)%sf(max(j - 1, 0), k, &
+                          & l))/(x_cc(min(j + 1, m)) - x_cc(max(j - 1, 0)))
+                    gy = 0._wp
+                    if (n > 0) gy = (q_prim_vf(eqn_idx%c)%sf(j, min(k + 1, n), l) - q_prim_vf(eqn_idx%c)%sf(j, max(k - 1, 0), &
+                        & l))/(y_cc(min(k + 1, n)) - y_cc(max(k - 1, 0)))
+                    gz = 0._wp
+                    if (p > 0) gz = (q_prim_vf(eqn_idx%c)%sf(j, k, min(l + 1, p)) - q_prim_vf(eqn_idx%c)%sf(j, k, max(l - 1, &
+                        & 0)))/(z_cc(min(l + 1, p)) - z_cc(max(l - 1, 0)))
+                    q_prim_vf(eqn_idx%surf)%sf(j, k, l) = q_prim_vf(eqn_idx%surf)%sf(j, k, l)*sqrt(gx**2 + gy**2 + gz**2)
+                end do
+            end do
+        end do
+
+    end subroutine s_seed_interfacial_surfactant
 
     !> Deallocation procedures for the module
     impure subroutine s_finalize_initial_condition_module

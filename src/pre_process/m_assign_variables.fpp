@@ -545,6 +545,10 @@ contains
             q_prim_vf(eqn_idx%c)%sf(j, k, l) = eta*patch_icpp(patch_id)%cf_val + (1._wp - eta)*orig_prim_vf(eqn_idx%c)
         end if
 
+        if (surfactant) then
+            q_prim_vf(eqn_idx%surf)%sf(j, k, l) = eta*patch_icpp(patch_id)%surf_val + (1._wp - eta)*orig_prim_vf(eqn_idx%surf)
+        end if
+
         if (1._wp - eta < 1.e-16_wp) patch_id_fp(j, k, l) = patch_id
 
     end subroutine s_assign_patch_species_primitive_variables

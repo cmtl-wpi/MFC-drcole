@@ -22,7 +22,7 @@ module m_surface_tension
     implicit none
 
     private; public :: s_initialize_surface_tension_module, s_compute_capillary_source_flux, s_get_capillary, &
-        & s_finalize_surface_tension_module
+        & s_compute_surfactant_diffusion_flux, s_finalize_surface_tension_module
 
     !> @name color function gradient components and magnitude
     !> @{
@@ -114,7 +114,7 @@ contains
 
                         if (normW > capillary_cutoff) then
                             sigma_face = sigma
-                            if (sigma_model == 1) sigma_face = (c_sigma(j, k, l) + c_sigma(j + 1, k, l))/2._wp
+                            if (sigma_model /= 0) sigma_face = (c_sigma(j, k, l) + c_sigma(j + 1, k, l))/2._wp
 
                             @:compute_capillary_stress_tensor(sigma_face)
 
@@ -161,7 +161,7 @@ contains
 
                             if (normW > capillary_cutoff) then
                                 sigma_face = sigma
-                                if (sigma_model == 1) sigma_face = (c_sigma(j, k, l) + c_sigma(j, k + 1, l))/2._wp
+                                if (sigma_model /= 0) sigma_face = (c_sigma(j, k, l) + c_sigma(j, k + 1, l))/2._wp
 
                                 @:compute_capillary_stress_tensor(sigma_face)
 
@@ -208,7 +208,7 @@ contains
 
                             if (normW > capillary_cutoff) then
                                 sigma_face = sigma
-                                if (sigma_model == 1) sigma_face = (c_sigma(j, k, l) + c_sigma(j, k, l + 1))/2._wp
+                                if (sigma_model /= 0) sigma_face = (c_sigma(j, k, l) + c_sigma(j, k, l + 1))/2._wp
 
                                 @:compute_capillary_stress_tensor(sigma_face)
 
@@ -239,7 +239,7 @@ contains
         type(integer_field), dimension(1:num_dims,1:2), intent(in) :: bc_type
         type(int_bounds_info)                                      :: isx, isy, isz
         integer                                                    :: j, k, l, i
-        real(wp)                                                   :: T_cell
+        real(wp)                                                   :: T_cell, normc, Gamma_surf
 
         isx%beg = -1; isy%beg = 0; isz%beg = 0
 
@@ -306,18 +306,48 @@ contains
         ! reconstruct gradient components at cell boundaries
         call s_reconstruct_cell_boundary_values_capillary(c_divs, gL_x, gR_x, i)
 
-        ! Linear thermal closure sigma(T): compute cell-centered surface tension over the
-        ! full buffer range. Temperature is recovered from the mixture stiffened-gas EOS
-        ! (T = ((gamma_mix + 1)*p + pi_inf_mix)/mCP, with mCP = sum(alpha*rho*cv*gamma)).
-        ! q_prim_vf ghost cells are already populated, so no extra halo exchange is needed;
-        ! the face value is later formed by averaging adjacent cells.
-        if (sigma_model == 1) then
-            $:GPU_PARALLEL_LOOP(collapse=3, private='[T_cell]')
+        ! Variable surface-tension closures fill the cell-centered field c_sigma over the full
+        ! buffer range; contributions are additive so closures compose. The face value used by
+        ! the capillary force is later formed by averaging adjacent cells. q_prim_vf ghost cells
+        ! are already populated, so no extra halo exchange is needed.
+        !   sigma_model == 1: linear thermal closure sigma(T) = sigma + dsigma/dT*(T - T_ref),
+        !     T recovered from the mixture stiffened-gas EOS
+        !     (T = ((gamma_mix + 1)*p + pi_inf_mix)/mCP, mCP = sum(alpha*rho*cv*gamma)).
+        !   sigma_model == 2: linear solutocapillary closure sigma(Gamma) = sigma + dsigma/dGamma*Gamma,
+        !     interfacial concentration Gamma = (Gamma*|grad c|)/|grad c| recovered on the interface
+        !     band (|grad c| > capillary_cutoff); off-band cells keep the clean value sigma.
+        if (sigma_model /= 0) then
+            $:GPU_PARALLEL_LOOP(collapse=3, private='[T_cell, normc, Gamma_surf]')
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
                     do j = idwbuff(1)%beg, idwbuff(1)%end
-                        T_cell = f_compute_mixture_temperature(q_prim_vf, j, k, l)
-                        c_sigma(j, k, l) = sigma + sigma_dTdT*(T_cell - sigma_T_ref)
+                        c_sigma(j, k, l) = sigma
+                        if (sigma_model == 1) then
+                            T_cell = f_compute_mixture_temperature(q_prim_vf, j, k, l)
+                            c_sigma(j, k, l) = c_sigma(j, k, l) + sigma_dTdT*(T_cell - sigma_T_ref)
+                        end if
+                        if (sigma_model == 2) then
+                            normc = c_divs(num_dims + 1)%sf(j, k, l)
+                            if (normc > capillary_cutoff) then
+                                Gamma_surf = q_prim_vf(eqn_idx%surf)%sf(j, k, l)/normc
+                                c_sigma(j, k, l) = c_sigma(j, k, l) + sigma_dGamma*Gamma_surf
+                            end if
+                        end if
+                        if (sigma_model == 3) then
+                            ! Nonlinear Langmuir closure sigma = sigma0*(1 + E*ln(1 - Gamma/Gamma_inf)); the
+                            ! (1 - Gamma/surf_max) argument is floored positive so the physical dive of sigma
+                            ! toward -inf near max packing is caught by the floor below, not a log of a
+                            ! non-positive number. Overwrites the base sigma (standalone nonlinear closure).
+                            normc = c_divs(num_dims + 1)%sf(j, k, l)
+                            if (normc > capillary_cutoff) then
+                                Gamma_surf = q_prim_vf(eqn_idx%surf)%sf(j, k, l)/normc
+                                c_sigma(j, k, l) = sigma*(1._wp + sigma_El*log(max(1._wp - Gamma_surf/surf_max, capillary_cutoff)))
+                            end if
+                        end if
+                        ! Floor sigma at a small positive value: a strongly negative sigma(Gamma) or
+                        ! sigma(T) closure (e.g. a saturating surfactant) must not drive sigma <= 0,
+                        ! which crashes the capillary force. Inert in normal operation (c_sigma >> floor).
+                        c_sigma(j, k, l) = max(c_sigma(j, k, l), 1.e-3_wp*sigma)
                     end do
                 end do
             end do
@@ -325,6 +355,69 @@ contains
         end if
 
     end subroutine s_get_capillary
+
+    !> Accumulate the Jain (2024) interface-confined surfactant-diffusion face flux into the surfactant slot of flux_src_vf for
+    !! sweep direction idir. Flux = D_s*( d(Gamma_tilde)/dx_idir - 2*(0.5 - c)*n_idir*Gamma_tilde/eps ): isotropic diffusion of the
+    !! smeared density Gamma_tilde plus an interfacial SHARPENING flux (second term, coefficient a = 2) that re-confines it to the
+    !! interface from both sides, reproducing surface diffusion at the exact Laplace-Beltrami rate without the fragile
+    !! Gamma_tilde/|grad c| division. c = q_prim(eqn_idx%c) is the color function, n = grad(c)/|grad c| the interface unit normal,
+    !! eps ~= dx the interface thickness. The divergence of this flux conserves total surfactant. Flux at index x is the face
+    !! between cells x and x+1 (thermal-conduction convention). Ref: Jain, JCP 515 (2024) 113277, Eq. (6).
+    subroutine s_compute_surfactant_diffusion_flux(idir, q_prim_vf, flux_src_vf, irx, iry, irz)
+
+        integer, intent(in)                                    :: idir
+        type(scalar_field), dimension(sys_size), intent(in)    :: q_prim_vf
+        type(scalar_field), dimension(sys_size), intent(inout) :: flux_src_vf
+        type(int_bounds_info), intent(in)                      :: irx, iry, irz
+        real(wp)                                               :: normc_f, n_idir, c_face, gtil_face, dgtil, eps, flux_idir
+        integer                                                :: x, y, z
+        integer, dimension(3)                                  :: off
+
+        is1 = irx; is2 = iry; is3 = irz
+        $:GPU_UPDATE(device='[is1, is2, is3]')
+
+        off = 0
+        off(idir) = 1
+
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[x, y, z, normc_f, n_idir, c_face, gtil_face, dgtil, eps, flux_idir]', &
+                            & copyin='[off]')
+        do z = is3%beg, is3%end
+            do y = is2%beg, is2%end
+                do x = is1%beg, is1%end
+                    normc_f = 0.5_wp*(c_divs(num_dims + 1)%sf(x, y, z) + c_divs(num_dims + 1)%sf(x + off(1), y + off(2), &
+                                      & z + off(3)))
+
+                    if (normc_f > capillary_cutoff) then
+                        ! idir component of the interface unit normal n = grad(c)/|grad c|, face-averaged
+                        n_idir = 0.5_wp*(c_divs(idir)%sf(x, y, z) + c_divs(idir)%sf(x + off(1), y + off(2), z + off(3)))/normc_f
+                        ! face-averaged color function and surfactant density; compact idir gradient of Gamma_tilde
+                        c_face = 0.5_wp*(q_prim_vf(eqn_idx%c)%sf(x, y, z) + q_prim_vf(eqn_idx%c)%sf(x + off(1), y + off(2), &
+                                         & z + off(3)))
+                        gtil_face = 0.5_wp*(q_prim_vf(eqn_idx%surf)%sf(x, y, z) + q_prim_vf(eqn_idx%surf)%sf(x + off(1), &
+                                            & y + off(2), z + off(3)))
+                        select case (idir)
+                        case (1)
+                            eps = x_cc(x + 1) - x_cc(x)
+                            dgtil = (q_prim_vf(eqn_idx%surf)%sf(x + 1, y, z) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/eps
+                        case (2)
+                            eps = y_cc(y + 1) - y_cc(y)
+                            dgtil = (q_prim_vf(eqn_idx%surf)%sf(x, y + 1, z) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/eps
+                        case (3)
+                            eps = z_cc(z + 1) - z_cc(z)
+                            dgtil = (q_prim_vf(eqn_idx%surf)%sf(x, y, z + 1) - q_prim_vf(eqn_idx%surf)%sf(x, y, z))/eps
+                        end select
+
+                        ! Jain Eq. (6): isotropic diffusion minus interfacial sharpening flux (sharpening coefficient a = 2)
+                        flux_idir = surf_diff*(dgtil - 2._wp*(0.5_wp - c_face)*n_idir*gtil_face/eps)
+
+                        flux_src_vf(eqn_idx%surf)%sf(x, y, z) = flux_src_vf(eqn_idx%surf)%sf(x, y, z) - flux_idir
+                    end if
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_compute_surfactant_diffusion_flux
 
     !> Reconstruct left and right cell-boundary values of capillary variables
     subroutine s_reconstruct_cell_boundary_values_capillary(v_vf, vL_x, vR_x, norm_dir)

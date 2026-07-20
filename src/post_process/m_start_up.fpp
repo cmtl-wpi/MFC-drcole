@@ -594,6 +594,11 @@ contains
             call s_write_field(varname, t_step, q_cons_vf(eqn_idx%c), x_beg, x_end, y_beg, y_end, z_beg, z_end)
         end if
 
+        if (surfactant) then
+            write (varname, '(A)') 'surfactant'
+            call s_write_field(varname, t_step, q_cons_vf(eqn_idx%surf), x_beg, x_end, y_beg, y_end, z_beg, z_end)
+        end if
+
         if (bubbles_euler) then
             do i = eqn_idx%adv%beg, eqn_idx%adv%end
                 write (varname, '(A,I0)') 'alpha', i - eqn_idx%E

@@ -1,0 +1,3 @@
+{"D": 0.27139, "theta_deg": 24.07, "eta_intrinsic": 3.08964, "eta_capillary": 3.08964, "eta_marangoni": 0.0, "N1_star": 4.38865, "sigma_mean_band": 2.0, "phi": 0.07854, "X": 0}
+{"D": 0.27356, "theta_deg": 23.63, "eta_intrinsic": 3.08578, "eta_capillary": 3.06774, "eta_marangoni": 0.01805, "N1_star": 4.58434, "sigma_mean_band": 1.98227, "phi": 0.07854, "X": 0.1}
+{"D": 0.27877, "theta_deg": 22.18, "eta_intrinsic": 3.06227, "eta_capillary": 3.00794, "eta_marangoni": 0.05433, "N1_star": 5.10259, "sigma_mean_band": 1.94164, "phi": 0.07854, "X": 0.3}

@@ -145,6 +145,7 @@ contains
         ! aliased to their identical conservative counterparts below.
         do l = eqn_idx%adv%end + 1, sys_size
             if (surface_tension .and. l == eqn_idx%c) cycle
+            if (surfactant .and. l == eqn_idx%surf) cycle
             if (hyper_cleaning .and. l == eqn_idx%psi) cycle
             @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                        & idwbuff(3)%beg:idwbuff(3)%end))
@@ -176,6 +177,12 @@ contains
             q_prim_qp%vf(eqn_idx%c)%sf => q_cons_qp%vf(eqn_idx%c)%sf
             $:GPU_ENTER_DATA(copyin='[q_prim_qp%vf(eqn_idx%c)%sf]')
             $:GPU_ENTER_DATA(attach='[q_prim_qp%vf(eqn_idx%c)%sf]')
+        end if
+
+        if (surfactant) then
+            q_prim_qp%vf(eqn_idx%surf)%sf => q_cons_qp%vf(eqn_idx%surf)%sf
+            $:GPU_ENTER_DATA(copyin='[q_prim_qp%vf(eqn_idx%surf)%sf]')
+            $:GPU_ENTER_DATA(attach='[q_prim_qp%vf(eqn_idx%surf)%sf]')
         end if
 
         if (hyper_cleaning) then
@@ -233,6 +240,11 @@ contains
                     if (thermal_conduction .and. .not. (viscous .or. surface_tension)) then
                         @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                                    & idwbuff(3)%beg:idwbuff(3)%end))
+                    end if
+
+                    if (surfactant .and. surf_diff > 0._wp) then
+                        @:ALLOCATE(flux_src_n(i)%vf(eqn_idx%surf)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                                   & idwbuff(2)%beg:idwbuff(2)%end, idwbuff(3)%beg:idwbuff(3)%end))
                     end if
                 else
                     do l = 1, sys_size
@@ -766,6 +778,23 @@ contains
                         $:END_GPU_PARALLEL_LOOP()
                     end if
                     call s_compute_conductive_flux(id, q_prim_qp%vf, flux_src_n(id)%vf, irx, iry, irz)
+                    call nvtxEndRange
+                end if
+
+                ! Tangential interfacial surfactant diffusion face flux into the surfactant slot
+                if (surfactant .and. surf_diff > 0._wp) then
+                    call nvtxStartRange("RHS-SURFACTANT-DIFFUSION-FLUX")
+                    ! Nothing else writes the surfactant flux slot, so zero it before accumulating
+                    $:GPU_PARALLEL_LOOP(collapse=3, private='[j, k, l]')
+                    do l = irz%beg, irz%end
+                        do k = iry%beg, iry%end
+                            do j = irx%beg, irx%end
+                                flux_src_n(id)%vf(eqn_idx%surf)%sf(j, k, l) = 0._wp
+                            end do
+                        end do
+                    end do
+                    $:END_GPU_PARALLEL_LOOP()
+                    call s_compute_surfactant_diffusion_flux(id, q_prim_qp%vf, flux_src_n(id)%vf, irx, iry, irz)
                     call nvtxEndRange
                 end if
 
@@ -1417,6 +1446,12 @@ contains
                                 end if
                             end if
 
+                            if (surfactant .and. surf_diff > 0._wp) then
+                                rhs_vf(eqn_idx%surf)%sf(j, k, l) = rhs_vf(eqn_idx%surf)%sf(j, k, &
+                                       & l) + 1._wp/dx(j)*(flux_src_n_in(eqn_idx%surf)%sf(j - 1, k, &
+                                       & l) - flux_src_n_in(eqn_idx%surf)%sf(j, k, l))
+                            end if
+
                             ! Conduction-only energy divergence; when viscous or surface tension is
                             ! active the generic mom:E loop above already differences the E slot
                             if (thermal_conduction .and. .not. (viscous .or. surface_tension)) then
@@ -1507,6 +1542,12 @@ contains
                                                & l) + 1._wp/dy(k)*(flux_src_n_in(eqn_idx%E)%sf(j, k - 1, &
                                                & l) - flux_src_n_in(eqn_idx%E)%sf(j, k, l))
                                     end if
+                                end if
+
+                                if (surfactant .and. surf_diff > 0._wp) then
+                                    rhs_vf(eqn_idx%surf)%sf(j, k, l) = rhs_vf(eqn_idx%surf)%sf(j, k, &
+                                           & l) + 1._wp/dy(k)*(flux_src_n_in(eqn_idx%surf)%sf(j, k - 1, &
+                                           & l) - flux_src_n_in(eqn_idx%surf)%sf(j, k, l))
                                 end if
 
                                 ! Conduction-only energy divergence; when viscous or surface tension is
@@ -1607,6 +1648,12 @@ contains
                                            & l) + 1._wp/dz(l)*(flux_src_n_in(eqn_idx%E)%sf(j, k, &
                                            & l - 1) - flux_src_n_in(eqn_idx%E)%sf(j, k, l))
                                 end if
+                            end if
+
+                            if (surfactant .and. surf_diff > 0._wp) then
+                                rhs_vf(eqn_idx%surf)%sf(j, k, l) = rhs_vf(eqn_idx%surf)%sf(j, k, &
+                                       & l) + 1._wp/dz(l)*(flux_src_n_in(eqn_idx%surf)%sf(j, k, &
+                                       & l - 1) - flux_src_n_in(eqn_idx%surf)%sf(j, k, l))
                             end if
 
                             ! Conduction-only energy divergence; when viscous or surface tension is
@@ -1877,6 +1924,10 @@ contains
 
                     if (thermal_conduction .and. .not. (viscous .or. surface_tension)) then
                         @:DEALLOCATE(flux_src_n(i)%vf(eqn_idx%E)%sf)
+                    end if
+
+                    if (surfactant .and. surf_diff > 0._wp) then
+                        @:DEALLOCATE(flux_src_n(i)%vf(eqn_idx%surf)%sf)
                     end if
 
                     if (riemann_solver == riemann_solver_hll .or. riemann_solver == riemann_solver_hlld) then
