@@ -64,35 +64,54 @@ N_TAU = 1.5  # run length in viscous times (captures the overshoot peak across R
 
 SWEEPS = {
     "drop_vs_Ma": dict(
-        vary="Ma", values=[1.0, 5.0, 20.0, 50.0, 100.0, 200.0],
-        fixed=dict(Re=5.0, Ca=0.01666, **DROP), n_tau=N_TAU, metric="Vstar",
+        vary="Ma",
+        values=[1.0, 5.0, 20.0, 50.0, 100.0, 200.0],
+        fixed=dict(Re=5.0, Ca=0.01666, **DROP),
+        n_tau=N_TAU,
+        metric="Vstar",
         claim="single drop V_t: decrease, minimum, then increase with Ma",
-        xlabel=r"$Ma$", xlog=True,
+        xlabel=r"$Ma$",
+        xlog=True,
     ),
     "bubble_vs_Ca": dict(
-        vary="Ca", values=[0.01, 0.05, 0.1, 0.2, 0.4],
-        fixed=dict(Re=5.0, Ma=20.0, **BUBBLE), n_tau=N_TAU, metric="Vstar",
+        vary="Ca",
+        values=[0.01, 0.05, 0.1, 0.2, 0.4],
+        fixed=dict(Re=5.0, Ma=20.0, **BUBBLE),
+        n_tau=N_TAU,
+        metric="Vstar",
         claim="gas bubble V_t: decreases rapidly with Ca",
-        xlabel=r"$Ca$", xlog=True,
+        xlabel=r"$Ca$",
+        xlog=True,
     ),
     "bubble_vs_Re": dict(
-        vary="Re", values=[2.0, 5.0, 10.0, 20.0],
-        fixed=dict(Ma=20.0, Ca=0.05, **BUBBLE), n_tau=N_TAU, metric="Vstar",
+        vary="Re",
+        values=[2.0, 5.0, 10.0, 20.0],
+        fixed=dict(Ma=20.0, Ca=0.05, **BUBBLE),
+        n_tau=N_TAU,
+        metric="Vstar",
         claim="gas bubble V_t: increases very weakly with Re",
-        xlabel=r"$Re$", xlog=True,
+        xlabel=r"$Re$",
+        xlog=True,
     ),
     "bubble_vs_Ma": dict(
-        vary="Ma", values=[5.0, 20.0, 50.0, 100.0],
-        fixed=dict(Re=5.0, Ca=0.05, **BUBBLE), n_tau=N_TAU, metric="Vstar",
+        vary="Ma",
+        values=[5.0, 20.0, 50.0, 100.0],
+        fixed=dict(Re=5.0, Ca=0.05, **BUBBLE),
+        n_tau=N_TAU,
+        metric="Vstar",
         claim="gas bubble V_t: decreases with Ma",
-        xlabel=r"$Ma$", xlog=True,
+        xlabel=r"$Ma$",
+        xlog=True,
     ),
     "drop_vs_rho": dict(
-        vary="rho_ratio", values=[0.5, 1.0, 2.0],
+        vary="rho_ratio",
+        values=[0.5, 1.0, 2.0],
         fixed=dict(Re=5.0, Ma=20.0, Ca=0.1, mu_ratio=0.5, cv_ratio=0.5, k_ratio=0.5),
-        n_tau=N_TAU, metric="AR",
+        n_tau=N_TAU,
+        metric="AR",
         claim="drop deforms oblate/prolate depending on density ratio",
-        xlabel=r"$\rho^* = \rho_i/\rho_o$", xlog=False,
+        xlabel=r"$\rho^* = \rho_i/\rho_o$",
+        xlog=False,
     ),
 }
 
@@ -130,7 +149,10 @@ def launch_point(name, fixed, vary, value, n_tau):
     log = open(os.path.join(wd, "run.log"), "w")
     proc = subprocess.Popen(
         PIN + ["./mfc.sh", "run", rel, "-n", "2"],
-        cwd=REPO, env={**os.environ, **RUNENV}, stdout=log, stderr=subprocess.STDOUT,
+        cwd=REPO,
+        env={**os.environ, **RUNENV},
+        stdout=log,
+        stderr=subprocess.STDOUT,
     )
     return name, proc, log
 
@@ -177,8 +199,8 @@ def measure_point(wd):
     U_r, t_r = G * R / mu, mu / G
 
     rd = os.path.join(wd, "restart_data")
-    yb = np.fromfile(os.path.join(rd, "lustre_y_cb.dat"), np.float64)[-(ny + 1):]
-    xb = np.fromfile(os.path.join(rd, "lustre_x_cb.dat"), np.float64)[-(nx + 1):]
+    yb = np.fromfile(os.path.join(rd, "lustre_y_cb.dat"), np.float64)[-(ny + 1) :]
+    xb = np.fromfile(os.path.join(rd, "lustre_x_cb.dat"), np.float64)[-(nx + 1) :]
     y = 0.5 * (yb[:-1] + yb[1:])
     x = 0.5 * (xb[:-1] + xb[1:])
     y_lo, y_hi = yb[0], yb[-1]
@@ -189,7 +211,7 @@ def measure_point(wd):
     c_idx = nvars - 1  # color is the last conserved variable
 
     def fld(snap, i):
-        return snap[i * cells:(i + 1) * cells].reshape(ny, nx)
+        return snap[i * cells : (i + 1) * cells].reshape(ny, nx)
 
     xx, yy = np.meshgrid(x, y)  # (ny, nx)
     t_star, U_star, ycen, ar = [], [], [], []
@@ -216,12 +238,20 @@ def measure_point(wd):
     pk = np.where(clear, U_star, -np.inf)
     peak_i = int(np.argmax(pk))
     return dict(
-        U_r=U_r, t_r=t_r, nx=nx, ny=ny, nvars=nvars,
-        peak_Vstar=float(U_star[peak_i]), t_peak=float(t_star[peak_i]),
+        U_r=U_r,
+        t_r=t_r,
+        nx=nx,
+        ny=ny,
+        nvars=nvars,
+        peak_Vstar=float(U_star[peak_i]),
+        t_peak=float(t_star[peak_i]),
         terminal_Vstar=float(U_star[clear][-1]),
-        AR_at_peak=float(ar[peak_i]), AR_final=float(ar[clear][-1]),
+        AR_at_peak=float(ar[peak_i]),
+        AR_final=float(ar[clear][-1]),
         rises=bool(ycen[-1] > ycen[0]),
-        t_star=t_star.tolist(), U_star=U_star.tolist(), AR=ar.tolist(),
+        t_star=t_star.tolist(),
+        U_star=U_star.tolist(),
+        AR=ar.tolist(),
     )
 
 

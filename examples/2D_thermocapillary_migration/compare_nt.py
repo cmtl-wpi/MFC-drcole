@@ -72,7 +72,7 @@ def measure_vstar(wd):
     c_idx = nvars - 1
 
     def fld(snap, i):
-        return snap[i * cells:(i + 1) * cells].reshape(ny, nx)
+        return snap[i * cells : (i + 1) * cells].reshape(ny, nx)
 
     t_star, v_star = [], []
     for s in steps:
@@ -97,9 +97,17 @@ def fig2():
     ax.set_title("Fig 2: creeping drop ($Re=Ma=2.5\\times10^{-3}$, $Ca=10^{-3}$) — MFC vs Nas & Tryggvason")
     ax.grid(alpha=0.3)
     ax.legend(loc="upper left", fontsize=8.5)
-    ax.text(0.98, 0.04, "MFC does NOT match: noisy mean $V^*\\approx0.4$ vs paper $\\approx0.13$\n(compressible/acoustic at the low $c_\\mathrm{ref}$ used to afford the creeping run)",
-            transform=ax.transAxes, ha="right", va="bottom", fontsize=7.5, color="0.3",
-            bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9))
+    ax.text(
+        0.98,
+        0.04,
+        "MFC does NOT match: noisy mean $V^*\\approx0.4$ vs paper $\\approx0.13$\n(compressible/acoustic at the low $c_\\mathrm{ref}$ used to afford the creeping run)",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=7.5,
+        color="0.3",
+        bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9),
+    )
     fig.tight_layout()
     out = os.path.join(FIGS, "nt_fig2_comparison.png")
     fig.savefig(out, dpi=150)
@@ -124,9 +132,17 @@ def fig3():
     ax.set_title("Fig 3: finite-$Re$ drop ($Re=5$, $Ma=20$, $Ca=0.0167$) — MFC vs Nas & Tryggvason")
     ax.grid(alpha=0.3)
     ax.legend(loc="upper right", fontsize=8.5)
-    ax.text(0.98, 0.04, "MFC tracks the rise + overshoot (peak ~0.13-0.15) but over-declines\nafter the peak (compressible relaxation); shape matches, late tail does not",
-            transform=ax.transAxes, ha="right", va="bottom", fontsize=7.5, color="0.3",
-            bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9))
+    ax.text(
+        0.98,
+        0.04,
+        "MFC tracks the rise + overshoot (peak ~0.13-0.15) but over-declines\nafter the peak (compressible relaxation); shape matches, late tail does not",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=7.5,
+        color="0.3",
+        bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9),
+    )
     fig.tight_layout()
     out = os.path.join(FIGS, "nt_fig3_comparison.png")
     fig.savefig(out, dpi=150)
