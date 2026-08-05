@@ -36,7 +36,7 @@ eps = 1e-9
 sep = 0.68 * D
 
 t_c = D / Ur
-t_end = 2.5 * t_c
+t_end = 2.2 * t_c
 
 data = {
     "run_time_info": "T",
@@ -44,12 +44,13 @@ data = {
     "x_domain%end": 1.5 * D,
     "y_domain%beg": -1.0 * D,
     "y_domain%end": 1.0 * D,
-    "m": 299,
-    "n": 199,
+    "m": 239,
+    "n": 159,
     "p": 0,
     "cyl_coord": "F",
+    "n_start": 0,
     "cfl_adap_dt": "T",
-    "cfl_target": 0.1,
+    "cfl_target": 0.2,
     "t_stop": t_end,
     "t_save": t_end / 100,
     "model_eqns": 2,
