@@ -31,6 +31,7 @@ NF = _fc("num_fluids_max", 10)  # fluid_pp
 NPR = _fc("num_probes_max", 10)  # probe, acoustic, integral
 NB = _fc("num_bc_patches_max", 10)  # patch_bc
 NUM_PATCHES_MAX = _fc("num_patches_max", 10)  # patch_icpp (Fortran array bound)
+NC = _fc("num_colors_max", 5)  # patch_icpp%cf_val (Fortran array bound)
 NIB = _fc("num_ib_patches_max_namelist", 54000)  # patch_ib namelist array bound
 NAF = _fc("num_ib_airfoils_max", 5)  # ib_airfoil (Fortran array bound)
 NSM = _fc("num_stl_models_max", 10)  # stl_models (Fortran array bound)
@@ -374,6 +375,7 @@ CONSTRAINTS = {
     "sigma": {"min": 0},
     # Counts (must be positive)
     "num_fluids": {"min": 1, "max": NF},
+    "num_colors": {"min": 1, "max": NC},
     "num_patches": {"min": 0, "max": NUM_PATCHES_MAX},
     "num_ibs": {"min": 0},
     "ib_neighborhood_radius": {"min": 1},
@@ -627,6 +629,7 @@ def _load():
     _r("sigma_model", INT, {"surface_tension"})
     _r("sigma_T_ref", REAL, {"surface_tension"})
     _r("sigma_dTdT", REAL, {"surface_tension"})
+    _r("num_colors", INT, {"surface_tension"})
 
     # Bulk thermal conduction
     _r("thermal_conduction", LOG, {"thermal_conduction"})
@@ -833,6 +836,8 @@ def _load():
             _r(f"{px}a({j})", REAL)
         _r(f"{px}pres", A_REAL, math=r"\f$p\f$")
         _r(f"{px}cf_val", A_REAL)
+        for j in range(1, NC + 1):
+            _r(f"{px}cf_val({j})", A_REAL)
         # MHD fields
         for a, sym in [("Bx", r"\f$B_x\f$"), ("By", r"\f$B_y\f$"), ("Bz", r"\f$B_z\f$")]:
             _r(f"{px}{a}", A_REAL, {"mhd"}, math=sym)
@@ -1236,6 +1241,7 @@ _nv(
     "sigma_model",
     "sigma_T_ref",
     "sigma_dTdT",
+    "num_colors",
     "adv_n",
     "hypoelasticity",
     "hyperelasticity",

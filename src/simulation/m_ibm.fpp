@@ -152,7 +152,7 @@ contains
         real(wp) :: qv_K
         real(wp) :: pres_IP
         real(wp), dimension(3) :: vel_IP, vel_norm_IP
-        real(wp) :: c_IP
+        real(wp) :: c_IP(1:num_colors_max)
 
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
             real(wp), dimension(3)  :: Gs
@@ -249,7 +249,10 @@ contains
                 end do
 
                 if (surface_tension) then
-                    q_prim_vf(eqn_idx%c)%sf(j, k, l) = c_IP
+                    $:GPU_LOOP(parallelism='[seq]')
+                    do q = 1, num_colors
+                        q_prim_vf(eqn_idx%c%beg + q - 1)%sf(j, k, l) = c_IP(q)
+                    end do
                 end if
 
                 ! set the pressure
@@ -333,7 +336,10 @@ contains
 
                 ! Set color function
                 if (surface_tension) then
-                    q_cons_vf(eqn_idx%c)%sf(j, k, l) = c_IP
+                    $:GPU_LOOP(parallelism='[seq]')
+                    do q = 1, num_colors
+                        q_cons_vf(eqn_idx%c%beg + q - 1)%sf(j, k, l) = c_IP(q)
+                    end do
                 end if
 
                 ! Set Energy
@@ -751,7 +757,7 @@ contains
         type(ghost_point), intent(in) :: gp
         real(wp), intent(inout) :: pres_IP
         real(wp), dimension(3), intent(inout) :: vel_IP
-        real(wp), intent(inout) :: c_IP
+        real(wp), dimension(num_colors_max), intent(inout) :: c_IP
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
             real(wp), dimension(3), intent(inout) :: alpha_IP, alpha_rho_IP
         #:else
@@ -819,7 +825,10 @@ contains
                     end do
 
                     if (surface_tension) then
-                        c_IP = c_IP + coeff*q_prim_vf(eqn_idx%c)%sf(i, j, k)
+                        $:GPU_LOOP(parallelism='[seq]')
+                        do l = 1, num_colors
+                            c_IP(l) = c_IP(l) + coeff*q_prim_vf(eqn_idx%c%beg + l - 1)%sf(i, j, k)
+                        end do
                     end if
 
                     if (bubbles_euler .and. .not. qbmm) then

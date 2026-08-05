@@ -762,9 +762,13 @@ class CaseValidator:
         sigma_model = self.get("sigma_model")
         sigma_dTdT = self.get("sigma_dTdT")
         sigma_T_ref = self.get("sigma_T_ref")
+        num_colors = self.get("num_colors")
 
         if not surface_tension and sigma is None and sigma_model is None:
+            self.prohibit(num_colors is not None, "num_colors is set but surface_tension is not enabled")
             return
+
+        self.prohibit(num_colors is not None and not surface_tension, "num_colors is set but surface_tension is not enabled")
 
         self.prohibit(surface_tension and sigma is None, "sigma must be set if surface_tension is enabled")
         self.prohibit(surface_tension and sigma is not None and sigma < 0, "sigma must be greater than or equal to zero")

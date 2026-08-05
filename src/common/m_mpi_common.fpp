@@ -50,6 +50,10 @@ contains
             v_size = sys_size
         end if
 
+        ! The capillary color-gradient exchange sends num_colors*(num_dims + 1) fields,
+        ! which can exceed sys_size when multiple marker colors are enabled.
+        if (surface_tension) v_size = max(v_size, num_colors*(num_dims + 1))
+
         if (n > 0) then
             if (p > 0) then
                 halo_size = nint(-1._wp + 1._wp*buff_size*(v_size)*(m + 2*buff_size + 1)*(n + 2*buff_size + 1)*(p + 2*buff_size &

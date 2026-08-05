@@ -92,7 +92,7 @@ contains
                 & 'length_x', 'length_y', 'length_z', 'radius', 'epsilon',     &
                 & 'beta', 'smooth_coeff', 'rho', 'p0', 'm0', 'r0', 'v0',       &
                 & 'pres', 'gamma', 'pi_inf', 'cv', 'qv', 'qvp',        &
-                & 'cf_val', 'Bx', 'By', 'Bz']
+                & 'Bx', 'By', 'Bz']
                 call MPI_BCAST(patch_icpp(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
@@ -101,7 +101,7 @@ contains
             #:endfor
 
             #:for VAR in [ 'normal', 'radii', 'vel', 'tau_e', 'alpha_rho', 'alpha', &
-                'fourier_cos', 'fourier_sin' ]
+                'cf_val', 'fourier_cos', 'fourier_sin' ]
                 call MPI_BCAST(patch_icpp(i)%${VAR}$, size(patch_icpp(i)%${VAR}$), mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 

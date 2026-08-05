@@ -170,9 +170,9 @@ contains
     !> Populate ghost cell buffers for the color function and its divergence used in capillary surface tension.
     impure subroutine s_populate_capillary_buffers(c_divs, bc_type, bc)
 
-        type(scalar_field), dimension(num_dims + 1), intent(inout) :: c_divs
-        type(integer_field), dimension(1:num_dims,1:2), intent(in) :: bc_type
-        type(bc_xyz_info), intent(in)                              :: bc
+        type(scalar_field), dimension(num_colors*(num_dims + 1)), intent(inout) :: c_divs
+        type(integer_field), dimension(1:num_dims,1:2), intent(in)              :: bc_type
+        type(bc_xyz_info), intent(in)                                           :: bc
 
         call s_populate_capillary_bc_direction(1, -1, bc%x, bc_type(1, 1), c_divs)
         call s_populate_capillary_bc_direction(1, 1, bc%x, bc_type(1, 2), c_divs)
@@ -197,11 +197,11 @@ contains
     !! dispatching the per-cell capillary BC routines over the boundary face.
     impure subroutine s_populate_capillary_bc_direction(bc_dir, bc_loc, bc_bounds, bc_type_edge, c_divs)
 
-        integer, intent(in)                                        :: bc_dir, bc_loc
-        type(int_bounds_info), intent(in)                          :: bc_bounds
-        type(scalar_field), dimension(num_dims + 1), intent(inout) :: c_divs
-        type(integer_field), intent(in)                            :: bc_type_edge
-        integer                                                    :: bc_edge, k_beg, k_end, l_beg, l_end, k, l, bc_code
+        integer, intent(in) :: bc_dir, bc_loc
+        type(int_bounds_info), intent(in) :: bc_bounds
+        type(scalar_field), dimension(num_colors*(num_dims + 1)), intent(inout) :: c_divs
+        type(integer_field), intent(in) :: bc_type_edge
+        integer :: bc_edge, k_beg, k_end, l_beg, l_end, k, l, bc_code
 
         if (bc_loc == -1) then
             bc_edge = bc_bounds%beg
@@ -210,7 +210,7 @@ contains
         end if
 
         if (bc_edge >= 0) then
-            call s_mpi_sendrecv_variables_buffers(c_divs, bc_dir, bc_loc, num_dims + 1)
+            call s_mpi_sendrecv_variables_buffers(c_divs, bc_dir, bc_loc, num_colors*(num_dims + 1))
             return
         end if
 

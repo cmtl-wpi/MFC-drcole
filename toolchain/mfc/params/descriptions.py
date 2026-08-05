@@ -166,6 +166,7 @@ DESCRIPTIONS = {
     "sigma_model": "Surface tension model: 0 constant, 1 linear in temperature",
     "sigma_T_ref": "Reference temperature for the linear sigma(T) closure",
     "sigma_dTdT": "dsigma/dT slope for the linear sigma(T) closure",
+    "num_colors": "Number of independent color-function markers, each carrying full surface tension",
     "Bx0": "Background magnetic field in x-direction",
     "relax": "Enable relaxation terms",
     "adv_n": "Enable advection of number density",

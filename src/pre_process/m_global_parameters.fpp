@@ -230,6 +230,7 @@ contains
             patch_icpp(i)%Bx = dflt_real
             patch_icpp(i)%By = dflt_real
             patch_icpp(i)%Bz = dflt_real
+            patch_icpp(i)%cf_val = 0._wp
             patch_icpp(i)%a(2) = dflt_real
             patch_icpp(i)%a(3) = dflt_real
             patch_icpp(i)%a(4) = dflt_real

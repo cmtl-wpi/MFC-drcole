@@ -24,6 +24,7 @@ module m_constants
     integer, parameter  :: num_fluids_max = 10      !< Maximum number of fluids in the simulation
     integer, parameter  :: num_probes_max = 10      !< Maximum number of flow probes in the simulation
     integer, parameter  :: num_patches_max = 10     !< Maximum number of IC patches
+    integer, parameter  :: num_colors_max = 5       !< Maximum number of color-function markers (surface tension)
     integer, parameter  :: num_ib_airfoils_max = 5  !< Maximum number of ib_airfoil instances
     integer, parameter  :: num_stl_models_max = 10
     !> Maximum number of immersed boundary patches (legacy, not used for patch_ib sizing)

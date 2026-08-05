@@ -534,8 +534,11 @@ contains
 
                                 ! COLOR FUNCTION FLUX
                                 if (surface_tension) then
-                                    flux_rsx_vf(${SF('')}$, eqn_idx%c) = (xi_M*qL_prim_rsx_vf(${SF('')}$, &
-                                                & eqn_idx%c) + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%c))*s_S
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do i = eqn_idx%c%beg, eqn_idx%c%end
+                                        flux_rsx_vf(${SF('')}$, i) = (xi_M*qL_prim_rsx_vf(${SF('')}$, &
+                                                    & i) + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, i))*s_S
+                                    end do
                                 end if
 
                                 ! Geometrical source flux for cylindrical coordinates
@@ -1574,9 +1577,12 @@ contains
 
                                 ! COLOR FUNCTION FLUX
                                 if (surface_tension) then
-                                    flux_rsx_vf(${SF('')}$, eqn_idx%c) = xi_M*qL_prim_rsx_vf(${SF('')}$, &
-                                                & eqn_idx%c)*(vel_L(dir_idx(1)) + s_M*xi_L_m1) &
-                                                & + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, eqn_idx%c)*(vel_R(dir_idx(1)) + s_P*xi_R_m1)
+                                    $:GPU_LOOP(parallelism='[seq]')
+                                    do i = eqn_idx%c%beg, eqn_idx%c%end
+                                        flux_rsx_vf(${SF('')}$, i) = xi_M*qL_prim_rsx_vf(${SF('')}$, &
+                                                    & i)*(vel_L(dir_idx(1)) + s_M*xi_L_m1) + xi_P*qR_prim_rsx_vf(${SF(' + 1')}$, &
+                                                    & i)*(vel_R(dir_idx(1)) + s_P*xi_R_m1)
+                                    end do
                                 end if
 
                                 ! Hyperelastic reference map flux for material deformation tracking

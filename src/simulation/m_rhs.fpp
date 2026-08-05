@@ -144,7 +144,7 @@ contains
         ! passive scalars (color function, hyper-cleaning psi) that are
         ! aliased to their identical conservative counterparts below.
         do l = eqn_idx%adv%end + 1, sys_size
-            if (surface_tension .and. l == eqn_idx%c) cycle
+            if (surface_tension .and. l >= eqn_idx%c%beg .and. l <= eqn_idx%c%end) cycle
             if (hyper_cleaning .and. l == eqn_idx%psi) cycle
             @:ALLOCATE(q_prim_qp%vf(l)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
                        & idwbuff(3)%beg:idwbuff(3)%end))
@@ -173,9 +173,11 @@ contains
         end if
 
         if (surface_tension) then
-            q_prim_qp%vf(eqn_idx%c)%sf => q_cons_qp%vf(eqn_idx%c)%sf
-            $:GPU_ENTER_DATA(copyin='[q_prim_qp%vf(eqn_idx%c)%sf]')
-            $:GPU_ENTER_DATA(attach='[q_prim_qp%vf(eqn_idx%c)%sf]')
+            do l = eqn_idx%c%beg, eqn_idx%c%end
+                q_prim_qp%vf(l)%sf => q_cons_qp%vf(l)%sf
+                $:GPU_ENTER_DATA(copyin='[q_prim_qp%vf(l)%sf]')
+                $:GPU_ENTER_DATA(attach='[q_prim_qp%vf(l)%sf]')
+            end do
         end if
 
         if (hyper_cleaning) then
@@ -1377,13 +1379,16 @@ contains
 
         if (idir == 1) then  ! x-direction
             if (surface_tension) then
-                $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3)
+                $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
-                            rhs_vf(eqn_idx%c)%sf(j, k, l) = rhs_vf(eqn_idx%c)%sf(j, k, &
-                                   & l) + 1._wp/dx(j)*q_prim_vf(eqn_idx%c)%sf(j, k, l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
-                                   & l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j - 1, k, l))
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do i = eqn_idx%c%beg, eqn_idx%c%end
+                                rhs_vf(i)%sf(j, k, l) = rhs_vf(i)%sf(j, k, l) + 1._wp/dx(j)*q_prim_vf(i)%sf(j, k, &
+                                       & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
+                                       & l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j - 1, k, l))
+                            end do
                         end do
                     end do
                 end do
@@ -1431,13 +1436,16 @@ contains
             end if
         else if (idir == 2) then  ! y-direction
             if (surface_tension) then
-                $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3)
+                $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
-                            rhs_vf(eqn_idx%c)%sf(j, k, l) = rhs_vf(eqn_idx%c)%sf(j, k, &
-                                   & l) + 1._wp/dy(k)*q_prim_vf(eqn_idx%c)%sf(j, k, l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
-                                   & l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j, k - 1, l))
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do i = eqn_idx%c%beg, eqn_idx%c%end
+                                rhs_vf(i)%sf(j, k, l) = rhs_vf(i)%sf(j, k, l) + 1._wp/dy(k)*q_prim_vf(i)%sf(j, k, &
+                                       & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j, &
+                                       & k - 1, l))
+                            end do
                         end do
                     end do
                 end do
@@ -1570,13 +1578,16 @@ contains
             end if
         else if (idir == 3) then  ! z-direction
             if (surface_tension) then
-                $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3)
+                $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
-                            rhs_vf(eqn_idx%c)%sf(j, k, l) = rhs_vf(eqn_idx%c)%sf(j, k, &
-                                   & l) + 1._wp/dz(l)*q_prim_vf(eqn_idx%c)%sf(j, k, l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
-                                   & l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, l - 1))
+                            $:GPU_LOOP(parallelism='[seq]')
+                            do i = eqn_idx%c%beg, eqn_idx%c%end
+                                rhs_vf(i)%sf(j, k, l) = rhs_vf(i)%sf(j, k, l) + 1._wp/dz(l)*q_prim_vf(i)%sf(j, k, &
+                                       & l)*(flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, l) - flux_src_n_in(eqn_idx%adv%beg)%sf(j, k, &
+                                       & l - 1))
+                            end do
                         end do
                     end do
                 end do

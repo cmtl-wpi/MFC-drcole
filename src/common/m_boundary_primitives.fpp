@@ -1064,20 +1064,20 @@ contains
     subroutine s_color_function_periodic(c_divs, bc_dir, bc_loc, k, l)
 
         $:GPU_ROUTINE(function_name='s_color_function_periodic', parallelism='[seq]', cray_inline=True)
-        type(scalar_field), dimension(num_dims + 1), intent(inout) :: c_divs
-        integer, intent(in)                                        :: bc_dir, bc_loc
-        integer, intent(in)                                        :: k, l
-        integer                                                    :: j, i
+        type(scalar_field), dimension(num_colors*(num_dims + 1)), intent(inout) :: c_divs
+        integer, intent(in)                                                     :: bc_dir, bc_loc
+        integer, intent(in)                                                     :: k, l
+        integer                                                                 :: j, i
 
         if (bc_dir == 1) then  !< x-direction
             if (bc_loc == -1) then  ! bc_x%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(-j, k, l) = c_divs(i)%sf(m - (j - 1), k, l)
                     end do
                 end do
             else  !< bc_x%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(m + j, k, l) = c_divs(i)%sf(j - 1, k, l)
                     end do
@@ -1085,13 +1085,13 @@ contains
             end if
         else if (bc_dir == 2) then  !< y-direction
             if (bc_loc == -1) then  !< bc_y%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(k, -j, l) = c_divs(i)%sf(k, n - (j - 1), l)
                     end do
                 end do
             else  !< bc_y%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(k, n + j, l) = c_divs(i)%sf(k, j - 1, l)
                     end do
@@ -1099,13 +1099,13 @@ contains
             end if
         else if (bc_dir == 3) then  !< z-direction
             if (bc_loc == -1) then  !< bc_z%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(k, l, -j) = c_divs(i)%sf(k, l, p - (j - 1))
                     end do
                 end do
             else  !< bc_z%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(k, l, p + j) = c_divs(i)%sf(k, l, j - 1)
                     end do
@@ -1119,16 +1119,16 @@ contains
     subroutine s_color_function_reflective(c_divs, bc_dir, bc_loc, k, l)
 
         $:GPU_ROUTINE(function_name='s_color_function_reflective', parallelism='[seq]', cray_inline=True)
-        type(scalar_field), dimension(num_dims + 1), intent(inout) :: c_divs
-        integer, intent(in)                                        :: bc_dir, bc_loc
-        integer, intent(in)                                        :: k, l
-        integer                                                    :: j, i
+        type(scalar_field), dimension(num_colors*(num_dims + 1)), intent(inout) :: c_divs
+        integer, intent(in)                                                     :: bc_dir, bc_loc
+        integer, intent(in)                                                     :: k, l
+        integer                                                                 :: j, i
 
         if (bc_dir == 1) then  !< x-direction
             if (bc_loc == -1) then  ! bc_x%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
-                        if (i == bc_dir) then
+                        if (mod(i - 1, num_dims + 1) + 1 == bc_dir) then
                             c_divs(i)%sf(-j, k, l) = -c_divs(i)%sf(j - 1, k, l)
                         else
                             c_divs(i)%sf(-j, k, l) = c_divs(i)%sf(j - 1, k, l)
@@ -1136,9 +1136,9 @@ contains
                     end do
                 end do
             else  !< bc_x%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
-                        if (i == bc_dir) then
+                        if (mod(i - 1, num_dims + 1) + 1 == bc_dir) then
                             c_divs(i)%sf(m + j, k, l) = -c_divs(i)%sf(m - (j - 1), k, l)
                         else
                             c_divs(i)%sf(m + j, k, l) = c_divs(i)%sf(m - (j - 1), k, l)
@@ -1148,9 +1148,9 @@ contains
             end if
         else if (bc_dir == 2) then  !< y-direction
             if (bc_loc == -1) then  !< bc_y%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
-                        if (i == bc_dir) then
+                        if (mod(i - 1, num_dims + 1) + 1 == bc_dir) then
                             c_divs(i)%sf(k, -j, l) = -c_divs(i)%sf(k, j - 1, l)
                         else
                             c_divs(i)%sf(k, -j, l) = c_divs(i)%sf(k, j - 1, l)
@@ -1158,9 +1158,9 @@ contains
                     end do
                 end do
             else  !< bc_y%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
-                        if (i == bc_dir) then
+                        if (mod(i - 1, num_dims + 1) + 1 == bc_dir) then
                             c_divs(i)%sf(k, n + j, l) = -c_divs(i)%sf(k, n - (j - 1), l)
                         else
                             c_divs(i)%sf(k, n + j, l) = c_divs(i)%sf(k, n - (j - 1), l)
@@ -1170,9 +1170,9 @@ contains
             end if
         else if (bc_dir == 3) then  !< z-direction
             if (bc_loc == -1) then  !< bc_z%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
-                        if (i == bc_dir) then
+                        if (mod(i - 1, num_dims + 1) + 1 == bc_dir) then
                             c_divs(i)%sf(k, l, -j) = -c_divs(i)%sf(k, l, j - 1)
                         else
                             c_divs(i)%sf(k, l, -j) = c_divs(i)%sf(k, l, j - 1)
@@ -1180,9 +1180,9 @@ contains
                     end do
                 end do
             else  !< bc_z%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
-                        if (i == bc_dir) then
+                        if (mod(i - 1, num_dims + 1) + 1 == bc_dir) then
                             c_divs(i)%sf(k, l, p + j) = -c_divs(i)%sf(k, l, p - (j - 1))
                         else
                             c_divs(i)%sf(k, l, p + j) = c_divs(i)%sf(k, l, p - (j - 1))
@@ -1198,20 +1198,20 @@ contains
     subroutine s_color_function_ghost_cell_extrapolation(c_divs, bc_dir, bc_loc, k, l)
 
         $:GPU_ROUTINE(function_name='s_color_function_ghost_cell_extrapolation', parallelism='[seq]', cray_inline=True)
-        type(scalar_field), dimension(num_dims + 1), intent(inout) :: c_divs
-        integer, intent(in)                                        :: bc_dir, bc_loc
-        integer, intent(in)                                        :: k, l
-        integer                                                    :: j, i
+        type(scalar_field), dimension(num_colors*(num_dims + 1)), intent(inout) :: c_divs
+        integer, intent(in)                                                     :: bc_dir, bc_loc
+        integer, intent(in)                                                     :: k, l
+        integer                                                                 :: j, i
 
         if (bc_dir == 1) then  !< x-direction
             if (bc_loc == -1) then  ! bc_x%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(-j, k, l) = c_divs(i)%sf(0, k, l)
                     end do
                 end do
             else  !< bc_x%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(m + j, k, l) = c_divs(i)%sf(m, k, l)
                     end do
@@ -1219,13 +1219,13 @@ contains
             end if
         else if (bc_dir == 2) then  !< y-direction
             if (bc_loc == -1) then  !< bc_y%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(k, -j, l) = c_divs(i)%sf(k, 0, l)
                     end do
                 end do
             else  !< bc_y%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(k, n + j, l) = c_divs(i)%sf(k, n, l)
                     end do
@@ -1233,13 +1233,13 @@ contains
             end if
         else if (bc_dir == 3) then  !< z-direction
             if (bc_loc == -1) then  !< bc_z%beg
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(k, l, -j) = c_divs(i)%sf(k, l, 0)
                     end do
                 end do
             else  !< bc_z%end
-                do i = 1, num_dims + 1
+                do i = 1, num_colors*(num_dims + 1)
                     do j = 1, buff_size
                         c_divs(i)%sf(k, l, p + j) = c_divs(i)%sf(k, l, p)
                     end do

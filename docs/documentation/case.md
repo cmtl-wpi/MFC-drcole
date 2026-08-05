@@ -609,6 +609,8 @@ This option requires `weno_Re_flux` to be true because cell boundary values are 
 
 - `surface_tension` activates surface tension when set to ``'T'``. Requires `sigma` to be set and `num_fluids`. The color function in each patch should be assigned such that `patch_icpp(i)%%cf_val = 1` in patches where `patch_icpp(i)%%alpha = 1 - eps` and `patch_icpp(i)%%cf_val = 0` in patches where `patch_icpp(i)%%alpha = eps`.
 
+- `num_colors` (default 1) sets the number of independent color-function markers. With `num_colors > 1`, each marker is advected as its own field and contributes its own capillary stress with the same `sigma`, so distinct bodies of the same fluid painted with different colors (`patch_icpp(i)%%cf_val(k) = 1` for marker `k`; the unindexed `cf_val` spelling addresses marker 1) retain separate interfaces and full surface tension on contact — they cannot numerically coalesce. Unset markers default to 0 in every patch.
+
 - `sigma_model` selects the surface tension closure. With `sigma_model = 0` (default) the coefficient is the constant `sigma`. With `sigma_model = 1` the thermal Marangoni closure \f$\sigma(T) = \sigma + (\mathrm{d}\sigma/\mathrm{d}T)\,(T - T_\mathrm{ref})\f$ is used, where the slope `sigma_dTdT` (typically negative) and the reference temperature `sigma_T_ref` must be set. Temperature is recovered from the stiffened-gas equation of state, so each fluid's `cv` must be set to a positive value. The tangential Marangoni force emerges directly from the spatial variation of the capillary stress tensor; no additional source term is introduced.
 
 - `viscous` activates viscosity when set to ``'T'``. Requires `Re(1)` and `Re(2)` to be set.

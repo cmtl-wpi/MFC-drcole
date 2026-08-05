@@ -777,7 +777,10 @@ contains
                     end if
 
                     if (surface_tension) then
-                        qK_prim_vf(eqn_idx%c)%sf(j, k, l) = qK_cons_vf(eqn_idx%c)%sf(j, k, l)
+                        $:GPU_LOOP(parallelism='[seq]')
+                        do i = eqn_idx%c%beg, eqn_idx%c%end
+                            qK_prim_vf(i)%sf(j, k, l) = qK_cons_vf(i)%sf(j, k, l)
+                        end do
                     end if
 
                     if (cont_damage) qK_prim_vf(eqn_idx%damage)%sf(j, k, l) = qK_cons_vf(eqn_idx%damage)%sf(j, k, l)
@@ -1023,7 +1026,9 @@ contains
                     end if
 
                     if (surface_tension) then
-                        q_cons_vf(eqn_idx%c)%sf(j, k, l) = q_prim_vf(eqn_idx%c)%sf(j, k, l)
+                        do i = eqn_idx%c%beg, eqn_idx%c%end
+                            q_cons_vf(i)%sf(j, k, l) = q_prim_vf(i)%sf(j, k, l)
+                        end do
                     end if
 
                     if (cont_damage) q_cons_vf(eqn_idx%damage)%sf(j, k, l) = q_prim_vf(eqn_idx%damage)%sf(j, k, l)
