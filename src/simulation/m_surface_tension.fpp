@@ -358,6 +358,7 @@ contains
         type(scalar_field), dimension(sys_size), intent(in)    :: q_prim_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: rhs_vf
         real(wp)                                               :: wx, wr, normW, sigma_cell, u_cell, v_cell
+        real(wp)                                               :: Fxm, Fxp, Fym, Fyp, FEm, FEp
         integer                                                :: j, k, l, cc, base
 
         $:GPU_PARALLEL_LOOP(collapse=3, private='[wx, wr, normW, sigma_cell, u_cell, v_cell, base]')
@@ -386,6 +387,54 @@ contains
                                    & l) - sigma_cell*wr*(u_cell*wx + v_cell*wr)/(normW*y_cc(k))
                         end if
                     end do
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+        ! Axis row: the y-direction flux divergence skips k = 0 under cyl_coord
+        ! (the viscous stress gets a mirrored centered difference there instead);
+        ! apply the same treatment to the y-row of the capillary stress so the
+        ! pole cells feel the radial-flux part of the capillary force. The ghost
+        ! row k = -1 is filled by the reflective color-gradient BC (w_r odd).
+        $:GPU_PARALLEL_LOOP(collapse=2, private='[wx, wr, normW, sigma_cell, u_cell, v_cell, base, Fxm, Fxp, Fym, Fyp, FEm, FEp]')
+        do l = 0, p
+            do j = 0, m
+                do cc = 1, num_colors
+                    base = (cc - 1)*(num_dims + 1)
+
+                    Fxp = 0._wp; Fyp = 0._wp; FEp = 0._wp
+                    wx = c_divs(base + 1)%sf(j, 1, l)
+                    wr = c_divs(base + 2)%sf(j, 1, l)
+                    normW = c_divs(base + num_dims + 1)%sf(j, 1, l)
+                    if (normW > capillary_cutoff) then
+                        sigma_cell = sigma
+                        if (sigma_model == 1) sigma_cell = c_sigma(j, 1, l)
+                        u_cell = q_prim_vf(eqn_idx%mom%beg)%sf(j, 1, l)
+                        v_cell = q_prim_vf(eqn_idx%mom%beg + 1)%sf(j, 1, l)
+                        Fxp = sigma_cell*wx*wr/normW
+                        Fyp = -sigma_cell*wx*wx/normW
+                        FEp = Fxp*u_cell + Fyp*v_cell + sigma_cell*normW*v_cell
+                    end if
+
+                    Fxm = 0._wp; Fym = 0._wp; FEm = 0._wp
+                    wx = c_divs(base + 1)%sf(j, -1, l)
+                    wr = c_divs(base + 2)%sf(j, -1, l)
+                    normW = c_divs(base + num_dims + 1)%sf(j, -1, l)
+                    if (normW > capillary_cutoff) then
+                        sigma_cell = sigma
+                        if (sigma_model == 1) sigma_cell = c_sigma(j, -1, l)
+                        u_cell = q_prim_vf(eqn_idx%mom%beg)%sf(j, -1, l)
+                        v_cell = q_prim_vf(eqn_idx%mom%beg + 1)%sf(j, -1, l)
+                        Fxm = sigma_cell*wx*wr/normW
+                        Fym = -sigma_cell*wx*wx/normW
+                        FEm = Fxm*u_cell + Fym*v_cell + sigma_cell*normW*v_cell
+                    end if
+
+                    rhs_vf(eqn_idx%mom%beg)%sf(j, 0, l) = rhs_vf(eqn_idx%mom%beg)%sf(j, 0, l) + (Fxm - Fxp)/(y_cc(1) - y_cc(-1))
+                    rhs_vf(eqn_idx%mom%beg + 1)%sf(j, 0, l) = rhs_vf(eqn_idx%mom%beg + 1)%sf(j, 0, &
+                           & l) + (Fym - Fyp)/(y_cc(1) - y_cc(-1))
+                    rhs_vf(eqn_idx%E)%sf(j, 0, l) = rhs_vf(eqn_idx%E)%sf(j, 0, l) + (FEm - FEp)/(y_cc(1) - y_cc(-1))
                 end do
             end do
         end do
