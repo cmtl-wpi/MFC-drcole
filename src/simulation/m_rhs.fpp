@@ -1490,6 +1490,10 @@ contains
                     end do
                 end do
                 $:END_GPU_PARALLEL_LOOP()
+
+                if (surface_tension .and. p == 0) then
+                    call s_add_capillary_cylindrical_sources(q_prim_vf, rhs_vf)
+                end if
             else
                 if ((surface_tension .or. viscous) .or. chem_params%diffusion .or. thermal_conduction) then
                     $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=3)

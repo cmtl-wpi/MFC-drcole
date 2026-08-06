@@ -22,7 +22,7 @@ module m_surface_tension
     implicit none
 
     private; public :: s_initialize_surface_tension_module, s_compute_capillary_source_flux, s_get_capillary, &
-        & s_finalize_surface_tension_module
+        & s_add_capillary_cylindrical_sources, s_finalize_surface_tension_module
 
     !> @name color function gradient components and magnitude
     !> @{
@@ -348,6 +348,50 @@ contains
         end if
 
     end subroutine s_get_capillary
+
+    !> Add the azimuthal (hoop) part of the capillary stress divergence for 2D axisymmetric runs. The capillary stress tensor has
+    !! Omega_theta_theta = sigma*|grad(c)| with no theta gradient, so the cylindrical divergence carries volumetric sources beyond
+    !! the Cartesian flux divergence; without them a sphere on the axis cannot hold the 2 sigma/R Laplace jump. Sources are regular
+    !! at the axis (w_r -> 0).
+    subroutine s_add_capillary_cylindrical_sources(q_prim_vf, rhs_vf)
+
+        type(scalar_field), dimension(sys_size), intent(in)    :: q_prim_vf
+        type(scalar_field), dimension(sys_size), intent(inout) :: rhs_vf
+        real(wp)                                               :: wx, wr, normW, sigma_cell, u_cell, v_cell
+        integer                                                :: j, k, l, cc, base
+
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[wx, wr, normW, sigma_cell, u_cell, v_cell, base]')
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
+                    do cc = 1, num_colors
+                        base = (cc - 1)*(num_dims + 1)
+
+                        wx = c_divs(base + 1)%sf(j, k, l)
+                        wr = c_divs(base + 2)%sf(j, k, l)
+                        normW = c_divs(base + num_dims + 1)%sf(j, k, l)
+
+                        if (normW > capillary_cutoff) then
+                            sigma_cell = sigma
+                            if (sigma_model == 1) sigma_cell = c_sigma(j, k, l)
+
+                            u_cell = q_prim_vf(eqn_idx%mom%beg)%sf(j, k, l)
+                            v_cell = q_prim_vf(eqn_idx%mom%beg + 1)%sf(j, k, l)
+
+                            rhs_vf(eqn_idx%mom%beg)%sf(j, k, l) = rhs_vf(eqn_idx%mom%beg)%sf(j, k, &
+                                   & l) - sigma_cell*wx*wr/(normW*y_cc(k))
+                            rhs_vf(eqn_idx%mom%beg + 1)%sf(j, k, l) = rhs_vf(eqn_idx%mom%beg + 1)%sf(j, k, &
+                                   & l) - sigma_cell*wr*wr/(normW*y_cc(k))
+                            rhs_vf(eqn_idx%E)%sf(j, k, l) = rhs_vf(eqn_idx%E)%sf(j, k, &
+                                   & l) - sigma_cell*wr*(u_cell*wx + v_cell*wr)/(normW*y_cc(k))
+                        end if
+                    end do
+                end do
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_add_capillary_cylindrical_sources
 
     !> Reconstruct left and right cell-boundary values of capillary variables
     subroutine s_reconstruct_cell_boundary_values_capillary(v_vf, vL_x, vR_x, norm_dir)
